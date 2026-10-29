@@ -79,8 +79,9 @@ final class OverlayModel {
     var appearance = Appearance()
     /// 按钮组左上角在窗口中的位置
     var groupOrigin = CGPoint.zero
-    /// 背景压暗（调试菜单开关）
+    /// 背景压暗、轨迹显示（K8 配置）
     var dim = false
+    var showTrail = true
     var slotGap = 0.0
     /// `P.trailMs`（秒）
     var trailDuration = 0.3
@@ -267,7 +268,7 @@ private struct OverlayRoot: View {
                 if !model.phase.leaving {
                     PointerLayer(model: model, groupRect: groupRect,
                                  overCancel: state.hovered.flatMap { state.layout.slot($0) }?.isCancel ?? false,
-                                 showTrail: !reduceMotion)
+                                 showTrail: model.showTrail && !reduceMotion)
                 }
             }
         }

@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import TouchOSCore
 
 /// 浮层主题（D23）：只决定画法，交互、命中与动效时序都与主题无关；主题、切换动画、强调色可以自由组合
 enum OverlayTheme: String, CaseIterable, Sendable {
@@ -34,11 +35,8 @@ enum NavStyle: String, CaseIterable, Sendable {
     }
 }
 
-/// 外观设置。K8 配置文件与 K12 设置界面之前存在 UserDefaults，下一次唤起生效
+/// 外观设置（K8 配置的 `appearance` 段），下一次唤起生效
 struct Appearance: Equatable, Sendable {
-    static let themeKey = "overlayTheme"
-    static let navKey = "overlayNav"
-    static let accentKey = "overlayAccent"
     /// 强调色预设（名称、RRGGBB）
     static let presets: [(name: String, hex: String)] = [
         ("蓝", "0A84FF"), ("紫", "BF5AF2"), ("粉", "FF375F"), ("橙", "FF9F0A"), ("绿", "30D158"), ("青", "5BE7FF"),
@@ -51,16 +49,20 @@ struct Appearance: Equatable, Sendable {
     /// 强调色 RRGGBB；nil 为自动（跟随系统强调色）
     var accentHex: String?
 
-    static func load(_ defaults: UserDefaults = .standard) -> Appearance {
-        Appearance(theme: defaults.string(forKey: themeKey).flatMap(OverlayTheme.init(rawValue:)) ?? .orb,
-                   nav: defaults.string(forKey: navKey).flatMap(NavStyle.init(rawValue:)) ?? .depth,
-                   accentHex: defaults.string(forKey: accentKey).flatMap { rgb($0) == nil ? nil : $0 })
+    init() {}
+
+    init(_ c: AppConfig.Appearance) {
+        theme = OverlayTheme(rawValue: c.theme) ?? .orb
+        nav = NavStyle(rawValue: c.nav) ?? .depth
+        accentHex = c.accent.flatMap { Self.rgb($0) == nil ? nil : $0 }
     }
 
-    func save(_ defaults: UserDefaults = .standard) {
-        defaults.set(theme.rawValue, forKey: Self.themeKey)
-        defaults.set(nav.rawValue, forKey: Self.navKey)
-        defaults.set(accentHex, forKey: Self.accentKey)
+    var config: AppConfig.Appearance {
+        var c = AppConfig.Appearance()
+        c.theme = theme.rawValue
+        c.nav = nav.rawValue
+        c.accent = accentHex
+        return c
     }
 
     var accent: Color {
@@ -106,16 +108,18 @@ extension EnvironmentValues {
 @MainActor
 final class AppearanceMenu: NSObject {
     let item = NSMenuItem(title: "外观", action: nil, keyEquivalent: "")
-    /// 设置变化后调用（调试叠层记录日志）
-    var onChange: ((Appearance) -> Void)?
+    private let read: () -> Appearance
+    private let write: (Appearance) -> Void
 
-    override init() {
+    init(read: @escaping () -> Appearance, write: @escaping (Appearance) -> Void) {
+        self.read = read
+        self.write = write
         super.init()
         rebuild()
     }
 
-    private func rebuild() {
-        let current = Appearance.load()
+    func rebuild() {
+        let current = read()
         let menu = NSMenu()
         menu.addItem(.sectionHeader(title: "主题"))
         for (i, theme) in OverlayTheme.allCases.enumerated() {
@@ -151,11 +155,10 @@ final class AppearanceMenu: NSObject {
     }
 
     private func update(_ change: (inout Appearance) -> Void) {
-        var a = Appearance.load()
+        var a = read()
         change(&a)
-        a.save()
+        write(a)
         rebuild()
-        onChange?(a)
     }
 
     @objc private func pickTheme(_ item: NSMenuItem) {
@@ -173,7 +176,7 @@ final class AppearanceMenu: NSObject {
     @objc private func pickCustomAccent() {
         let panel = NSColorPanel.shared
         panel.showsAlpha = false
-        if let c = Appearance.load().accentHex.flatMap(Appearance.rgb) {
+        if let c = read().accentHex.flatMap(Appearance.rgb) {
             panel.color = NSColor(srgbRed: c.r, green: c.g, blue: c.b, alpha: 1)
         }
         panel.setTarget(self)

@@ -10,22 +10,12 @@ final class SessionDriver: @unchecked Sendable {
     static let tickInterval: DispatchTimeInterval = .milliseconds(16)
     /// FR-6.14：两次触觉反馈间隔不少于 40 ms
     static let hapticMinInterval: TimeInterval = 0.04
-    /// 临时调节开关（K12 设置界面之前，调试菜单"面板大小""映射区大小"）：
-    /// `defaults write ai.nekro.touchos mappingScale -float 0.5`，`panelScale` 同理
-    static let mappingScaleKey = "mappingScale"
-    static let panelScaleKey = "panelScale"
-    /// 调试菜单"常驻模式"（D14）
-    static let stickyPanelKey = "stickyPanel"
-    /// 调试菜单的唤起方式开关（D19），按显示顺序；默认只开四指轻点（D20）
-    static var triggers: [(title: String, key: String, path: WritableKeyPath<Tuning, Bool>)] {
-        [("锚指按住", "holdTrigger", \.holdTrigger), ("三指轻点", "threeFingerTap", \.threeFingerTap),
-         ("四指轻点", "fourFingerTap", \.fourFingerTap), ("角落轻点两下", "cornerDoubleTap", \.cornerDoubleTap)]
-    }
-
     let queue: DispatchQueue
     private let log = Logger(subsystem: TouchOSCore.logSubsystem, category: "session")
     private var machine: SessionStateMachine
     private let baseTuning: Tuning
+    /// 用户配置快照（K8）：参数、面板、绑定；改动在下一次会话生效（FR-10.3）
+    private var config = AppConfig.default
     private var environment: SessionEnvironment
     /// 调试预演（TouchSimulator）用的当前会话环境与参数快照；不在 input.queue 上调用
     var environmentSnapshot: SessionEnvironment { queue.sync { environment } }
@@ -60,8 +50,17 @@ final class SessionDriver: @unchecked Sendable {
         environment = SessionEnvironment()
         baseTuning = tuning
         machine = SessionStateMachine(tuning: tuning, environment: environment)
-        // 默认只开四指轻点（D20）
-        UserDefaults.standard.register(defaults: ["fourFingerTap": true, "holdTrigger": false])
+    }
+
+    /// 配置变更：面板与绑定立即进入会话环境，参数在下一次有手指落下时生效
+    func apply(_ config: AppConfig) {
+        queue.async {
+            self.config = config
+            self.environment.panels = config.panels
+            self.environment.bindings = config.bindingMap
+            self.handle(.environment(self.environment))
+            self.applyTuning()
+        }
     }
 
     /// 在任意线程调用，异步投递到 input.queue
@@ -86,7 +85,7 @@ final class SessionDriver: @unchecked Sendable {
     func handle(_ event: SessionEvent) {
         dispatchPrecondition(condition: .onQueue(queue))
         if case .frame(let f) = event, machine.state == .idle, f.contacts.contains(where: { $0.phase == .began }) {
-            applyOverrides()
+            applyTuning()
             refreshEnvironment()
         }
         if case .frame(let f) = event { frameTimestamp = f.timestamp } else { frameTimestamp = nil }
@@ -150,7 +149,7 @@ final class SessionDriver: @unchecked Sendable {
     /// FR-6.14：两次间隔不少于 40 ms；提交时的确认震动（D16）不受间隔限制
     private func performHaptic(_ strength: TrackpadHaptics.Strength, force: Bool = false) {
         let now = ProcessInfo.processInfo.systemUptime
-        guard force || now - lastHaptic >= Self.hapticMinInterval else { return }
+        guard config.general.haptics, force || now - lastHaptic >= Self.hapticMinInterval else { return }
         lastHaptic = now
         haptics.perform(strength, on: sessionDevice)
     }
@@ -181,18 +180,9 @@ final class SessionDriver: @unchecked Sendable {
         _ = machine.handle(.environment(environment))
     }
 
-    private func applyOverrides() {
+    private func applyTuning() {
         var t = baseTuning
-        let scale = UserDefaults.standard.double(forKey: Self.mappingScaleKey)
-        if scale > 0 {
-            t.mappingScale = min(max(scale, Tuning.mappingScaleRange.lowerBound), Tuning.mappingScaleRange.upperBound)
-        }
-        let panel = UserDefaults.standard.double(forKey: Self.panelScaleKey)
-        if panel > 0 {
-            t.panelScale = min(max(panel, Tuning.panelScaleRange.lowerBound), Tuning.panelScaleRange.upperBound)
-        }
-        t.stickyPanel = UserDefaults.standard.bool(forKey: Self.stickyPanelKey)
-        for trigger in Self.triggers { t[keyPath: trigger.path] = UserDefaults.standard.bool(forKey: trigger.key) }
+        config.apply(to: &t)
         guard t != machine.tuning else { return }
         _ = machine.handle(.tuning(t))
         onDebug?("面板 \(t.panelScale) · 映射区 \(t.mappingScale) · 常驻 \(t.stickyPanel ? "开" : "关")")
@@ -244,8 +234,6 @@ final class OverlayController {
         case commit(SlotID)
     }
 
-    /// 调试菜单"背景压暗"（D20）
-    static let dimKey = "dimBackground"
     /// 提交后选中按钮停留的时长
     static let commitHold: TimeInterval = 0.24
     /// 其余按钮淡出、整体收拢的时长
@@ -257,6 +245,10 @@ final class OverlayController {
     static let enterKick: TimeInterval = 0.05
 
     let model = OverlayModel()
+    /// 外观（K8 配置），下一次显示生效
+    var appearance = Appearance()
+    var dim = false
+    var showTrail = true
     private lazy var panel = OverlayPanel(model: model)
     /// 每次显示加一；延迟执行的动画步骤据此判断面板是否已被新的会话重新显示
     private var generation = 0
@@ -271,8 +263,9 @@ final class OverlayController {
 
     func show(_ state: PanelState) {
         generation += 1
-        model.dim = UserDefaults.standard.bool(forKey: Self.dimKey)
-        model.appearance = Appearance.load()
+        model.dim = dim
+        model.appearance = appearance
+        model.showTrail = showTrail
         model.shownAt = ProcessInfo.processInfo.systemUptime
         model.phase = reduceMotion ? .shown : .entering
         model.apply(state)

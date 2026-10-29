@@ -14,7 +14,10 @@ final class AppCoordinator {
     private let log = Logger(subsystem: TouchOSCore.logSubsystem, category: "app")
     private let tuning = Tuning()  // K8 起从配置读取
     private let menuBar = MenuBarController()
-    private let appearanceMenu = AppearanceMenu()
+    private let configs = ConfigController()
+    private var appearanceMenu: AppearanceMenu!
+    private var settings: SettingsWindowController!
+    private var frontmost: String?
     private let queue = DispatchQueue(label: "ai.nekro.touchos.input", qos: .userInteractive)
     private var driver: SessionDriver!
     private var pipeline: InputPipeline!
@@ -37,12 +40,28 @@ final class AppCoordinator {
                                  onDisabled: { ref.driver?.send(.tapDisabled) })
         tap.onPhysicalRelease = { ref.driver?.send(.physicalRelease) }
         let overlay = OverlayController(slotGap: tuning.slotGap, trailMs: tuning.trailMs)
+        let executor = ActionExecutor()
         let driver = SessionDriver(queue: queue, tuning: tuning, tap: tap, cursor: CursorLock(tap: tap),
-                                   executor: ActionExecutor(), overlay: overlay)
+                                   executor: executor, overlay: overlay)
         ref.driver = driver
         self.driver = driver
-        driver.updateEnvironment { $0.panels = PresetPanels.all }
+        let configs = self.configs
+        appearanceMenu = AppearanceMenu(read: { Appearance(configs.config.appearance) },
+                                        write: { a in configs.update { $0.appearance = a.config } })
         menuBar.appearanceItem = appearanceMenu.item
+        settings = SettingsWindowController(configs: configs, executor: executor)
+        menuBar.onOpenSettings = { [weak self] in self?.settings.show() }
+        menuBar.onToggleEnabled = { configs.update { $0.general.enabled.toggle() } }
+        driver.onOpenEditor = { [weak self] panelID in self?.settings.show(editing: panelID) }
+        configs.observe { [weak self] c in
+            driver.apply(c)
+            overlay.appearance = Appearance(c.appearance)
+            overlay.dim = c.general.dimBackground
+            overlay.showTrail = c.general.showTrail
+            self?.appearanceMenu?.rebuild()
+            self?.menuBar.enabled = c.general.enabled
+            self?.refreshStatus()
+        }
 
         pipeline = InputPipeline(
             queue: queue,
@@ -60,34 +79,8 @@ final class AppCoordinator {
                 self?.menuBar.debugOverlayVisible = debug.isVisible
             }
             driver.onDebug = { line in DispatchQueue.main.async { debug.model.log(line) } }
-            appearanceMenu.onChange = { a in
-                debug.model.log("外观：\(a.theme.title) · \(a.nav.title) · 强调色 \(a.accentHex ?? "自动")（下一次唤起生效）")
-            }
             driver.onLatency = { sample in debug.model.record(sample) }
             let tap = self.tap!
-            let base = tuning
-            let percents = { (values: [Double]) in values.map { (label: "\(Int(($0 * 100).rounded()))%", value: $0) } }
-            menuBar.debugChoices = [
-                .init(title: "面板大小（占屏幕）", key: SessionDriver.panelScaleKey, options: percents([0.3, 0.35, 0.4, 0.5, 0.6])) {
-                    UserDefaults.standard.object(forKey: SessionDriver.panelScaleKey) as? Double ?? base.panelScale
-                },
-                .init(title: "映射区大小（占触控板）", key: SessionDriver.mappingScaleKey,
-                      options: percents([0.3, 0.4, 0.5, 0.6, 0.8, 1.0])) {
-                    UserDefaults.standard.object(forKey: SessionDriver.mappingScaleKey) as? Double ?? base.mappingScale
-                },
-            ]
-            menuBar.debugToggles = [
-                .init(title: "常驻模式", key: SessionDriver.stickyPanelKey) { on in
-                    debug.model.log(on ? "常驻模式：开（下一次唤起生效）" : "常驻模式：关")
-                },
-                .init(title: "背景压暗", key: OverlayController.dimKey) { on in
-                    debug.model.log(on ? "背景压暗：开（下一次唤起生效）" : "背景压暗：关")
-                },
-            ] + SessionDriver.triggers.map { trigger in
-                .init(title: "唤起：\(trigger.title)", key: trigger.key) { on in
-                    debug.model.log("唤起：\(trigger.title) \(on ? "开" : "关")（下一次触摸生效）")
-                }
-            }
             tap.onPressureDebug = { stage, pressure in
                 DispatchQueue.main.async { debug.model.pressure = (stage, pressure) }
             }
@@ -109,8 +102,13 @@ final class AppCoordinator {
         refreshStatus()
     }
 
+    func openSettings() {
+        settings.show()
+    }
+
     func shutdown() {
         driver?.cancelNow("quit")
+        configs.flush()
     }
 
     // MARK: 启动各部分
@@ -162,11 +160,16 @@ final class AppCoordinator {
         let workspace = NSWorkspace.shared.notificationCenter
         let driver = self.driver!
         // 前台应用：动作上下文与按应用布局（K11）
-        workspace.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { note in
+        workspace.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
             let id = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier
             driver.updateEnvironment { $0.frontmostBundleID = id }
+            MainActor.assumeIsolated {
+                self?.frontmost = id
+                self?.refreshStatus()  // 黑名单
+            }
         }
         let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        self.frontmost = frontmost
         driver.updateEnvironment { $0.frontmostBundleID = frontmost }
         // SRS 5.2 forceCancel：屏幕锁定、快速用户切换
         workspace.addObserver(forName: NSWorkspace.sessionDidResignActiveNotification, object: nil, queue: .main) { _ in
@@ -198,8 +201,11 @@ final class AppCoordinator {
             case .tapUnavailable: text = "拦截不可用"
             }
         }
-        menuBar.setStatus(text ?? "正常", warning: text != nil)
-        let suspended = text != nil
+        let general = configs.config.general
+        let paused = !general.enabled
+        let blocked = frontmost.map { general.blacklist.contains($0) } ?? false
+        menuBar.setStatus(text ?? (paused ? "已暂停" : blocked ? "当前应用已排除" : "正常"), warning: text != nil)
+        let suspended = text != nil || paused || blocked
         driver.updateEnvironment { $0.suspended = suspended }
     }
 }

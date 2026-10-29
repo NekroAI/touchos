@@ -136,6 +136,13 @@ public struct ActionRequest: Equatable, Sendable {
     public let frontmostBundleID: String?
     /// 不早于该时刻执行（面板隐藏后 `P.actionDelayMs`，SRS 5.5）
     public let notBefore: TimeInterval
+
+    public init(action: Action, title: String, frontmostBundleID: String?, notBefore: TimeInterval) {
+        self.action = action
+        self.title = title
+        self.frontmostBundleID = frontmostBundleID
+        self.notBefore = notBefore
+    }
 }
 
 public enum SessionEffect: Equatable, Sendable {

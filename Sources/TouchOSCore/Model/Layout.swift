@@ -70,16 +70,16 @@ public enum WidgetKind: String, Equatable, Sendable, CaseIterable {
 }
 
 public struct Slot: Equatable, Sendable {
-    public let id: SlotID
-    public let shape: SlotShape
-    public let title: String
+    public var id: SlotID
+    public var shape: SlotShape
+    public var title: String
     /// SF Symbols 名称（应用图标、本地图片在 K12 加入）
-    public let symbol: String
+    public var symbol: String
     /// 抬起或按压时执行（D18：按压执行并保留面板，抬起执行并关闭，不再区分连续触发槽位）
-    public let action: Action
+    public var action: Action
     /// 设置后为滑杆槽位：槽位内的位置直接对应数值，按压或抬起时确定（交互实验）
-    public let slider: SliderTarget?
-    public let widget: WidgetKind?
+    public var slider: SliderTarget?
+    public var widget: WidgetKind?
 
     public init(id: SlotID, shape: SlotShape, title: String, symbol: String, action: Action, slider: SliderTarget? = nil,
                 widget: WidgetKind? = nil) {
@@ -97,14 +97,17 @@ public struct Slot: Equatable, Sendable {
     }
 }
 
+/// 面板布局的别名：SwiftUI 也有 `Layout`，视图代码用这个名字避免歧义
+public typealias PanelLayout = Layout
+
 public struct Layout: Equatable, Sendable {
-    public let id: String
-    public let name: String
+    public var id: String
+    public var name: String
     /// 网格行列数，只用于换算 `.cell` 形状
-    public let rows: Int
-    public let cols: Int
+    public var rows: Int
+    public var cols: Int
     /// 数组顺序即 z 序（FR-6.9）
-    public let slots: [Slot]
+    public var slots: [Slot]
 
     public init(id: String, name: String, rows: Int = 1, cols: Int = 1, slots: [Slot]) {
         self.id = id

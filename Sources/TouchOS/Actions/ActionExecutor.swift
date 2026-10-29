@@ -1,10 +1,10 @@
+import AppKit
 import CoreGraphics
 import Foundation
 import OSLog
 import TouchOSCore
 
-/// 动作调度（SRS 9.3）：串行后台队列，不阻塞输入、拦截与主线程；失败只记录、不重试。
-/// M0 只实现模拟快捷键（K7），其余动作类型在 K9 加入。
+/// 动作调度（SRS 9.3）：串行后台队列，不阻塞输入、拦截与主线程；失败只通知、不重试（FR-9.1、FR-9.2）。
 final class ActionExecutor: @unchecked Sendable {
     /// FR-9.1：待执行超过该数量时丢弃最旧的
     static let maxPending = 5
@@ -35,16 +35,50 @@ final class ActionExecutor: @unchecked Sendable {
         let wait = request.notBefore - ProcessInfo.processInfo.systemUptime
         if wait > 0 { Thread.sleep(forTimeInterval: wait) }
 
+        do {
+            try run(request)
+        } catch let failure as ActionFailure {
+            log.error("action failed: \(request.title, privacy: .public): \(failure.reason, privacy: .public)")
+            Notifier.post(title: request.title, body: failure.reason)
+        } catch {
+            log.error("action failed: \(request.title, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            Notifier.post(title: request.title, body: error.localizedDescription)
+        }
+    }
+
+    private func run(_ request: ActionRequest) throws {
         switch request.action {
         case .none:
             break
         case .keyboardShortcut(let combo):
+            // FR-9.3：前台应用变了仍执行，只记录（不含坐标）
+            let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+            if front != request.frontmostBundleID { log.info("frontmost changed before shortcut") }
             KeyboardShortcutExecutor.post(combo)
             log.info("shortcut \(combo.displayLabel, privacy: .public)")
-        default:
-            log.error("action not implemented yet: \(request.title, privacy: .public)")
+        case .openApp(let bundleID):
+            try Launcher.openApp(bundleID)
+        case .openURL(let url, let browser):
+            try Launcher.openURL(url, browserBundleID: browser)
+        case .openFile(let path):
+            try Launcher.openFile(path)
+        case .shell(let command, let timeout, let notify):
+            let output = try ProcessRunner.run("/bin/zsh", ["-c", command], timeout: timeout)
+            if notify, !output.isEmpty { Notifier.post(title: request.title, body: String(output.prefix(ProcessRunner.notifyLimit))) }
+        case .appleScript(let source, let language):
+            let args = language == .javaScript ? ["-l", "JavaScript", "-e", source] : ["-e", source]
+            _ = try ProcessRunner.run("/usr/bin/osascript", args, timeout: ProcessRunner.defaultTimeout)
+        case .shortcut(let name):
+            _ = try ProcessRunner.run("/usr/bin/shortcuts", ["run", name], timeout: ProcessRunner.shortcutTimeout)
+        case .system(let command):
+            try SystemControl.run(command, frontmostBundleID: request.frontmostBundleID)
         }
     }
+}
+
+/// 一句给用户看的失败原因（FR-9.2）
+struct ActionFailure: Error {
+    let reason: String
 }
 
 /// 合成键盘事件（SRS 9.2）：修饰键先按下、后抬起，主键按下与抬起间隔 8 ms；事件带 FR-7.3 标记。
@@ -80,5 +114,74 @@ enum KeyboardShortcutExecutor {
         event.flags = flags
         event.setIntegerValueField(.eventSourceUserData, value: EventTapController.syntheticMarker)
         event.post(tap: .cghidEventTap)
+    }
+}
+
+/// 打开应用、URL、文件（SRS 9.2）
+enum Launcher {
+    /// 允许直接打开的 URL 协议；其余协议须有已安装应用注册
+    static let allowedSchemes: Set<String> = ["http", "https", "mailto"]
+
+    static func openApp(_ bundleID: String) throws {
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+            throw ActionFailure(reason: "未安装 \(bundleID)")
+        }
+        NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+    }
+
+    static func openURL(_ url: URL, browserBundleID: String?) throws {
+        guard let scheme = url.scheme?.lowercased(),
+              allowedSchemes.contains(scheme) || NSWorkspace.shared.urlForApplication(toOpen: url) != nil else {
+            throw ActionFailure(reason: "无法打开链接 \(url.absoluteString)")
+        }
+        if let browserBundleID, let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: browserBundleID) {
+            NSWorkspace.shared.open([url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+        } else {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    static func openFile(_ path: String) throws {
+        let expanded = (path as NSString).expandingTildeInPath
+        guard FileManager.default.fileExists(atPath: expanded) else { throw ActionFailure(reason: "找不到 \(path)") }
+        NSWorkspace.shared.open(URL(fileURLWithPath: expanded))
+    }
+}
+
+/// 子进程（Shell、脚本、快捷指令）：工作目录为用户主目录，超时终止（SRS 9.2）
+enum ProcessRunner {
+    static let defaultTimeout: TimeInterval = 10
+    /// 快捷指令可能要等用户交互，给得宽一些
+    static let shortcutTimeout: TimeInterval = 60
+    /// 输出通知只取前这么多字
+    static let notifyLimit = 200
+
+    static func run(_ executable: String, _ arguments: [String], timeout: TimeInterval) throws -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = arguments
+        process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
+        let out = Pipe(), err = Pipe()
+        process.standardOutput = out
+        process.standardError = err
+        let done = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in done.signal() }
+        do {
+            try process.run()
+        } catch {
+            throw ActionFailure(reason: "无法启动 \(executable)")
+        }
+        if done.wait(timeout: .now() + timeout) == .timedOut {
+            process.terminate()
+            throw ActionFailure(reason: "超过 \(Int(timeout)) 秒未完成，已终止")
+        }
+        let output = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard process.terminationStatus == 0 else {
+            let message = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            throw ActionFailure(reason: message.isEmpty ? "退出码 \(process.terminationStatus)" : String(message.prefix(notifyLimit)))
+        }
+        return output
     }
 }
