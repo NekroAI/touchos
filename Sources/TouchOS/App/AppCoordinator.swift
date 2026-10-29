@@ -17,6 +17,7 @@ final class AppCoordinator {
     private let configs = ConfigController()
     private var appearanceMenu: AppearanceMenu!
     private var settings: SettingsWindowController!
+    private let welcome = WelcomeWindowController()
     private var frontmost: String?
     private let queue = DispatchQueue(label: "ai.nekro.touchos.input", qos: .userInteractive)
     private var driver: SessionDriver!
@@ -96,7 +97,11 @@ final class AppCoordinator {
             if status != .ok { driver.send(.tapDisabled) }
             self?.refreshStatus()
         }
-        startTap(prompt: true)
+        // K13：首次启动或缺少辅助功能权限时显示引导，由引导页带用户去授权（不再直接弹系统提示）
+        let needsWelcome = configs.isFirstLaunch || !AXIsProcessTrusted()
+        welcome.onOpenSettings = { [weak self] in self?.settings.show() }
+        startTap(prompt: !needsWelcome)
+        if needsWelcome { welcome.show() }
         startInput()
         observeSystem()
         refreshStatus()

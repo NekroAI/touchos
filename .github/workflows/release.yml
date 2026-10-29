@@ -1,0 +1,63 @@
+name: Release
+
+# 推送 v* 标签：构建 arm64 与 x86_64、用发布证书签名、打 DMG、发布到 GitHub Releases（docs/decisions.md D3、D4）
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    strategy:
+      matrix:
+        arch: [arm64, x86_64]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: 单元测试与覆盖率
+        if: matrix.arch == 'arm64'
+        run: scripts/coverage.sh
+      - name: 导入发布签名证书
+        env:
+          P12_BASE64: ${{ secrets.MACOS_SIGNING_P12 }}
+          P12_PASSWORD: ${{ secrets.MACOS_SIGNING_PASSWORD }}
+        run: scripts/ci-import-cert.sh
+      - name: 打包 ${{ matrix.arch }}
+        run: |
+          # 发布版本必须使用发布证书，不能退回开发证书或 ad-hoc
+          test "$SIGN_IDENTITY" = "Nekro TouchOS Release"
+          ARCH=${{ matrix.arch }} scripts/package-macos.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: touchos-${{ matrix.arch }}
+          path: dist/release/*.dmg
+          if-no-files-found: error
+
+  release:
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - name: 发布
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v=$(tr -d '[:space:]' < VERSION)
+          test "v$v" = "$GITHUB_REF_NAME"
+          for f in macOS-arm64.dmg macOS-x64.dmg; do test -s "assets/TouchOS-$v-$f"; done
+          (cd assets && sha256sum *.dmg > SHA256SUMS.txt)
+          gh release create "$GITHUB_REF_NAME" assets/*.dmg assets/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Nekro TouchOS $GITHUB_REF_NAME" \
+            --notes-file docs/install.md \
+            --prerelease
