@@ -4,7 +4,7 @@ macOS 菜单栏工具：一指按住触控板角落唤起浮层面板，另一�
 
 ## 当前阶段
 
-**M0 技术原型，K1（工程骨架）已完成，下一项 K2（数据模型与合成帧构造器）。** 任务顺序与完成条件见 `docs/srs.md` 第 15 章；M0 闸门不通过，不开始 M1 的界面类任务。
+**M0 技术原型，K1（工程骨架）本地完成，CI 待仓库推送到 `NekroAI/touchos` 后验证；下一项 K2（数据模型与合成帧构造器）。** 任务顺序与完成条件见 `docs/srs.md` 第 15 章；M0 闸门不通过，不开始 M1 的界面类任务。
 
 - 构建：`scripts/build-macos.sh`（产物 `dist/TouchOS.app`，本机开发证书「TouchOS Dev」签名，重新构建不丢辅助功能授权）
 - 测试：`swift test`；覆盖率闸门：`scripts/coverage.sh`（`TouchOSCore` 行覆盖率 ≥ 85%，NFR-15）

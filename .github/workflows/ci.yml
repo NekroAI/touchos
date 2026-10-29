@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 工具链版本
+        run: swift --version
+      - name: 单元测试与覆盖率
+        run: scripts/coverage.sh
+      - name: 构建 macOS 应用（ad-hoc 签名）
+        run: scripts/build-macos.sh
