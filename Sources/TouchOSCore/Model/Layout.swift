@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 // 面板布局与动作（SRS 9.1、第 10 章）。JSON 编解码在 K8 加入。
@@ -24,35 +25,77 @@ public struct GridCell: Equatable, Sendable {
     }
 }
 
+/// 扇区（环形布局）。半径以面板短边的一半为单位，角度以度为单位、0 为正上方、顺时针增加。
+/// 面板宽高比等于触控板物理宽高比，因此扇区在触控板上也是正圆（decisions.md D12）。
+public struct Sector: Equatable, Sendable {
+    public let innerRadius: Double
+    /// nil 表示向外延伸到面板边缘，命中时只看角度（与 D9 的边缘延伸一致）
+    public let outerRadius: Double?
+    public let startAngle: Double
+    public let endAngle: Double
+
+    public init(innerRadius: Double, outerRadius: Double?, startAngle: Double, endAngle: Double) {
+        self.innerRadius = innerRadius
+        self.outerRadius = outerRadius
+        self.startAngle = startAngle
+        self.endAngle = endAngle
+    }
+
+    public var isFullCircle: Bool { endAngle - startAngle >= 360 }
+}
+
+/// 槽位形状（decisions.md D12）：网格只是生成矩形的一种方式
+public enum SlotShape: Equatable, Sendable {
+    /// 网格单元，按布局的行列数换算（FR-10.5）
+    case cell(GridCell)
+    /// 面板归一化矩形，原点左上
+    case rect(CGRect)
+    case sector(Sector)
+}
+
+/// 滑杆槽位控制的连续量（交互实验）
+public enum SliderTarget: String, Equatable, Sendable {
+    /// 系统输出音量
+    case volume
+    /// 只显示数值，不控制任何东西
+    case demo
+}
+
 public struct Slot: Equatable, Sendable {
     public let id: SlotID
-    public let cell: GridCell
+    public let shape: SlotShape
     public let title: String
     /// SF Symbols 名称（应用图标、本地图片在 K12 加入）
     public let symbol: String
-    /// 连续触发（T12）
-    public let repeats: Bool
+    /// 抬起或按压时执行（D18：按压执行并保留面板，抬起执行并关闭，不再区分连续触发槽位）
     public let action: Action
+    /// 设置后为滑杆槽位：槽位内的位置直接对应数值，按压或抬起时确定（交互实验）
+    public let slider: SliderTarget?
 
-    public init(id: SlotID, cell: GridCell, title: String, symbol: String, repeats: Bool = false, action: Action) {
+    public init(id: SlotID, shape: SlotShape, title: String, symbol: String, action: Action, slider: SliderTarget? = nil) {
         self.id = id
-        self.cell = cell
+        self.shape = shape
         self.title = title
         self.symbol = symbol
-        self.repeats = repeats
         self.action = action
+        self.slider = slider
+    }
+
+    public init(id: SlotID, cell: GridCell, title: String, symbol: String, action: Action) {
+        self.init(id: id, shape: .cell(cell), title: title, symbol: symbol, action: action)
     }
 }
 
 public struct Layout: Equatable, Sendable {
     public let id: String
     public let name: String
+    /// 网格行列数，只用于换算 `.cell` 形状
     public let rows: Int
     public let cols: Int
     /// 数组顺序即 z 序（FR-6.9）
     public let slots: [Slot]
 
-    public init(id: String, name: String, rows: Int, cols: Int, slots: [Slot]) {
+    public init(id: String, name: String, rows: Int = 1, cols: Int = 1, slots: [Slot]) {
         self.id = id
         self.name = name
         self.rows = rows
@@ -60,10 +103,15 @@ public struct Layout: Equatable, Sendable {
         self.slots = slots
     }
 
-    /// 槽位的面板归一化矩形，原点左上（FR-10.5）
-    public func normalizedRect(of slot: Slot) -> CGRect {
-        CGRect(x: Double(slot.cell.col) / Double(cols), y: Double(slot.cell.row) / Double(rows),
-               width: Double(slot.cell.colSpan) / Double(cols), height: Double(slot.cell.rowSpan) / Double(rows))
+    /// 矩形类槽位的面板归一化矩形，原点左上（FR-10.5）；扇区为 nil
+    public func normalizedRect(of slot: Slot) -> CGRect? {
+        switch slot.shape {
+        case .cell(let c):
+            CGRect(x: Double(c.col) / Double(cols), y: Double(c.row) / Double(rows),
+                   width: Double(c.colSpan) / Double(cols), height: Double(c.rowSpan) / Double(rows))
+        case .rect(let r): r
+        case .sector: nil
+        }
     }
 
     public func slot(_ id: SlotID) -> Slot? { slots.first { $0.id == id } }

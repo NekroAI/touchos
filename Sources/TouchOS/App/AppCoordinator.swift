@@ -10,6 +10,8 @@ final class AppCoordinator {
     static let permissionPollInterval: TimeInterval = 2
     /// AC-17 调试：点菜单后留给用户唤起面板的时间
     static let debugStallDelay: TimeInterval = 5
+    /// 调试菜单"实验布局"的开关状态
+    static let experimentKey = "experimentLayouts"
 
     private let log = Logger(subsystem: TouchOSCore.logSubsystem, category: "app")
     private let tuning = Tuning()  // K8 起从配置读取
@@ -21,6 +23,7 @@ final class AppCoordinator {
     private var watchdog: TapWatchdog!
     private var deviceManager: DeviceManager?
     private var debugOverlay: DebugOverlayController?
+    private var simulator: TouchSimulator?
     private var permissionTimer: Timer?
 
     // 降级原因（任一存在即不接受锚定）
@@ -33,7 +36,7 @@ final class AppCoordinator {
         tap = EventTapController(measure: DebugOverlayController.isAvailable, onPhysicalPress: { ref.driver?.send(.physicalPress) },
                                  onEscape: { ref.driver?.send(.escapeKey) },
                                  onDisabled: { ref.driver?.send(.tapDisabled) })
-        let overlay = OverlayController(slotGap: tuning.slotGap)
+        let overlay = OverlayController(slotGap: tuning.slotGap, trailMs: tuning.trailMs)
         let driver = SessionDriver(queue: queue, tuning: tuning, tap: tap, cursor: CursorLock(tap: tap),
                                    executor: ActionExecutor(), overlay: overlay)
         ref.driver = driver
@@ -50,6 +53,7 @@ final class AppCoordinator {
         if DebugOverlayController.isAvailable {
             let debug = DebugOverlayController(pipeline: pipeline, tap: tap)
             debugOverlay = debug
+            simulator = TouchSimulator(driver: driver, overlay: overlay)
             menuBar.onToggleDebugOverlay = { [weak self] in
                 debug.toggle()
                 self?.menuBar.debugOverlayVisible = debug.isVisible
@@ -57,6 +61,37 @@ final class AppCoordinator {
             driver.onDebug = { line in DispatchQueue.main.async { debug.model.log(line) } }
             driver.onLatency = { sample in debug.model.record(sample) }
             let tap = self.tap!
+            applyLayouts()
+            let base = tuning
+            let percents = { (values: [Double]) in values.map { (label: "\(Int(($0 * 100).rounded()))%", value: $0) } }
+            menuBar.debugChoices = [
+                .init(title: "面板大小（占屏幕）", key: SessionDriver.panelScaleKey, options: percents([0.3, 0.35, 0.4, 0.5, 0.6])) {
+                    UserDefaults.standard.object(forKey: SessionDriver.panelScaleKey) as? Double ?? base.panelScale
+                },
+                .init(title: "映射区大小（占触控板）", key: SessionDriver.mappingScaleKey,
+                      options: percents([0.3, 0.4, 0.5, 0.6, 0.8, 1.0])) {
+                    UserDefaults.standard.object(forKey: SessionDriver.mappingScaleKey) as? Double ?? base.mappingScale
+                },
+            ]
+            menuBar.debugToggles = [
+                .init(title: "实验布局", key: Self.experimentKey) { [weak self] on in
+                    self?.applyLayouts()
+                    debug.model.log(on ? "实验布局：开（左下、右下各两页）" : "实验布局：关")
+                },
+                .init(title: "常驻模式", key: SessionDriver.stickyPanelKey) { on in
+                    debug.model.log(on ? "常驻模式：开（下一次唤起生效）" : "常驻模式：关")
+                },
+                .init(title: "背景压暗", key: OverlayController.dimKey) { on in
+                    debug.model.log(on ? "背景压暗：开（下一次唤起生效）" : "背景压暗：关")
+                },
+            ] + SessionDriver.triggers.map { trigger in
+                .init(title: "唤起：\(trigger.title)", key: trigger.key) { on in
+                    debug.model.log("唤起：\(trigger.title) \(on ? "开" : "关")（下一次触摸生效）")
+                }
+            }
+            tap.onPressureDebug = { stage, pressure in
+                DispatchQueue.main.async { debug.model.pressure = (stage, pressure) }
+            }
             menuBar.onDebugStall = {
                 tap.scheduleDebugStall(after: Self.debugStallDelay)
                 debug.model.log("已预约：\(Int(Self.debugStallDelay)) 秒后阻塞拦截")
@@ -73,6 +108,12 @@ final class AppCoordinator {
         startInput()
         observeSystem()
         refreshStatus()
+    }
+
+    /// 演示布局，或调试菜单开启"实验布局"时的多角落、多页实验布局
+    private func applyLayouts() {
+        let experiment = DebugOverlayController.isAvailable && UserDefaults.standard.bool(forKey: Self.experimentKey)
+        driver.updateEnvironment { $0.cornerPanels = experiment ? ExperimentLayouts.panels : [:] }
     }
 
     func shutdown() {

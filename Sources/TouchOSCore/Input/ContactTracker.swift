@@ -9,8 +9,11 @@ public struct RawContact: Equatable, Sendable {
     public let velocity: CGVector       // 归一化单位/秒
     public let size: Float
     public let pressure: Float
+    public let ellipse: ContactEllipse
 
-    public init(id: Int, state: Int, position: CGPoint, velocity: CGVector, size: Float, pressure: Float) {
+    public init(id: Int, state: Int, position: CGPoint, velocity: CGVector, size: Float, pressure: Float,
+                ellipse: ContactEllipse = ContactEllipse()) {
+        self.ellipse = ellipse
         self.id = id
         self.state = state
         self.position = position
@@ -57,7 +60,7 @@ public struct ContactTracker: Sendable {
                 continue
             }
             let contact = Contact(id: r.id, phase: phase, position: r.position, velocity: r.velocity,
-                                  size: r.size, pressure: r.pressure)
+                                  size: r.size, pressure: r.pressure, ellipse: r.ellipse)
             contacts.append(contact)
             seen.insert(r.id)
             touching[r.id] = phase == .ended ? nil : contact
@@ -66,7 +69,7 @@ public struct ContactTracker: Sendable {
         for id in touching.keys.sorted() where !seen.contains(id) {
             let last = touching.removeValue(forKey: id)!
             contacts.append(Contact(id: id, phase: .cancelled, position: last.position, velocity: .zero,
-                                    size: last.size, pressure: last.pressure))
+                                    size: last.size, pressure: last.pressure, ellipse: last.ellipse))
         }
         return contacts
     }

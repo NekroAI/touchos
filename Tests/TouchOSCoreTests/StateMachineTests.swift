@@ -154,29 +154,38 @@ private func run(_ g: Gesture, tuning: Tuning = .test, environment: SessionEnvir
         #expect(!h.effects.contains { if case .showPanel = $0 { true } else { false } })
     }
 
-    @Test func t12RepeatSlotFiresWithoutLeaving() {
-        // AC-7
-        let g = anchorDown().hold(id: 1, until: 1.2)
-            .touch(id: 2, at: Spot.vol, t: 0.3).lift(id: 2, t: 0.4)
-            .touch(id: 2, at: Spot.vol, t: 0.5).lift(id: 2, t: 0.6)
-            .touch(id: 2, at: Spot.vol, t: 0.7).lift(id: 2, t: 0.8)
-            .lift(id: 1, t: 1.2)
-        let h = run(g)
+    @Test func t12PressRepeatsWithoutLeavingAndLiftOnlyCloses() {
+        // AC-7（修订：见 decisions.md D18，连续触发改为按压）
+        let g = anchorDown().hold(id: 1, until: 1.2).touch(id: 2, at: Spot.vol, t: 0.3).hold(id: 2, until: 0.9).lift(id: 2, t: 0.9)
+        let h = run(g, events: [(0.4, .physicalPress), (0.55, .physicalPress), (0.7, .physicalPress)])
         #expect(h.actions.map(\.action) == Array(repeating: .system(.volumeUp), count: 3))
         #expect(h.effects.filter { $0 == .flashSlot("vol") }.count >= 2)
-        #expect(h.ends == [.anchorLifted])
+        #expect(h.ends == [.liftAfterPress])
     }
 
-    @Test func t13NullSlotOrGapKeepsSessionForAnotherTry() {
-        // AC-5
-        for spot in [Spot.null, Spot.gap] {
-            let g = anchorDown().hold(id: 1, until: 1.0)
-                .touch(id: 2, at: spot, t: 0.3).lift(id: 2, t: 0.4)
-                .touch(id: 2, at: Spot.close, t: 0.5).lift(id: 2, t: 0.6)
-            let h = run(g)
-            #expect(h.actions.map(\.action) == [close])
-            #expect(h.ends == [.committed("close")])
-        }
+    @Test func liftOnAnySlotExecutesOnceAndCloses() {
+        let g = anchorDown().hold(id: 1, until: 1.0).touch(id: 2, at: Spot.vol, t: 0.3).lift(id: 2, t: 0.4)
+        let h = run(g)
+        #expect(h.actions.map(\.action) == [.system(.volumeUp)])
+        #expect(h.ends == [.committed("vol")])
+    }
+
+    @Test func t13GapKeepsSessionForAnotherTry() {
+        // AC-5（修订：见 decisions.md D17，取消槽位改为关闭）
+        let g = anchorDown().hold(id: 1, until: 1.0)
+            .touch(id: 2, at: Spot.gap, t: 0.3).lift(id: 2, t: 0.4)
+            .touch(id: 2, at: Spot.close, t: 0.5).lift(id: 2, t: 0.6)
+        let h = run(g)
+        #expect(h.actions.map(\.action) == [close])
+        #expect(h.ends == [.committed("close")])
+    }
+
+    @Test func liftOnCancelSlotClosesWithoutAction() {
+        // D17：锚指仍按着时也关闭
+        let g = anchorDown().hold(id: 1, until: 1.0).touch(id: 2, at: Spot.null, t: 0.3).lift(id: 2, t: 0.4)
+        let h = run(g)
+        #expect(h.actions.isEmpty)
+        #expect(h.ends == [.cancelSlot])
     }
 
     @Test func t14AnchorLiftCancels() {
@@ -237,12 +246,20 @@ private func run(_ g: Gesture, tuning: Tuning = .test, environment: SessionEnvir
         #expect(run(g).actions.map(\.action) == [close])
     }
 
-    @Test func smallMappingRectExtendsEdgeSlotsOutward() {
-        // 映射区 0.6（0.2–0.8）：落在映射区外的右上方仍选中右上角的"关闭"（decisions.md D9）
+    @Test func outsideMappingRectHoversNothingAndLiftCloses() {
+        // 映射区 0.6（0.2–0.8）：右上方映射区之外不选中"关闭"，在那里抬起即关闭面板（decisions.md D21，修订 D9）
         var tuning = Tuning.test
         tuning.mappingScale = 0.6
         let g = anchorDown().hold(id: 1, until: 1.0).touch(id: 2, at: (0.9, 0.9), t: 0.3).lift(id: 2, t: 0.4)
-        #expect(run(g, tuning: tuning).actions.map(\.action) == [close])
+        let h = run(g, tuning: tuning)
+        #expect(h.actions.isEmpty)
+        #expect(h.ends == [.liftOutside])
+        #expect(!h.effects.contains { if case .updatePanel(let s) = $0 { s.hovered != nil } else { false } })
+        // 从映射区内移到映射区外：悬停清空
+        let out = anchorDown().hold(id: 1, until: 1.0).touch(id: 2, at: (0.75, 0.75), t: 0.3)
+            .move(id: 2, to: (0.9, 0.9), over: 0.1).hold(id: 2, until: 0.6)
+        guard case .active(let ctx) = run(out, tuning: tuning, until: 0.6).machine.state else { Issue.record("not active"); return }
+        #expect(ctx.hovered == nil && ctx.pointer != nil)
     }
 
     @Test func pointerOnAnotherDeviceIsIgnored() {

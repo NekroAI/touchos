@@ -51,7 +51,7 @@ import Testing
         #expect(t.hit(CGPoint(x: 300, y: 200)) == nil)        // 空单元格
         #expect(t.hit(CGPoint(x: 402, y: 60)) == nil)         // 槽位之间内缩形成的空隙
         #expect(t.hit(CGPoint(x: 600, y: 0)) == "close")      // 面板外边不留空隙
-        let visual = t.visualRect(of: Layout.test.slots[1])
+        let visual = t.visualRect(of: Layout.test.slots[1])!
         #expect(abs(visual.minX - 406) < 1e-9 && abs(visual.minY - 6) < 1e-9 && abs(visual.maxX - 594) < 1e-9)
         let overlap = Layout(id: "o", name: "o", rows: 1, cols: 1, slots: [
             Slot(id: "first", cell: GridCell(row: 0, col: 0), title: "", symbol: "", action: .none),

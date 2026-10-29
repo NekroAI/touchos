@@ -17,6 +17,30 @@ final class MenuBarController: NSObject {
         didSet { rebuildMenu() }
     }
 
+    /// 调试区的开关项（实验布局、常驻模式等），状态存在 UserDefaults
+    struct DebugToggle {
+        let title: String
+        let key: String
+        let onChange: (Bool) -> Void
+    }
+
+    var debugToggles: [DebugToggle] = [] {
+        didSet { rebuildMenu() }
+    }
+
+    /// 调试区的多选一项（面板大小、映射区大小等）：子菜单列出各取值，选中值存在 UserDefaults（Double）
+    struct DebugChoice {
+        let title: String
+        let key: String
+        let options: [(label: String, value: Double)]
+        /// 未设置时视为选中的值
+        let current: () -> Double
+    }
+
+    var debugChoices: [DebugChoice] = [] {
+        didSet { rebuildMenu() }
+    }
+
     var debugOverlayVisible = false {
         didSet { debugItem?.state = debugOverlayVisible ? .on : .off }
     }
@@ -53,6 +77,26 @@ final class MenuBarController: NSObject {
             item.state = debugOverlayVisible ? .on : .off
             debugItem = item
             menu.addItem(item)
+            for (i, toggle) in debugToggles.enumerated() {
+                let item = NSMenuItem(title: toggle.title, action: #selector(flipDebugToggle(_:)), keyEquivalent: "")
+                item.target = self
+                item.tag = i
+                item.state = UserDefaults.standard.bool(forKey: toggle.key) ? .on : .off
+                menu.addItem(item)
+            }
+            for (i, choice) in debugChoices.enumerated() {
+                let sub = NSMenu()
+                for (j, option) in choice.options.enumerated() {
+                    let item = NSMenuItem(title: option.label, action: #selector(pickDebugChoice(_:)), keyEquivalent: "")
+                    item.target = self
+                    item.tag = i * Self.choiceStride + j
+                    item.state = abs(choice.current() - option.value) < 1e-6 ? .on : .off
+                    sub.addItem(item)
+                }
+                let parent = NSMenuItem(title: choice.title, action: nil, keyEquivalent: "")
+                parent.submenu = sub
+                menu.addItem(parent)
+            }
             if onDebugStall != nil {
                 let stall = NSMenuItem(title: "5 秒后阻塞拦截（AC-17）", action: #selector(debugStall), keyEquivalent: "")
                 stall.target = self
@@ -62,6 +106,23 @@ final class MenuBarController: NSObject {
         }
         menu.addItem(NSMenuItem(title: "退出 TouchOS", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         statusItem.menu = menu
+    }
+
+    @objc private func flipDebugToggle(_ item: NSMenuItem) {
+        let toggle = debugToggles[item.tag]
+        let on = !UserDefaults.standard.bool(forKey: toggle.key)
+        UserDefaults.standard.set(on, forKey: toggle.key)
+        item.state = on ? .on : .off
+        toggle.onChange(on)
+    }
+
+    /// 多选一项的菜单 tag = 项序号 × 该值 + 选项序号
+    private static let choiceStride = 100
+
+    @objc private func pickDebugChoice(_ item: NSMenuItem) {
+        let choice = debugChoices[item.tag / Self.choiceStride]
+        UserDefaults.standard.set(choice.options[item.tag % Self.choiceStride].value, forKey: choice.key)
+        for sibling in item.menu?.items ?? [] { sibling.state = sibling === item ? .on : .off }
     }
 
     @objc private func debugStall() {

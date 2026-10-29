@@ -41,14 +41,33 @@ public struct Contact: Equatable, Sendable {
     public let velocity: CGVector       // 归一化单位/秒
     public let size: Float              // 接触面积（框架原始单位）
     public let pressure: Float          // 力度触控板可用，否则为 0
+    /// 接触椭圆（只用于调试叠层观察与交互实验，含义待实测确认）
+    public let ellipse: ContactEllipse
 
-    public init(id: Int, phase: ContactPhase, position: CGPoint, velocity: CGVector, size: Float, pressure: Float) {
+    public init(id: Int, phase: ContactPhase, position: CGPoint, velocity: CGVector, size: Float, pressure: Float,
+                ellipse: ContactEllipse = ContactEllipse()) {
         self.id = id
         self.phase = phase
         self.position = position
         self.velocity = velocity
         self.size = size
         self.pressure = pressure
+        self.ellipse = ellipse
+    }
+}
+
+/// 接触椭圆的原始字段（MTTouch 的 angle、majorAxis、minorAxis、zDensity）
+public struct ContactEllipse: Equatable, Sendable {
+    public let angle: Float
+    public let majorAxis: Float
+    public let minorAxis: Float
+    public let density: Float
+
+    public init(angle: Float = 0, majorAxis: Float = 0, minorAxis: Float = 0, density: Float = 0) {
+        self.angle = angle
+        self.majorAxis = majorAxis
+        self.minorAxis = minorAxis
+        self.density = density
     }
 }
 

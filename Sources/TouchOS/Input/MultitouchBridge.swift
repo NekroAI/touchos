@@ -171,6 +171,10 @@ private enum MTTouchLayout {
     static let velocityY = 44
     static let size = 48            // float，接触面积（zTotal）
     static let pressure = 52        // float（zPressure）；含义待 M0 实测确认
+    static let angle = 56           // float；以下四项只用于调试观察与交互实验，含义待实测确认
+    static let majorAxis = 60
+    static let minorAxis = 64
+    static let density = 92         // float（zDensity）
 
     static func read(_ p: UnsafeRawPointer) -> RawContact {
         RawContact(
@@ -181,6 +185,10 @@ private enum MTTouchLayout {
             velocity: CGVector(dx: Double(p.loadUnaligned(fromByteOffset: velocityX, as: Float.self)),
                                dy: Double(p.loadUnaligned(fromByteOffset: velocityY, as: Float.self))),
             size: p.loadUnaligned(fromByteOffset: size, as: Float.self),
-            pressure: p.loadUnaligned(fromByteOffset: pressure, as: Float.self))
+            pressure: p.loadUnaligned(fromByteOffset: pressure, as: Float.self),
+            ellipse: ContactEllipse(angle: p.loadUnaligned(fromByteOffset: angle, as: Float.self),
+                                    majorAxis: p.loadUnaligned(fromByteOffset: majorAxis, as: Float.self),
+                                    minorAxis: p.loadUnaligned(fromByteOffset: minorAxis, as: Float.self),
+                                    density: p.loadUnaligned(fromByteOffset: density, as: Float.self)))
     }
 }

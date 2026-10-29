@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 import OSLog
@@ -18,6 +19,11 @@ final class EventTapController: @unchecked Sendable {
         .leftMouseDragged, .rightMouseDragged, .otherMouseDragged,
     ]
     private static let escapeKeyCode: Int64 = 53
+    private static let buttonDownTypes: Set<CGEventType> = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+    /// NSEvent 压力事件的原始类型值（力度触控板的轻按 / 深按阶段）
+    private static let pressureType: UInt32 = 34
+    /// 按下事件与压力阶段进入 1 的事件相隔不超过该值，才算同一次物理按压（D18）。两者到达顺序不固定
+    static let pressPairingWindow: TimeInterval = 0.08
 
     /// NFR-2 打点：1 µs 一个桶，统计到 2 ms，超出计入溢出桶
     static let timingBucketWidth: TimeInterval = 0.000_001
@@ -50,8 +56,18 @@ final class EventTapController: @unchecked Sendable {
     private let onEscape: @Sendable () -> Void
     private let onDisabled: @Sendable () -> Void
 
+    /// 调试叠层：力度触控板的按压阶段与力度（在拦截线程上调用，须异步投递）。在 `start()` 之前设置
+    var onPressureDebug: (@Sendable (_ stage: Int, _ pressure: Float) -> Void)?
+
     private var tap: CFMachPort?
     private var thread: Thread?
+
+    // 激活态按压配对（D18）：物理按压同时产生按下事件与压力阶段 1；"轻点来点按"只产生按下事件。
+    // 只在拦截线程上读写。从未见过压力事件的设备（没有力度触控）退回"任何按下都算"。
+    private var sawPressure = false
+    private var pressureStage = 0
+    private var stageUpAt: TimeInterval = 0
+    private var pendingDownAt: TimeInterval = 0
 
     /// 三个回调在拦截线程上调用，实现方只能异步投递（FR-7.2）。
     /// `measure` 为真时统计回调耗时（NFR-2），供调试叠层显示。
@@ -181,6 +197,15 @@ final class EventTapController: @unchecked Sendable {
                 if type == .leftMouseDown { onPhysicalPress() }  // T4：上报后放行
                 return pass
             case .active:
+                // 激活态的物理按压（D18：执行并保留、只有锚指时翻页）；按键事件一律吞掉
+                if Self.buttonDownTypes.contains(type) {
+                    if !sawPressure || now - stageUpAt <= Self.pressPairingWindow {
+                        stageUpAt = 0
+                        onPhysicalPress()
+                    } else {
+                        pendingDownAt = now  // 等压力事件确认；等不到就是轻点，忽略
+                    }
+                }
                 return nil
             case .cooldown:
                 // SPEC-QUESTION: 策略表冷却列只丢弃"触控板来源"的按键，但拦截层无法可靠区分来源；目前冷却期内一律丢弃
@@ -194,6 +219,19 @@ final class EventTapController: @unchecked Sendable {
             // 退出后继续丢弃惯性阶段的滚动（SRS 7.2 冷却列，`P.momentumSuppressMs`）
             let momentum = event.getIntegerValueField(.scrollWheelEventMomentumPhase) != 0
             return momentum && now < TOAtomicLoadDouble(momentumUntil) ? nil : pass
+        }
+        if type.rawValue == Self.pressureType, let e = NSEvent(cgEvent: event) {
+            sawPressure = true
+            if e.stage >= 1 && pressureStage == 0 {
+                if mode == .active && now - pendingDownAt <= Self.pressPairingWindow {
+                    pendingDownAt = 0
+                    onPhysicalPress()
+                } else {
+                    stageUpAt = now
+                }
+            }
+            pressureStage = e.stage
+            onPressureDebug?(e.stage, e.pressure)
         }
         if Self.gestureTypes.contains(type.rawValue) {
             if mode == .active { return nil }

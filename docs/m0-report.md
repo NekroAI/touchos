@@ -65,3 +65,4 @@ M0 闸门要求的 AC（K6、K7）。"通过"栏注明系统与设备，例如"2
 - **2026-10-29 私有框架细节**：`MTDeviceGetSensorSurfaceDimensions` 的单位是 1/100 毫米（妙控板 15600 × 11040 → 156 × 110.4 mm）。`MTDeviceGetDeviceID` 存在，返回值与 ioreg 的 Multitouch ID 一致，作为稳定的设备 ID 使用（不在 FR-4.1 列表中，作为可选符号）。
 - **2026-10-29 启动回调中的异常会被吞掉**：`applicationDidFinishLaunching` 里抛出的 ObjC 异常（例如把已属于另一个菜单的 `NSMenuItem` 加入新菜单）被 AppKit 静默吞掉，后续初始化全部跳过，进程照常运行，没有任何日志。排查方法：`lldb -o "breakpoint set -n objc_exception_throw" -o run <可执行文件>`。
 - **2026-10-29 查看日志**：`/usr/bin/log stream --style compact --level info --predicate 'subsystem == "ai.nekro.touchos"'`（zsh 中 `log` 是内建命令，需写全路径）；启动后需等几秒才开始接收。每段触摸结束会记录帧数、时长、平均帧率、p95 与最大帧间隔（不含坐标）。
+- **2026-10-29 退场动画导致崩溃**：环形布局提交"右半屏"后进程以 SIGTRAP 退出。原因是波纹关键帧动画以时长为 0 的关键帧开头，插值产生 NaN，扇区绘制把它转换成整数时触发 Swift 运行时检查。修复：去掉零时长关键帧，扇区路径对非有限数值兜底。崩溃发生在主线程渲染，与拦截无关；进程退出后系统输入恢复正常，符合 NFR-7。

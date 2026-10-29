@@ -28,6 +28,8 @@ final class DebugOverlayModel {
     var pointerLatency = LatencyHistogram(bucketWidth: pointerBucketWidth, buckets: pointerBuckets)
     var tapTiming: LatencyHistogram?
     var lastPanelShown: (anchorToActive: TimeInterval, activeToShown: TimeInterval)?
+    /// 力度触控板最近一次压力事件：阶段（0 无、1 点按、2 深按）与力度
+    var pressure: (stage: Int, value: Float)?
 
     func record(_ sample: LatencySample) {
         switch sample {
@@ -119,7 +121,7 @@ final class DebugOverlayController {
     }
 
     private func makePanel() -> NSPanel {
-        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: 600),
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 380, height: 720),
                             styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: false)
         panel.level = .statusBar
         panel.isOpaque = false
@@ -130,7 +132,7 @@ final class DebugOverlayController {
         panel.contentView = NSHostingView(rootView: DebugOverlayView(model: model))
         if let screen = NSScreen.main {
             let v = screen.visibleFrame
-            panel.setFrameTopLeftPoint(NSPoint(x: v.maxX - 380, y: v.maxY - 20))
+            panel.setFrameTopLeftPoint(NSPoint(x: v.maxX - 400, y: v.maxY - 20))
         }
         return panel
     }
@@ -151,6 +153,7 @@ private struct DebugOverlayView: View {
             ForEach(model.devices, id: \.device.id) { state in
                 DeviceSection(state: state)
             }
+            Text(model.pressure.map { String(format: "按压阶段 %d · 力度 %.2f", $0.stage, $0.value) } ?? "按压阶段 —")
             LatencySection(model: model)
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(Array(model.session.enumerated()), id: \.offset) { _, line in Text(line) }
@@ -159,13 +162,15 @@ private struct DebugOverlayView: View {
         }
         .font(.system(size: 11, design: .monospaced))
         .padding(12)
-        .frame(width: 360, alignment: .leading)
+        .frame(width: 380, alignment: .leading)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 }
 
 private struct DeviceSection: View {
+    /// 每个触点两行：基本字段、接触椭圆
     static let contactRows = 3
+    static let linesPerContact = 2
     static let lineHeight: CGFloat = 15
 
     let state: DebugOverlayModel.DeviceState
@@ -187,10 +192,13 @@ private struct DeviceSection: View {
             // 文字区固定行数，触摸时不挤压上方的触控板区域
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(state.contacts.prefix(Self.contactRows), id: \.id) { c in
-                    Text("#\(c.id) \(String(describing: c.phase)) size \(c.size, format: .number.precision(.fractionLength(2))) pressure \(c.pressure, format: .number.precision(.fractionLength(2)))")
+                    Text(String(format: "#%d %@ size %.2f pressure %.2f", c.id, String(describing: c.phase), c.size, c.pressure))
+                    Text(String(format: "   angle %.2f axes %.2f/%.2f density %.2f", c.ellipse.angle, c.ellipse.majorAxis,
+                                c.ellipse.minorAxis, c.ellipse.density))
+                        .foregroundStyle(.secondary)
                 }
             }
-            .frame(height: CGFloat(Self.contactRows) * Self.lineHeight, alignment: .top)
+            .frame(height: CGFloat(Self.contactRows * Self.linesPerContact) * Self.lineHeight, alignment: .top)
             Text("持续触摸 \(state.live.map(rate) ?? "—")")
             Text("上一段 \(state.lastTouch.map(rate) ?? "—")").foregroundStyle(.secondary)
         }

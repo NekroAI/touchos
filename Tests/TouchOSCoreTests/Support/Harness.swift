@@ -81,10 +81,12 @@ extension SessionEnvironment {
 }
 
 extension Tuning {
-    /// 映射区 0.9：与边缘 0.05 重合，即 0.05–0.95 全部映射，便于用整数比例推算测试点
+    /// 映射区 0.9：与边缘 0.05 重合，即 0.05–0.95 全部映射，便于用整数比例推算测试点。
+    /// 面板比例固定 0.6：测试环境的屏幕 1000 × 1000 按触控板宽高比对应 600 × 400 左右的面板，测试点按此推算
     static var test: Tuning {
         var t = Tuning()
         t.mappingScale = 0.9
+        t.panelScale = 0.6
         return t
     }
 }
@@ -96,8 +98,7 @@ extension Layout {
              action: .keyboardShortcut(KeyCombo(keyCode: 0, modifiers: [.command], displayLabel: "⌘A"))),
         Slot(id: "close", cell: GridCell(row: 0, col: 2), title: "关闭", symbol: "xmark",
              action: .keyboardShortcut(KeyCombo(keyCode: 13, modifiers: [.command], displayLabel: "⌘W"))),
-        Slot(id: "vol", cell: GridCell(row: 1, col: 2), title: "音量 +", symbol: "speaker.plus", repeats: true,
-             action: .system(.volumeUp)),
+        Slot(id: "vol", cell: GridCell(row: 1, col: 2), title: "音量 +", symbol: "speaker.plus", action: .system(.volumeUp)),
         Slot(id: "null", cell: GridCell(row: 2, col: 0), title: "取消", symbol: "nosign", action: .none),
     ])
 }

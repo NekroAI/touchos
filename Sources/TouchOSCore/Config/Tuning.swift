@@ -20,9 +20,11 @@ public struct Tuning: Equatable, Sendable {
     public var palmSize: Float?
     /// `P.mappingMargin`：四周不接受指点指落下的边缘宽度（触控板比例；修订见 decisions.md D9）
     public var mappingMargin = 0.05
-    /// `P.mappingScale`：映射区占触控板的比例，宽高同比，居中（decisions.md D9）
-    public var mappingScale = 0.6
-    public static let mappingScaleRange = 0.4...1.0
+    /// `P.mappingScale`：映射区占触控板的比例，宽高同比，居中（decisions.md D9）。
+    /// 修订 0.6 → 0.4（D21）：随面板一起缩小，手指移动与屏幕上指示点移动的比例保持不变
+    public var mappingScale = 0.4
+    public static let mappingScaleRange = 0.3...1.0
+    public static let panelScaleRange = 0.3...0.9
     /// `P.hysteresis`（面板比例）
     public var hysteresis = 0.02
     /// `P.liftLookbackMs`
@@ -37,12 +39,29 @@ public struct Tuning: Equatable, Sendable {
     public var frameTimeoutMs = 500.0
     /// `P.maxSessionSec`
     public var maxSessionSec = 30.0
+    /// 常驻模式（交互实验，decisions.md D14）：锚指抬起后面板保留，单指操作
+    public var stickyPanel = false
+    /// `P.stickyIdleMs`：常驻模式下板上没有手指超过该时长自动关闭
+    public var stickyIdleMs = 5000.0
+    /// 唤起方式（交互实验，decisions.md D19）：锚指按住、三指 / 四指轻点、单指在角落轻点两下，可同时开启。
+    /// 轻点唤起时板上没有锚指，面板直接进入常驻状态（D14）
+    public var holdTrigger = true
+    public var threeFingerTap = false
+    public var fourFingerTap = false
+    public var cornerDoubleTap = false
+    /// `P.tapMaxMs`：一次轻点从第一根手指落下到全部抬起的最长时长
+    public var tapMaxMs = 250.0
+    /// `P.tapMaxMoveMM`：轻点期间每根手指的最大位移
+    public var tapMaxMoveMM = 3.0
+    /// `P.doubleTapGapMs`：角落双击两次轻点之间（前一次抬起到后一次落下）的最长间隔
+    public var doubleTapGapMs = 300.0
     /// `P.actionDelayMs`
     public var actionDelayMs = 30.0
     /// `P.smoothing`
     public var smoothing = 0.5
-    /// `P.panelScale`
-    public var panelScale = 0.6
+    /// `P.panelScale`（修订：0.6 → 0.4，见 decisions.md D20）：按钮组画小、排紧凑。
+    /// 触控板到面板是归一化映射，面板在屏幕上的大小不影响手指的移动距离与精度
+    public var panelScale = 0.4
     /// `P.trailMs`
     public var trailMs = 300.0
     /// `P.slotGap`（pt）

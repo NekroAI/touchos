@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import OSLog
 import TouchOSCore
 
@@ -9,20 +10,35 @@ final class SessionDriver: @unchecked Sendable {
     static let tickInterval: DispatchTimeInterval = .milliseconds(16)
     /// FR-6.14：两次触觉反馈间隔不少于 40 ms
     static let hapticMinInterval: TimeInterval = 0.04
-    /// 临时调节开关（K12 设置界面之前）：`defaults write ai.nekro.touchos mappingScale -float 0.5`
+    /// 临时调节开关（K12 设置界面之前，调试菜单"面板大小""映射区大小"）：
+    /// `defaults write ai.nekro.touchos mappingScale -float 0.5`，`panelScale` 同理
     static let mappingScaleKey = "mappingScale"
+    static let panelScaleKey = "panelScale"
+    /// 调试菜单"常驻模式"（D14）
+    static let stickyPanelKey = "stickyPanel"
+    /// 调试菜单的唤起方式开关（D19），按显示顺序；默认只开四指轻点（D20）
+    static var triggers: [(title: String, key: String, path: WritableKeyPath<Tuning, Bool>)] {
+        [("锚指按住", "holdTrigger", \.holdTrigger), ("三指轻点", "threeFingerTap", \.threeFingerTap),
+         ("四指轻点", "fourFingerTap", \.fourFingerTap), ("角落轻点两下", "cornerDoubleTap", \.cornerDoubleTap)]
+    }
 
     let queue: DispatchQueue
     private let log = Logger(subsystem: TouchOSCore.logSubsystem, category: "session")
     private var machine: SessionStateMachine
     private let baseTuning: Tuning
     private var environment: SessionEnvironment
+    /// 调试预演（TouchSimulator）用的当前会话环境与参数快照；不在 input.queue 上调用
+    var environmentSnapshot: SessionEnvironment { queue.sync { environment } }
+    var tuningSnapshot: Tuning { queue.sync { machine.tuning } }
     private let tap: EventTapController
     private let cursor: CursorLock
     private let executor: ActionExecutor
     private let overlay: OverlayController
     private var timer: DispatchSourceTimer?
     private var lastHaptic: TimeInterval = 0
+    private let haptics = TrackpadHaptics()
+    /// 当前（或刚结束的）会话所在的设备，触觉反馈震这台设备
+    private var sessionDevice: TrackpadDeviceID?
     // 延迟打点（调试叠层）：当前处理的触点帧时间戳、本次候选的锚指落下时刻
     private var frameTimestamp: TimeInterval?
     private var armStartedAt: TimeInterval?
@@ -42,6 +58,8 @@ final class SessionDriver: @unchecked Sendable {
         environment = SessionEnvironment()
         baseTuning = tuning
         machine = SessionStateMachine(tuning: tuning, environment: environment)
+        // 默认只开四指轻点（D20）
+        UserDefaults.standard.register(defaults: ["fourFingerTap": true, "holdTrigger": false])
     }
 
     /// 在任意线程调用，异步投递到 input.queue
@@ -67,13 +85,18 @@ final class SessionDriver: @unchecked Sendable {
         dispatchPrecondition(condition: .onQueue(queue))
         if case .frame(let f) = event, machine.state == .idle, f.contacts.contains(where: { $0.phase == .began }) {
             applyOverrides()
+            refreshEnvironment()
         }
         if case .frame(let f) = event { frameTimestamp = f.timestamp } else { frameTimestamp = nil }
-        for effect in machine.handle(event) { apply(effect) }
+        let effects = machine.handle(event)
+        if case .active(let ctx) = machine.state { sessionDevice = ctx.device }
+        // 面板的退场方式取决于同一批副作用里的会话结束原因（D16）
+        let end = effects.lazy.compactMap { if case .sessionEnded(let e) = $0 { e } else { nil } }.first
+        for effect in effects { apply(effect, end: end) }
         updateTimer()
     }
 
-    private func apply(_ effect: SessionEffect) {
+    private func apply(_ effect: SessionEffect, end: SessionEnd?) {
         switch effect {
         case .policy(let p):
             tap.publish(p)
@@ -81,11 +104,9 @@ final class SessionDriver: @unchecked Sendable {
         case .cursor(let c):
             cursor.apply(c)
         case .armed:
-            // 冻结光标所在屏幕决定面板尺寸（FR-8.5、8.6）；在进入激活前送回状态机
-            environment.screenSize = Self.cursorScreenSize()
-            _ = machine.handle(.environment(environment))
             if case .armed(let ctx) = machine.state { armStartedAt = ctx.startedAt }
         case .showPanel(let s):
+            log.info("panel shown: \(s.layout.id, privacy: .public)")
             let sample = panelShownSample()
             DispatchQueue.main.async {
                 self.overlay.show(s)
@@ -98,16 +119,17 @@ final class SessionDriver: @unchecked Sendable {
                 if let frameAt { self.onLatency?(.pointer(ProcessInfo.processInfo.systemUptime - frameAt)) }
             }
         case .hidePanel:
-            DispatchQueue.main.async { self.overlay.hide() }
+            let style = Self.dismissal(for: end)
+            if case .commit = style { performHaptic(.strong, force: true) }
+            DispatchQueue.main.async { self.overlay.dismiss(style) }
         case .flashSlot(let id):
             DispatchQueue.main.async { self.overlay.flash(id) }
         case .haptic:
-            let now = ProcessInfo.processInfo.systemUptime
-            if now - lastHaptic >= Self.hapticMinInterval {
-                lastHaptic = now
-                DispatchQueue.main.async {
-                    NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
-                }
+            performHaptic(.light)
+        case .slider(let target, let value):
+            switch target {
+            case .volume: SystemVolume.set(value)
+            case .demo: break
             }
         case .action(let request):
             executor.enqueue(request)
@@ -120,6 +142,23 @@ final class SessionDriver: @unchecked Sendable {
         }
     }
 
+    /// FR-6.14：两次间隔不少于 40 ms；提交时的确认震动（D16）不受间隔限制
+    private func performHaptic(_ strength: TrackpadHaptics.Strength, force: Bool = false) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard force || now - lastHaptic >= Self.hapticMinInterval else { return }
+        lastHaptic = now
+        haptics.perform(strength, on: sessionDevice)
+    }
+
+    /// 面板退场方式（D16）：提交时留下选中的槽位，用户主动取消时淡出，异常时立即隐藏
+    static func dismissal(for end: SessionEnd?) -> OverlayController.Dismissal {
+        switch end {
+        case .committed(let id): .commit(id)
+        case .anchorLifted, .escape, .cancelSlot, .idleTimeout, .thirdFinger, .handoff, .liftAfterPress, .liftOutside, .tapToggle: .fade
+        default: .immediate
+        }
+    }
+
     /// AC-1：锚指落下 → 进入激活 → 面板在主线程显示，后一段在主线程上补全
     private func panelShownSample() -> (@Sendable (TimeInterval) -> LatencySample)? {
         guard onLatency != nil, let armedAt = armStartedAt, case .active(let ctx) = machine.state else { return nil }
@@ -128,15 +167,29 @@ final class SessionDriver: @unchecked Sendable {
     }
 
     /// 空闲时有新手指落下才读取一次，改动在下一次唤起生效
+    /// 空闲时每次有手指落下：冻结光标所在屏幕决定面板尺寸（FR-8.5、8.6），并读取滑杆的实际值。
+    /// 在进入激活之前送回状态机；轻点唤起（D19）不经过候选期，所以不能等到候选开始再刷新
+    private func refreshEnvironment() {
+        environment.screenSize = Self.cursorScreenSize()
+        environment.sliderValues[.volume] = SystemVolume.get()
+        _ = machine.handle(.environment(environment))
+    }
+
     private func applyOverrides() {
         var t = baseTuning
         let scale = UserDefaults.standard.double(forKey: Self.mappingScaleKey)
         if scale > 0 {
             t.mappingScale = min(max(scale, Tuning.mappingScaleRange.lowerBound), Tuning.mappingScaleRange.upperBound)
         }
+        let panel = UserDefaults.standard.double(forKey: Self.panelScaleKey)
+        if panel > 0 {
+            t.panelScale = min(max(panel, Tuning.panelScaleRange.lowerBound), Tuning.panelScaleRange.upperBound)
+        }
+        t.stickyPanel = UserDefaults.standard.bool(forKey: Self.stickyPanelKey)
+        for trigger in Self.triggers { t[keyPath: trigger.path] = UserDefaults.standard.bool(forKey: trigger.key) }
         guard t != machine.tuning else { return }
         _ = machine.handle(.tuning(t))
-        onDebug?("映射区 \(t.mappingScale)")
+        onDebug?("面板 \(t.panelScale) · 映射区 \(t.mappingScale) · 常驻 \(t.stickyPanel ? "开" : "关")")
     }
 
     private func updateTimer() {
@@ -175,37 +228,92 @@ enum LatencySample: Sendable {
 /// 主线程上的浮层控制
 @MainActor
 final class OverlayController {
-    /// 连续触发提交时槽位闪烁的时长（SRS 8.3）
-    static let flashDuration: TimeInterval = 0.15
+    /// 面板退场方式（D16，视觉修订见 D20）
+    enum Dismissal: Equatable {
+        /// 立即隐藏（异常退出，NFR-7 的故障安全优先）
+        case immediate
+        /// 整体收拢淡出（用户主动取消）
+        case fade
+        /// 其余按钮淡出，选中的按钮留下并扩散一圈波纹，随后消散
+        case commit(SlotID)
+    }
+
+    /// 调试菜单"背景压暗"（D20）
+    static let dimKey = "dimBackground"
+    /// 提交后选中按钮停留的时长
+    static let commitHold: TimeInterval = 0.24
+    /// 其余按钮淡出、整体收拢的时长
+    static let leaveDuration: TimeInterval = 0.2
+    /// 选中按钮最后消散的时长
+    static let dissolveDuration: TimeInterval = 0.16
+    /// 先以"未弹开"渲染，等首帧完成再切到"显示"开始弹开动画：首帧要创建玻璃，实测约 50 ms，
+    /// 动画若同时开始，前几帧会被吃掉，看起来一跳一跳的
+    static let enterKick: TimeInterval = 0.05
 
     let model = OverlayModel()
     private lazy var panel = OverlayPanel(model: model)
+    /// 每次显示加一；延迟执行的动画步骤据此判断面板是否已被新的会话重新显示
+    private var generation = 0
 
-    init(slotGap: Double) {
+    init(slotGap: Double, trailMs: Double) {
         model.slotGap = slotGap
+        model.trailDuration = trailMs / 1000
         _ = panel  // FR-8.4：启动时创建并保持隐藏
     }
 
+    private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }  // FR-8.10
+
     func show(_ state: PanelState) {
-        model.state = state
-        panel.show(size: state.size)
+        generation += 1
+        model.dim = UserDefaults.standard.bool(forKey: Self.dimKey)
+        model.phase = reduceMotion ? .shown : .entering
+        model.apply(state)
+        model.groupOrigin = panel.show(groupSize: state.size)
+        guard !reduceMotion else { return }
+        after(Self.enterKick) { $0.model.phase = .shown }
     }
 
     func update(_ state: PanelState) {
-        model.state = state
+        model.apply(state)
+    }
+
+    func dismiss(_ style: Dismissal) {
+        guard panel.isVisible else { return hide() }
+        switch style {
+        case .immediate:
+            hide()
+        case _ where reduceMotion:
+            hide()
+        case .fade:
+            model.phase = .collapsing
+            after(Self.leaveDuration) { $0.hide() }
+        case .commit(let id):
+            model.pulse(id)
+            model.phase = .committing(id)
+            after(Self.commitHold) {
+                $0.model.phase = .dissolving(id)
+                $0.after(Self.dissolveDuration) { $0.hide() }
+            }
+        }
+    }
+
+    /// 延迟执行动画的下一步；期间面板被重新显示则放弃
+    private func after(_ delay: TimeInterval, _ step: @escaping @MainActor (OverlayController) -> Void) {
+        let current = generation
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, generation == current else { return }
+            step(self)
+        }
     }
 
     func hide() {
         panel.hide()
-        model.state = nil
-        model.flashing = nil
+        model.apply(nil)
+        model.phase = .shown
     }
 
+    /// 按压执行（D18）：计数、回弹与波纹
     func flash(_ id: SlotID) {
-        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }  // FR-8.10
-        model.flashing = id
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.flashDuration) { [weak self] in
-            if self?.model.flashing == id { self?.model.flashing = nil }
-        }
+        model.press(id, animate: !reduceMotion)
     }
 }
