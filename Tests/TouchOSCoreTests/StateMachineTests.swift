@@ -32,7 +32,7 @@ private func run(_ g: Gesture, tuning: Tuning = .test, environment: SessionEnvir
         var suspended = SessionEnvironment.test
         suspended.suspended = true
         var noLayout = SessionEnvironment.test
-        noLayout.layout = nil
+        noLayout.panels = []
         let wrongDevice = Gesture(device: .external).touch(id: 1, at: Spot.anchor, t: 0).hold(id: 1, until: 0.4)
         for h in [outside, twoFingers, run(anchorDown().hold(id: 1, until: 0.4), environment: suspended),
                   run(anchorDown().hold(id: 1, until: 0.4), environment: noLayout), run(wrongDevice)] {

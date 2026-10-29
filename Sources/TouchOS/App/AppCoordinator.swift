@@ -10,12 +10,11 @@ final class AppCoordinator {
     static let permissionPollInterval: TimeInterval = 2
     /// AC-17 调试：点菜单后留给用户唤起面板的时间
     static let debugStallDelay: TimeInterval = 5
-    /// 调试菜单"实验布局"的开关状态
-    static let experimentKey = "experimentLayouts"
 
     private let log = Logger(subsystem: TouchOSCore.logSubsystem, category: "app")
     private let tuning = Tuning()  // K8 起从配置读取
     private let menuBar = MenuBarController()
+    private let appearanceMenu = AppearanceMenu()
     private let queue = DispatchQueue(label: "ai.nekro.touchos.input", qos: .userInteractive)
     private var driver: SessionDriver!
     private var pipeline: InputPipeline!
@@ -36,12 +35,14 @@ final class AppCoordinator {
         tap = EventTapController(measure: DebugOverlayController.isAvailable, onPhysicalPress: { ref.driver?.send(.physicalPress) },
                                  onEscape: { ref.driver?.send(.escapeKey) },
                                  onDisabled: { ref.driver?.send(.tapDisabled) })
+        tap.onPhysicalRelease = { ref.driver?.send(.physicalRelease) }
         let overlay = OverlayController(slotGap: tuning.slotGap, trailMs: tuning.trailMs)
         let driver = SessionDriver(queue: queue, tuning: tuning, tap: tap, cursor: CursorLock(tap: tap),
                                    executor: ActionExecutor(), overlay: overlay)
         ref.driver = driver
         self.driver = driver
-        driver.updateEnvironment { $0.layout = DemoLayout.layout }
+        driver.updateEnvironment { $0.panels = PresetPanels.all }
+        menuBar.appearanceItem = appearanceMenu.item
 
         pipeline = InputPipeline(
             queue: queue,
@@ -59,9 +60,11 @@ final class AppCoordinator {
                 self?.menuBar.debugOverlayVisible = debug.isVisible
             }
             driver.onDebug = { line in DispatchQueue.main.async { debug.model.log(line) } }
+            appearanceMenu.onChange = { a in
+                debug.model.log("外观：\(a.theme.title) · \(a.nav.title) · 强调色 \(a.accentHex ?? "自动")（下一次唤起生效）")
+            }
             driver.onLatency = { sample in debug.model.record(sample) }
             let tap = self.tap!
-            applyLayouts()
             let base = tuning
             let percents = { (values: [Double]) in values.map { (label: "\(Int(($0 * 100).rounded()))%", value: $0) } }
             menuBar.debugChoices = [
@@ -74,10 +77,6 @@ final class AppCoordinator {
                 },
             ]
             menuBar.debugToggles = [
-                .init(title: "实验布局", key: Self.experimentKey) { [weak self] on in
-                    self?.applyLayouts()
-                    debug.model.log(on ? "实验布局：开（左下、右下各两页）" : "实验布局：关")
-                },
                 .init(title: "常驻模式", key: SessionDriver.stickyPanelKey) { on in
                     debug.model.log(on ? "常驻模式：开（下一次唤起生效）" : "常驻模式：关")
                 },
@@ -108,12 +107,6 @@ final class AppCoordinator {
         startInput()
         observeSystem()
         refreshStatus()
-    }
-
-    /// 演示布局，或调试菜单开启"实验布局"时的多角落、多页实验布局
-    private func applyLayouts() {
-        let experiment = DebugOverlayController.isAvailable && UserDefaults.standard.bool(forKey: Self.experimentKey)
-        driver.updateEnvironment { $0.cornerPanels = experiment ? ExperimentLayouts.panels : [:] }
     }
 
     func shutdown() {

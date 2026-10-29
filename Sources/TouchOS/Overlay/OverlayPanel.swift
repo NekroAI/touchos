@@ -68,7 +68,15 @@ final class OverlayModel {
     }
 
     private(set) var state: PanelState?
-    var phase = Phase.shown
+    var phase = Phase.shown {
+        didSet { if phase != oldValue { phaseAt = ProcessInfo.processInfo.systemUptime } }
+    }
+    /// 阶段开始的时刻：面板堆栈据此计算邻近面板的淡入淡出
+    private(set) var phaseAt: TimeInterval = 0
+    /// 本次显示的时刻
+    var shownAt: TimeInterval = 0
+    /// 主题、切换动画、强调色（每次显示时读取）
+    var appearance = Appearance()
     /// 按钮组左上角在窗口中的位置
     var groupOrigin = CGPoint.zero
     /// 背景压暗（调试菜单开关）
@@ -122,84 +130,67 @@ final class OverlayModel {
     }
 }
 
-/// 按钮组视觉尺寸与动效参数（SRS 8.3，修订见 decisions.md D20）
+/// 按钮组视觉尺寸与动效参数（SRS 8.3，修订见 decisions.md D20、D23）。各主题的画法常量放在各自的视图里
 enum PanelMetrics {
-    /// 按钮在槽位可见区域（已扣掉 `P.slotGap`）基础上每边再小的量：按钮铺满各自的格子，之间留出等宽的缝
+    /// 按钮在槽位可见区域（已扣掉 `P.slotGap`）基础上每边再小的量
     static let chipInset: CGFloat = 2
-    static let chipCornerRadius: CGFloat = 18
     /// 环形布局的圆形按钮：直径取环宽与弦长中较小者的该比例，再限制在上下限之间
     static let roundChipFill: CGFloat = 0.7
     static let roundChipMin: CGFloat = 40
     static let roundChipMax: CGFloat = 76
-    /// 取消按钮：中心一个小圆
-    static let cancelChipSize: CGFloat = 40
-    static let iconSize: CGFloat = 26
-    static let roundIconSize: CGFloat = 24
-    static let cancelIconSize: CGFloat = 15
-    static let titleSize: CGFloat = 12.5
+    /// 关闭：中心一个小圆（按住进入编辑，D23）
+    static let cancelChipSize: CGFloat = 42
+    static let titleSize: CGFloat = 12
     static let captionSize: CGFloat = 10.5
 
-    /// 悬停：浮起放大，每边外扩不超过 `hoverGrowMax`（大按钮不至于放大过多）
-    static let hoverScale: CGFloat = 1.06
+    /// 悬停放大（液态光斑主题；其余主题由按钮自身的形态变化表现悬停），每边外扩不超过 `hoverGrowMax`
+    static let hoverScale: CGFloat = 1.09
     static let hoverGrowMax: CGFloat = 8
     /// 提交：选中的按钮放大、停留，然后放大淡出
     static let commitScale: CGFloat = 1.1
     static let commitGrowMax: CGFloat = 12
     static let dissolveScale: CGFloat = 1.18
     /// 按压：缩小后回弹
-    static let pressScale: CGFloat = 0.93
+    static let pressScale: CGFloat = 0.92
     static let pressDown: TimeInterval = 0.06
-    static let pressRelease: TimeInterval = 0.24
+    static let pressRelease: TimeInterval = 0.28
 
-    /// 弹开：从唤起位置方向拉近 `enterPull` 倍距离、缩小，按离唤起位置的距离依次出现，最晚延迟 `enterStagger`。
-    /// 不做模糊：对玻璃做模糊动画代价很高，弹开会卡顿
+    /// 弹开：从唤起位置方向拉近 `enterPull` 倍距离、缩小，按离唤起位置的距离依次出现，最晚延迟 `enterStagger`
     static let enterScale: CGFloat = 0.85
     static let enterPull: CGFloat = 0.35
     static let enterStagger: TimeInterval = 0.08
     static let enterResponse = 0.3
     static let enterDamping = 0.78
-    /// 收拢：向按钮组中心拉近、缩小、淡出。幅度要大，否则看起来是一格一格原地消失（负责人反馈"栅格感"）
+    /// 收拢：向按钮组中心拉近、缩小、淡出
     static let collapseScale: CGFloat = 0.6
     static let collapsePull: CGFloat = 0.6
 
-    /// 使用系统液态玻璃（`defaults write ai.nekro.touchos systemGlass -bool true`）。默认关闭：
-    /// 实测 macOS 27 上液态玻璃不跟随透明度动画，弹开第一帧就整块出现、退场时残留，改用毛玻璃材质（D20）
-    static var systemGlass: Bool { UserDefaults.standard.bool(forKey: "systemGlass") }
+    /// 玻璃：毛玻璃只保留一部分强度（负责人反馈：不要实心），文字加阴影保证可读
+    static let materialOpacity = 0.6
+    static let labelShadowOpacity = 0.55
 
-    /// 未点亮按钮的底色：窗口背景色半透明，深色模式偏暗、浅色模式偏亮
-    static let chipBase = Color(nsColor: .windowBackgroundColor).opacity(0.22)
-    /// 毛玻璃强度、顶部高光与文字阴影（半透明按钮的可读性）
-    static let materialOpacity = 0.55
-    static let sheenOpacity = 0.08
-    static let labelShadowOpacity = 0.35
-
-    /// 悬停光：在按钮下方流动的强调色光晕（透过玻璃）
-    static let glowBlur: CGFloat = 14
-    static let glowOpacity = 0.55
-
-    static let pointerCore: CGFloat = 9
-    static let pointerHalo: CGFloat = 26
+    static let pointerCore: CGFloat = 10
+    static let pointerHalo: CGFloat = 30
     static let trailMaxWidth: CGFloat = 5
-    static let trailMaxOpacity = 0.5
+    static let trailMaxOpacity = 0.45
     /// 指示点在映射区之外（此时抬起即取消，D21、D22）：按钮组整体变淡，显示按钮组范围的轮廓，
-    /// 指示点换成不带强调色的 × 并标注"松手取消"，与悬停在按钮上的样子区分开
+    /// 指示点换成不带强调色的 × 并标注"松手取消"
     static let outsideGroupOpacity = 0.45
-    static let boundsOpacity = 0.3
-    static let cancelPointerSize: CGFloat = 22
+    static let boundsOpacity = 0.4
+    static let cancelPointerSize: CGFloat = 24
     static let cancelPointerFill = 0.75
     static let cancelHintSize: CGFloat = 11
-    static let cancelHintOffset: CGFloat = 24
+    static let cancelHintOffset: CGFloat = 26
     static let dimOpacity = 0.14
 
-    /// 面板名与页码：按钮组上方的小标签，显示这么久后淡出；滑杆数值、圆形按钮名称也按这个距离摆放
-    static let pageLabelDuration: TimeInterval = 1.2
-    static let pageLabelOffset: CGFloat = 30
+    /// 面板名：唤起后显示这么久再淡出，切换面板时重新出现
+    static let titleDuration: TimeInterval = 1.4
+    static let titleOffset: CGFloat = 44
+    /// 圆形按钮名称在按钮下方的距离
+    static let roundTitleOffset: CGFloat = 24
 
-    /// 波纹从按钮轮廓向外扩散的距离与时长
-    static let rippleDistance: CGFloat = 16
-    static let rippleDuration = 0.4
-    /// 波纹从透明亮起的时长
-    static let rippleAttack = 0.04
+    /// 波纹：从按钮中心按比例扩散并淡出
+    static let rippleDuration = 0.45
 
     /// 按比例放大，但每边外扩不超过 `maxGrow`
     static func scale(_ factor: CGFloat, for size: CGSize, maxGrow: CGFloat) -> CGFloat {
@@ -217,11 +208,6 @@ struct ChipGeometry: Equatable {
 
     var frame: CGRect
     var kind: Kind
-
-    var cornerRadius: CGFloat {
-        let half = min(frame.width, frame.height) / 2
-        return kind == .tile ? min(PanelMetrics.chipCornerRadius, half) : half
-    }
 
     func scaled(_ k: CGFloat) -> ChipGeometry {
         let w = frame.width * k, h = frame.height * k
@@ -259,7 +245,7 @@ struct ChipGeometry: Equatable {
     }
 }
 
-/// 浮层根视图：可选的背景压暗、按钮组、面板名标签、指示点
+/// 浮层根视图：可选的背景压暗、面板堆栈（每帧按核心给出的弹簧求值）、指示点
 private struct OverlayRoot: View {
     let model: OverlayModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -267,22 +253,17 @@ private struct OverlayRoot: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             if let state = model.state {
-                let tester = HitTester(layout: state.layout, panelSize: state.size, slotGap: model.slotGap, hysteresis: 0)
                 let groupRect = CGRect(origin: model.groupOrigin, size: state.size)
                 if model.dim {
                     Color.black.opacity(model.phase.appeared && !model.phase.leaving ? PanelMetrics.dimOpacity : 0)
                         .animation(.easeOut(duration: 0.2), value: model.phase)
                 }
-                let outside = state.pointer.map { !CGRect(origin: .zero, size: state.size).contains($0) } ?? false
-                ChipGroup(model: model, state: state, tester: tester)
-                    .frame(width: state.size.width, height: state.size.height, alignment: .topLeading)
-                    .opacity(outside && !model.phase.leaving ? PanelMetrics.outsideGroupOpacity : 1)
-                    .animation(.easeOut(duration: 0.15), value: outside)
-                    .offset(x: groupRect.minX, y: groupRect.minY)
-                    .id(state.layout.id)  // 翻页时整组替换
-                PageLabel(name: state.layout.name, pageIndex: state.pageIndex, pageCount: state.pageCount)
-                    .opacity(model.phase.leaving ? 0 : 1)
-                    .position(x: groupRect.midX, y: groupRect.minY - PanelMetrics.pageLabelOffset)
+                TimelineView(.animation) { timeline in
+                    let _ = timeline.date
+                    PanelStack(model: model, state: state, now: ProcessInfo.processInfo.systemUptime, reduceMotion: reduceMotion)
+                }
+                .frame(width: state.size.width, height: state.size.height, alignment: .topLeading)
+                .offset(x: groupRect.minX, y: groupRect.minY)
                 if !model.phase.leaving {
                     PointerLayer(model: model, groupRect: groupRect,
                                  overCancel: state.hovered.flatMap { state.layout.slot($0) }?.isCancel ?? false,
@@ -291,450 +272,7 @@ private struct OverlayRoot: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-}
-
-/// 一组悬浮按钮与在按钮之间流动的悬停光
-private struct ChipGroup: View {
-    let model: OverlayModel
-    let state: PanelState
-    let tester: HitTester
-
-    var body: some View {
-        let chips = state.layout.slots.compactMap { slot in ChipGeometry.of(slot, tester: tester).map { (slot: slot, geometry: $0) } }
-        let origin = state.origin ?? tester.center
-        let farthest = chips.map { distance($0.geometry, origin) }.max() ?? 1
-        let lit = chips.first { $0.slot.id == (model.phase.chosen ?? state.hovered) && !$0.slot.isCancel }
-        // 收拢与消散时光晕随按钮一起淡出，不在原地残留
-        let fading: Bool = { if case .dissolving = model.phase { true } else { model.phase == .collapsing } }()
-        ZStack(alignment: .topLeading) {
-            HoverGlow(target: fading ? nil : lit.map {
-                $0.geometry.scaled(PanelMetrics.scale(PanelMetrics.hoverScale, for: $0.geometry.frame.size, maxGrow: PanelMetrics.hoverGrowMax))
-            })
-            GlassGroup {
-                ZStack(alignment: .topLeading) {
-                    ForEach(chips, id: \.slot.id) { chip in
-                        ChipView(slot: chip.slot, geometry: chip.geometry, hovered: state.hovered == chip.slot.id,
-                                 value: state.sliderValues[chip.slot.id], pulse: model.pulses[chip.slot.id] ?? 0,
-                                 presses: model.presses[chip.slot.id] ?? 0, phase: model.phase,
-                                 origin: origin, groupCenter: tester.center,
-                                 delay: PanelMetrics.enterStagger * distance(chip.geometry, origin) / max(farthest, 1))
-                    }
-                }
-                .frame(width: state.size.width, height: state.size.height, alignment: .topLeading)
-            }
-        }
-    }
-
-    private func distance(_ g: ChipGeometry, _ p: CGPoint) -> CGFloat {
-        hypot(g.frame.midX - p.x, g.frame.midY - p.y)
-    }
-}
-
-/// macOS 26 起把所有玻璃按钮放进同一个玻璃容器，一次合成；更早的系统直接渲染
-private struct GlassGroup<Content: View>: View {
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        if #available(macOS 26, *), PanelMetrics.systemGlass {
-            GlassEffectContainer(spacing: 0) { content }
-        } else {
-            content
-        }
-    }
-}
-
-/// 一枚悬浮按钮
-private struct ChipView: View {
-    let slot: Slot
-    let geometry: ChipGeometry
-    let hovered: Bool
-    let value: Double?
-    let pulse: Int
-    let presses: Int
-    let phase: OverlayModel.Phase
-    /// 唤起位置与按钮组中心（按钮组 pt）
-    let origin: CGPoint
-    let groupCenter: CGPoint
-    /// 弹开时的延迟
-    let delay: TimeInterval
-
-    var body: some View {
-        let g = geometry
-        let shape = RoundedRectangle(cornerRadius: g.cornerRadius, style: .continuous)
-        let lit = hovered || chosen
-        ZStack {
-            if slot.slider != nil { SliderFill(shape: shape, vertical: g.frame.height > g.frame.width, value: value ?? 0) }
-            ChipLabel(slot: slot, kind: g.kind, lit: lit, value: value)
-        }
-        .frame(width: g.frame.width, height: g.frame.height)
-        // 内容必须是玻璃本身的内容：作为兄弟视图叠在玻璃上时，玻璃容器会把它压到玻璃下面一起模糊
-        .modifier(ChipSurface(shape: shape, lit: lit, cancel: g.kind == .cancel))
-        .overlay { Ripple(shape: shape, trigger: pulse) }
-        .overlay(alignment: .topTrailing) {
-            if presses >= 2 { PressBadge(count: presses).offset(x: 6, y: -6) }
-        }
-        .overlay(alignment: .top) {
-            if slot.slider != nil, hovered, let value { ValueBubble(value: value).offset(y: -PanelMetrics.pageLabelOffset) }
-        }
-        .overlay(alignment: .bottom) {
-            if g.kind == .round { RoundTitle(title: slot.title, lit: lit).offset(y: PanelMetrics.pageLabelOffset - 6) }
-        }
-        .keyframeAnimator(initialValue: CGFloat(1), trigger: pulse) { content, k in
-            content.scaleEffect(k)
-        } keyframes: { _ in
-            // 不用时长为 0 的关键帧：其插值进度为 0/0，曾产生 NaN 导致崩溃（m0-report.md）
-            CubicKeyframe(PanelMetrics.pressScale, duration: PanelMetrics.pressDown)
-            SpringKeyframe(1, duration: PanelMetrics.pressRelease)
-        }
-        .scaleEffect(scale)
-        .opacity(opacity)
-        .offset(offset)
-        .position(x: g.frame.midX, y: g.frame.midY)
-        .animation(.spring(response: 0.22, dampingFraction: 0.72), value: hovered)
-        .animation(phaseAnimation, value: phase)
-    }
-
-    private var chosen: Bool { phase.chosen == slot.id }
-
-    private var dissolving: Bool {
-        if case .dissolving = phase { true } else { false }
-    }
-
-    private var scale: CGFloat {
-        let size = geometry.frame.size
-        if !phase.appeared { return PanelMetrics.enterScale }
-        if chosen {
-            return dissolving ? PanelMetrics.dissolveScale
-                : PanelMetrics.scale(PanelMetrics.commitScale, for: size, maxGrow: PanelMetrics.commitGrowMax)
-        }
-        if phase.leaving { return PanelMetrics.collapseScale }
-        return hovered ? PanelMetrics.scale(PanelMetrics.hoverScale, for: size, maxGrow: PanelMetrics.hoverGrowMax) : 1
-    }
-
-    private var opacity: Double {
-        if !phase.appeared { return 0 }
-        if chosen { return dissolving ? 0 : 1 }
-        return phase.leaving ? 0 : 1
-    }
-
-    private var offset: CGSize {
-        let c = CGPoint(x: geometry.frame.midX, y: geometry.frame.midY)
-        if !phase.appeared {
-            return CGSize(width: (origin.x - c.x) * PanelMetrics.enterPull, height: (origin.y - c.y) * PanelMetrics.enterPull)
-        }
-        if phase == .collapsing {
-            return CGSize(width: (groupCenter.x - c.x) * PanelMetrics.collapsePull,
-                          height: (groupCenter.y - c.y) * PanelMetrics.collapsePull)
-        }
-        return .zero
-    }
-
-    private var phaseAnimation: Animation {
-        switch phase {
-        case .shown: .spring(response: PanelMetrics.enterResponse, dampingFraction: PanelMetrics.enterDamping).delay(delay)
-        case .dissolving: .easeOut(duration: OverlayController.dissolveDuration)
-        case .collapsing: .easeIn(duration: OverlayController.leaveDuration)  // 加速收进中心
-        default: .easeOut(duration: OverlayController.leaveDuration)
-        }
-    }
-}
-
-/// 按钮底：玻璃（macOS 26 起为液态玻璃，更早为毛玻璃），点亮时带强调色。内容画在玻璃之上
-private struct ChipSurface<S: InsettableShape>: ViewModifier {
-    let shape: S
-    let lit: Bool
-    let cancel: Bool
-
-    func body(content: Content) -> some View {
-        let tint = cancel ? Color.white : Color.accentColor
-        Group {
-            if #available(macOS 26, *), PanelMetrics.systemGlass {
-                // 未点亮时也带一层随深浅色变化的底色：清透的玻璃压在文字上时，背后的文字会干扰阅读
-                content.glassEffect(.regular.tint(lit ? tint.opacity(cancel ? 0.2 : 0.35) : PanelMetrics.chipBase), in: shape)
-            } else {
-                // 半透明（负责人反馈：不要实心）：毛玻璃只保留一部分强度，叠一层很淡的底色与顶部高光；文字加阴影保证可读
-                content
-                    .shadow(color: .black.opacity(PanelMetrics.labelShadowOpacity), radius: 2, y: 1)
-                    .background {
-                        ZStack {
-                            shape.fill(.ultraThinMaterial).opacity(PanelMetrics.materialOpacity)
-                            shape.fill(lit ? tint.opacity(0.3) : PanelMetrics.chipBase)
-                            shape.fill(LinearGradient(colors: [.white.opacity(PanelMetrics.sheenOpacity), .clear],
-                                                      startPoint: .top, endPoint: .center))
-                        }
-                    }
-                    .shadow(color: .black.opacity(lit ? 0.25 : 0.1), radius: lit ? 12 : 6, y: lit ? 6 : 2)
-            }
-        }
-        .overlay(shape.strokeBorder(lit ? tint.opacity(0.9) : Color.white.opacity(0.2), lineWidth: lit ? 1.5 : 1))
-    }
-}
-
-/// 在按钮下方流动的强调色光晕：悬停从一枚按钮滑到下一枚，透过玻璃看到的是一块移动的光
-private struct HoverGlow: View {
-    let target: ChipGeometry?
-    @State private var last: ChipGeometry?
-
-    var body: some View {
-        ZStack(alignment: .topLeading) {
-            if let g = target ?? last {
-                RoundedRectangle(cornerRadius: g.cornerRadius, style: .continuous)
-                    .fill(Color.accentColor.opacity(PanelMetrics.glowOpacity))
-                    .frame(width: g.frame.width, height: g.frame.height)
-                    .blur(radius: PanelMetrics.glowBlur)
-                    .position(x: g.frame.midX, y: g.frame.midY)
-                    .opacity(target == nil ? 0 : 1)
-            }
-        }
-        .animation(.spring(response: 0.24, dampingFraction: 0.8), value: target)
-        .onChange(of: target) { _, new in
-            if let new { last = new }
-        }
-        .allowsHitTesting(false)
-    }
-}
-
-private struct SliderFill<S: InsettableShape>: View {
-    let shape: S
-    let vertical: Bool
-    let value: Double
-
-    var body: some View {
-        GeometryReader { g in
-            let w = vertical ? g.size.width : g.size.width * value
-            let h = vertical ? g.size.height * value : g.size.height
-            Rectangle()
-                .fill(LinearGradient(colors: [Color.accentColor.opacity(0.55), Color.accentColor.opacity(0.3)],
-                                     startPoint: vertical ? .top : .trailing, endPoint: vertical ? .bottom : .leading))
-                .frame(width: w, height: h)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: vertical ? .bottom : .leading)
-        }
-        .clipShape(shape)
-        .animation(.easeOut(duration: 0.06), value: value)
-    }
-}
-
-/// 按钮内容：方形按钮为图标 + 名称（说明文字只在点亮时显示）；圆形按钮只放图标，名称在下方；取消只有一个 ×
-private struct ChipLabel: View {
-    let slot: Slot
-    let kind: ChipGeometry.Kind
-    let lit: Bool
-    let value: Double?
-
-    var body: some View {
-        switch kind {
-        case .cancel:
-            Image(systemName: "xmark")
-                .font(.system(size: PanelMetrics.cancelIconSize, weight: .semibold))
-                .foregroundStyle(lit ? .primary : .secondary)
-        case .round:
-            icon(PanelMetrics.roundIconSize)
-        case .tile:
-            VStack(spacing: 5) {
-                icon(PanelMetrics.iconSize)
-                Text(slot.title).font(.system(size: PanelMetrics.titleSize, weight: .medium))
-                    .lineLimit(2).multilineTextAlignment(.center)
-                if let caption {
-                    // 始终占位，点亮时才显示：避免图标和名称随悬停上下跳动
-                    Text(caption).font(.system(size: PanelMetrics.captionSize)).foregroundStyle(.secondary).lineLimit(1)
-                        .opacity(lit || slot.slider != nil ? 1 : 0)
-                }
-            }
-            .padding(6)
-        }
-    }
-
-    private func icon(_ size: CGFloat) -> some View {
-        Image(systemName: slot.symbol)
-            .font(.system(size: size, weight: .medium))
-            .symbolRenderingMode(.hierarchical)
-            .symbolEffect(.bounce, value: lit)
-    }
-
-    private var caption: String? {
-        if slot.slider != nil { return value.map { "\(Int(($0 * 100).rounded()))%" } }
-        return slot.action.shortLabel
-    }
-}
-
-/// 圆形按钮下方的名称：直接浮在桌面上，用一层毛玻璃保证可读
-private struct RoundTitle: View {
-    let title: String
-    let lit: Bool
-
-    var body: some View {
-        Text(title)
-            .font(.system(size: PanelMetrics.captionSize + 1, weight: lit ? .semibold : .medium))
-            .lineLimit(1)
-            .padding(.horizontal, 7).padding(.vertical, 2)
-            .background(.ultraThinMaterial, in: Capsule())
-            .fixedSize()
-    }
-}
-
-/// 连按计数：同一按钮按压执行两次起显示 ×N
-private struct PressBadge: View {
-    let count: Int
-
-    var body: some View {
-        Text("×\(count)")
-            .font(.system(size: 11, weight: .bold).monospacedDigit())
-            .contentTransition(.numericText(value: Double(count)))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 6).padding(.vertical, 2)
-            .background(Color.accentColor, in: Capsule())
-            .animation(.snappy, value: count)
-    }
-}
-
-/// 滑杆悬停时在上方放大显示的数值
-private struct ValueBubble: View {
-    let value: Double
-
-    var body: some View {
-        Text("\(Int((value * 100).rounded()))%")
-            .font(.system(size: 15, weight: .semibold).monospacedDigit())
-            .padding(.horizontal, 10).padding(.vertical, 4)
-            .background(.regularMaterial, in: Capsule())
-            .fixedSize()
-    }
-}
-
-/// 按钮组上方的面板名与页码：出现或翻页时显示一会儿后淡出
-private struct PageLabel: View {
-    let name: String
-    let pageIndex: Int
-    let pageCount: Int
-    @State private var visible = false
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Text(name).font(.system(size: 12, weight: .semibold))
-            if pageCount > 1 {
-                HStack(spacing: 4) {
-                    ForEach(0..<pageCount, id: \.self) { i in
-                        Circle().fill(i == pageIndex ? Color.primary : Color.secondary.opacity(0.4)).frame(width: 5, height: 5)
-                    }
-                }
-            }
-        }
-        .padding(.horizontal, 12).padding(.vertical, 6)
-        .background(.regularMaterial, in: Capsule())
-        .fixedSize()
-        .opacity(visible ? 1 : 0)
-        .task(id: "\(name)#\(pageIndex)") {
-            withAnimation(.easeOut(duration: 0.15)) { visible = true }
-            try? await Task.sleep(for: .seconds(PanelMetrics.pageLabelDuration))
-            withAnimation(.easeIn(duration: 0.3)) { visible = false }
-        }
-    }
-}
-
-/// 提交与按压执行的波纹：强调色描边从按钮轮廓向外扩散并淡出
-private struct Ripple<S: InsettableShape>: View {
-    struct Value {
-        var spread: CGFloat = 0
-        var opacity = 0.0
-    }
-
-    let shape: S
-    let trigger: Int
-
-    var body: some View {
-        // 外扩固定距离而不是按比例缩放：大小按钮的波纹看起来一样
-        Color.clear
-            .keyframeAnimator(initialValue: Value(), trigger: trigger) { _, v in
-                shape.inset(by: -v.spread).stroke(Color.accentColor, lineWidth: 3).opacity(v.opacity)
-            } keyframes: { _ in
-                KeyframeTrack(\.spread) {
-                    CubicKeyframe(PanelMetrics.rippleDistance, duration: PanelMetrics.rippleDuration)
-                }
-                KeyframeTrack(\.opacity) {
-                    LinearKeyframe(0.9, duration: PanelMetrics.rippleAttack)
-                    CubicKeyframe(0, duration: PanelMetrics.rippleDuration - PanelMetrics.rippleAttack)
-                }
-            }
-            .allowsHitTesting(false)
-    }
-}
-
-/// 指示点与轨迹，按显示刷新率重绘并在触点帧之间插值（FR-8.9）。
-/// 落在按钮上时也照常显示：用户靠它判断手指的真实位置、预判移动距离（负责人反馈，D20）
-private struct PointerLayer: View {
-    let model: OverlayModel
-    /// 按钮组在窗口中的位置；指示点坐标是按钮组 pt，绘制时加上偏移
-    let groupRect: CGRect
-    let overCancel: Bool
-    let showTrail: Bool
-
-    var body: some View {
-        TimelineView(.animation) { timeline in
-            Canvas { ctx, _ in
-                let now = ProcessInfo.processInfo.systemUptime
-                let _ = timeline.date
-                let color = overCancel ? Color.gray : Color.accentColor
-                ctx.translateBy(x: groupRect.minX, y: groupRect.minY)
-                if showTrail { drawTrail(&ctx, now: now, color: color) }
-                guard let p = model.displayedPointer(at: now) else { return }
-                // 指示点在映射区之外：抬起即取消。显示按钮组范围的轮廓（提示要移回多远，D15），指示点换成取消样式
-                let local = CGRect(origin: .zero, size: groupRect.size)
-                if !local.contains(p) {
-                    ctx.stroke(Path(roundedRect: local, cornerRadius: PanelMetrics.chipCornerRadius),
-                               with: .color(.white.opacity(PanelMetrics.boundsOpacity)), style: StrokeStyle(lineWidth: 1.5, dash: [6, 6]))
-                    drawCancelPointer(&ctx, at: p)
-                    return
-                }
-                let halo = PanelMetrics.pointerHalo, core = PanelMetrics.pointerCore
-                ctx.fill(Path(ellipseIn: CGRect(x: p.x - halo / 2, y: p.y - halo / 2, width: halo, height: halo)),
-                         with: .radialGradient(Gradient(colors: [color.opacity(0.55), color.opacity(0)]),
-                                               center: p, startRadius: core / 2, endRadius: halo / 2))
-                let coreRect = CGRect(x: p.x - core / 2, y: p.y - core / 2, width: core, height: core)
-                ctx.fill(Path(ellipseIn: coreRect), with: .color(.white))
-                ctx.stroke(Path(ellipseIn: coreRect), with: .color(color), lineWidth: 2)
-            }
-        }
-        .allowsHitTesting(false)
-    }
-
-    /// 取消样式的指示点：深色圆底上一个白色 ×，下方深色胶囊里一行"松手取消"（浅色背景上也看得清）
-    private func drawCancelPointer(_ ctx: inout GraphicsContext, at p: CGPoint) {
-        let d = PanelMetrics.cancelPointerSize
-        let disc = CGRect(x: p.x - d / 2, y: p.y - d / 2, width: d, height: d)
-        ctx.fill(Path(ellipseIn: disc), with: .color(.black.opacity(PanelMetrics.cancelPointerFill)))
-        ctx.stroke(Path(ellipseIn: disc), with: .color(.white.opacity(0.9)), lineWidth: 1.5)
-        let k = d * 0.2
-        var cross = Path()
-        cross.move(to: CGPoint(x: p.x - k, y: p.y - k))
-        cross.addLine(to: CGPoint(x: p.x + k, y: p.y + k))
-        cross.move(to: CGPoint(x: p.x + k, y: p.y - k))
-        cross.addLine(to: CGPoint(x: p.x - k, y: p.y + k))
-        ctx.stroke(cross, with: .color(.white), style: StrokeStyle(lineWidth: 2, lineCap: .round))
-        let hint = ctx.resolve(Text("松手取消").font(.system(size: PanelMetrics.cancelHintSize, weight: .medium)).foregroundStyle(.white))
-        let size = hint.measure(in: CGSize(width: 200, height: 40))
-        let at = CGPoint(x: p.x, y: p.y + PanelMetrics.cancelHintOffset)
-        let capsule = CGRect(x: at.x - size.width / 2 - 7, y: at.y - size.height / 2 - 3, width: size.width + 14, height: size.height + 6)
-        ctx.fill(Path(roundedRect: capsule, cornerRadius: capsule.height / 2), with: .color(.black.opacity(PanelMetrics.cancelPointerFill)))
-        ctx.draw(hint, at: at)
-    }
-
-    /// 最近 `P.trailMs` 的路径：越旧越细、越透明
-    private func drawTrail(_ ctx: inout GraphicsContext, now: TimeInterval, color: Color) {
-        var points = model.samples.filter { now - $0.t <= model.trailDuration }.map { ($0.t, $0.p) }
-        if let head = model.displayedPointer(at: now) {
-            points.removeAll { $0.0 > now }
-            points.append((now, head))
-        }
-        guard points.count >= 2 else { return }
-        for i in 1..<points.count {
-            let age = (now - points[i].0) / model.trailDuration
-            let k = max(0, 1 - age)
-            var seg = Path()
-            seg.move(to: points[i - 1].1)
-            seg.addLine(to: points[i].1)
-            ctx.stroke(seg, with: .color(color.opacity(PanelMetrics.trailMaxOpacity * k)),
-                       style: StrokeStyle(lineWidth: max(1, PanelMetrics.trailMaxWidth * k), lineCap: .round))
-        }
+        .environment(\.overlayStyle, OverlayStyle(model.appearance))
     }
 }
 

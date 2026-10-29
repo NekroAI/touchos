@@ -55,6 +55,21 @@ public struct Tuning: Equatable, Sendable {
     public var tapMaxMoveMM = 3.0
     /// `P.doubleTapGapMs`：角落双击两次轻点之间（前一次抬起到后一次落下）的最长间隔
     public var doubleTapGapMs = 300.0
+    /// `P.navDistanceMM`：双指上下移动这么远切换一个面板（D23）
+    public var navDistanceMM = 30.0
+    /// `P.pinchDistanceMM`：双指间距变化这么多完成一次进入或退出总览
+    public var pinchDistanceMM = 25.0
+    /// `P.navClassifyMM`：双指位移或间距变化超过该值后判定是切换、捏合还是水平移动
+    public var navClassifyMM = 4.0
+    /// `P.navProjection`：松手时按速度向前推算落点的时长（秒）
+    public var navProjection = 0.18
+    /// 面板切换与总览过渡的弹簧：周期（秒）与阻尼比
+    public var navResponse = 0.42
+    public var navDamping = 0.86
+    public var overviewResponse = 0.4
+    public var overviewDamping = 0.9
+    /// `P.editHoldMs`：在关闭上按住多久进入编辑（D23）
+    public var editHoldMs = 600.0
     /// `P.actionDelayMs`
     public var actionDelayMs = 30.0
     /// `P.smoothing`

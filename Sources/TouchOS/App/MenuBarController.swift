@@ -41,6 +41,11 @@ final class MenuBarController: NSObject {
         didSet { rebuildMenu() }
     }
 
+    /// "外观"子菜单（主题、切换动画、强调色），放在状态行下方
+    var appearanceItem: NSMenuItem? {
+        didSet { rebuildMenu() }
+    }
+
     var debugOverlayVisible = false {
         didSet { debugItem?.state = debugOverlayVisible ? .on : .off }
     }
@@ -71,6 +76,11 @@ final class MenuBarController: NSObject {
         statusLine.menu?.removeItem(statusLine)
         menu.addItem(statusLine)
         menu.addItem(.separator())
+        if let appearanceItem {
+            appearanceItem.menu?.removeItem(appearanceItem)
+            menu.addItem(appearanceItem)
+            menu.addItem(.separator())
+        }
         if onToggleDebugOverlay != nil {
             let item = NSMenuItem(title: "调试叠层", action: #selector(toggleDebugOverlay), keyEquivalent: "d")
             item.target = self

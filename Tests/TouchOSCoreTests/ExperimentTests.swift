@@ -3,7 +3,7 @@ import Foundation
 import Testing
 @testable import TouchOSCore
 
-// 交互实验（decisions.md D12、D13）：扇区、滑杆、按压动作、多角落多页面板
+// 交互实验（decisions.md D12、D13、D23）：扇区、滑杆、按压动作、各角绑定面板
 
 private let rate = 90.0
 
@@ -44,13 +44,14 @@ private enum ExpSpot {
     static let bottomRightAnchor = (0.95, 0.06)
 }
 
-private func environment(_ panels: [AnchorCorner: [Layout]]) -> SessionEnvironment {
+private func environment(_ panels: [Layout], bindings: [PanelTrigger: String] = [:]) -> SessionEnvironment {
     var env = SessionEnvironment.test
-    env.cornerPanels = panels
+    env.panels = panels
+    env.bindings = bindings
     return env
 }
 
-private func run(_ g: Gesture, environment: SessionEnvironment = environment([.bottomLeft: [experiment]]),
+private func run(_ g: Gesture, environment: SessionEnvironment = environment([experiment]),
                  events: [(TimeInterval, SessionEvent)] = [], until: TimeInterval) -> Harness {
     var h = Harness(tuning: .test, environment: environment)
     h.run(g.frames(rate: rate), events: events, until: until)
@@ -136,7 +137,7 @@ private func activeLayout(_ h: Harness) -> String? {
     }
 
     @Test func pressOnSliderAppliesPreviewAndKeepsIt() {
-        var env = environment([.bottomLeft: [experiment]])
+        var env = environment([experiment])
         env.sliderValues[.volume] = 0.3
         let g = anchored().touch(id: 2, at: ExpSpot.sliderRight, t: 0.5).hold(id: 2, until: 0.7)
             .move(id: 2, to: ExpSpot.plain, over: 0.1).hold(id: 2, until: 1.0)
@@ -149,7 +150,7 @@ private func activeLayout(_ h: Harness) -> String? {
         #expect(last?.sliderValues["slider"] == applied[0])
     }
 
-    @Test func pressOnCancelOrWithoutPointerOnSinglePageDoesNothing() {
+    @Test func pressOnCancelOrWithoutPointerDoesNothing() {
         let cancel = anchored().touch(id: 2, at: Spot.null, t: 0.5).hold(id: 2, until: 0.9)
         let single = anchored()
         for h in [run(cancel, environment: .test, events: [(0.6, .physicalPress)], until: 1.0),
@@ -159,30 +160,25 @@ private func activeLayout(_ h: Harness) -> String? {
         }
     }
 
-    @Test func pressWithoutPointerFlipsPages() {
-        let env = environment([.bottomLeft: [experiment, radial]])
-        let once = run(anchored(), environment: env, events: [(0.3, .physicalPress)], until: 0.5)
-        #expect(activeLayout(once) == "radial")
-        #expect(once.effects.contains(.haptic))
-        let twice = run(anchored(), environment: env, events: [(0.3, .physicalPress), (0.6, .physicalPress)], until: 0.8)
-        #expect(activeLayout(twice) == "exp")
-        let shown = twice.effects.compactMap { if case .updatePanel(let s) = $0 { s } else { nil } }
-        #expect(shown.last?.pageIndex == 0 && shown.last?.pageCount == 2)
+    @Test func pressWithoutPointerNoLongerFlipsPanels() {
+        // D23：去掉按压翻页，改为双指切换
+        let h = run(anchored(), environment: environment([experiment, radial]), events: [(0.3, .physicalPress)], until: 0.5)
+        #expect(activeLayout(h) == "exp")
     }
 }
 
 @Suite struct CornerPanelTests {
-    @Test func cornerSelectsItsPanels() {
-        let env = environment([.bottomRight: [radial]])
+    @Test func cornerOpensItsBoundPanel() {
+        let env = environment([experiment, radial], bindings: [.hold(.bottomRight): "radial"])
         let left = run(anchored(until: 0.5), environment: env, until: 0.5)
-        #expect(left.effects.isEmpty)
+        #expect(activeLayout(left) == "exp")
         let right = run(Gesture(device: .builtIn).touch(id: 1, at: ExpSpot.bottomRightAnchor, t: 0).hold(id: 1, until: 0.5),
                         environment: env, until: 0.5)
         #expect(activeLayout(right) == "radial")
     }
 
     @Test func pointerCannotStartInTheActiveCornersZone() {
-        let env = environment([.bottomRight: [experiment]])
+        let env = environment([experiment], bindings: [.hold(.bottomRight): "exp"])
         let g = Gesture(device: .builtIn).touch(id: 1, at: ExpSpot.bottomRightAnchor, t: 0).hold(id: 1, until: 1.0)
             .touch(id: 2, at: (0.94, 0.08), t: 0.5).hold(id: 2, until: 0.9)
         let h = run(g, environment: env, until: 0.9)
@@ -210,7 +206,7 @@ private func activeLayout(_ h: Harness) -> String? {
     }
 
     @Test func leavingSliderRestoresValueAndAppliesNothing() {
-        var env = environment([.bottomLeft: [experiment]])
+        var env = environment([experiment])
         env.sliderValues[.volume] = 0.3
         let g = anchored().touch(id: 2, at: ExpSpot.sliderLeft, t: 0.5).move(id: 2, to: ExpSpot.sliderRight, over: 0.2)
             .move(id: 2, to: ExpSpot.plain, over: 0.2).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
@@ -222,7 +218,7 @@ private func activeLayout(_ h: Harness) -> String? {
     }
 
     @Test func panelStartsWithEnvironmentSliderValue() {
-        var env = environment([.bottomLeft: [experiment]])
+        var env = environment([experiment])
         env.sliderValues[.volume] = 0.4
         let h = run(anchored(until: 0.6), environment: env, until: 0.6)
         let shown = h.effects.compactMap { if case .showPanel(let s) = $0 { s } else { nil } }
@@ -280,27 +276,28 @@ private func activeLayout(_ h: Harness) -> String? {
         #expect(runSticky(resting, until: 7).isActive)
     }
 
-    @Test func multiFingerMovementOrRestHandsOffToSystem() {
-        // D22：多指停留超过轻点时限，或开始移动，才交还系统手势
-        let resting = anchorThenLift().touch(id: 2, at: Spot.gap, t: 0.8).touch(id: 3, at: Spot.a, t: 0.9).hold(id: 2, until: 1.3)
-            .hold(id: 3, until: 1.3)
+    @Test func threeFingerMovementOrRestHandsOffToSystem() {
+        // D22：三指以上停留超过轻点时限，或开始移动，才交还系统手势
+        let three = { (g: Gesture) in g.touch(id: 2, at: (0.4, 0.5), t: 0.8).touch(id: 3, at: (0.5, 0.5), t: 0.8)
+            .touch(id: 4, at: (0.6, 0.5), t: 0.8) }
+        let resting = three(anchorThenLift()).hold(id: 2, until: 1.3).hold(id: 3, until: 1.3).hold(id: 4, until: 1.3)
         let h = runSticky(resting, until: 1.3)
         #expect(h.ends == [.handoff])
-        #expect(h.policies.last?.passGestures == true)
-        let swipe = anchorThenLift().touch(id: 2, at: (0.4, 0.5), t: 0.8).touch(id: 3, at: (0.5, 0.5), t: 0.8)
-            .move(id: 2, to: (0.4, 0.7), over: 0.1).move(id: 3, to: (0.5, 0.7), over: 0.1)
+        #expect(h.policies.contains { $0.mode == .cooldown && $0.passGestures })
+        let swipe = three(anchorThenLift()).move(id: 2, to: (0.3, 0.5), over: 0.1).move(id: 3, to: (0.4, 0.5), over: 0.1)
+            .move(id: 4, to: (0.5, 0.5), over: 0.1)
         #expect(runSticky(swipe, until: 1.0).ends == [.handoff])
-        // 刚落下还没动：面板保留
-        let landing = anchorThenLift().touch(id: 2, at: Spot.gap, t: 0.8).touch(id: 3, at: Spot.a, t: 0.81).hold(id: 2, until: 0.9)
-            .hold(id: 3, until: 0.9)
-        #expect(runSticky(landing, until: 0.9).isActive)
+        // 两指停留不交还：面板保留（D23 双指用于切换面板）
+        let two = anchorThenLift().touch(id: 2, at: Spot.gap, t: 0.8).touch(id: 3, at: Spot.a, t: 0.81).hold(id: 2, until: 1.4)
+            .hold(id: 3, until: 1.4)
+        #expect(runSticky(two, until: 1.4).isActive)
     }
 
-    @Test func pressOnGapFlipsPageInStickyMode() {
-        let env = environment([.bottomLeft: [Layout.test, radial]])
+    @Test func pressOnGapDoesNothingInStickyMode() {
+        let env = environment([Layout.test, radial])
         let g = anchorThenLift().touch(id: 2, at: Spot.gap, t: 0.8).hold(id: 2, until: 1.2)
         let h = runSticky(g, environment: env, events: [(1.0, .physicalPress)], until: 1.2)
-        #expect(activeLayout(h) == "radial")
+        #expect(activeLayout(h) == "test" && h.actions.isEmpty)
     }
 
     @Test func withoutStickyModeLiftingAnchorStillCancels() {

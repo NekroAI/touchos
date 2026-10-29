@@ -36,6 +36,10 @@ private func shownSticky(_ h: Harness) -> Bool {
     h.effects.contains { if case .showPanel(let s) = $0 { s.sticky } else { false } }
 }
 
+private func activeID(_ h: Harness) -> String? {
+    if case .active(let ctx) = h.machine.state { ctx.layout.id } else { nil }
+}
+
 private func activeCorner(_ h: Harness) -> AnchorCorner? {
     if case .active(let ctx) = h.machine.state { ctx.corner } else { nil }
 }
@@ -101,13 +105,15 @@ private func activeCorner(_ h: Harness) -> AnchorCorner? {
         #expect(!run(fingers(4, lift: 0.4), tuning: tuning { $0.fourFingerTap = true }, until: 0.6).isActive)
     }
 
-    @Test func multiFingerTapPicksTheNearestCornerWithPanels() {
+    @Test func eachTapTriggerOpensItsBoundPanel() {
         var env = SessionEnvironment.test
-        let layout = env.layout!
-        env.cornerPanels = [.bottomLeft: [layout], .bottomRight: [layout]]
-        let t = tuning { $0.fourFingerTap = true }
-        #expect(activeCorner(run(fingers(4, x: 0.75, lift: 0.12), tuning: t, environment: env, until: 0.3)) == .bottomRight)
-        #expect(activeCorner(run(fingers(4, x: 0.3, lift: 0.12), tuning: t, environment: env, until: 0.3)) == .bottomLeft)
+        let other = Layout(id: "other", name: "其他", slots: [])
+        env.panels = [.test, other]
+        env.bindings = [.threeFingerTap: "other", .fourFingerTap: "missing"]
+        let t = tuning { $0.fourFingerTap = true; $0.threeFingerTap = true }
+        #expect(activeID(run(fingers(3, lift: 0.12), tuning: t, environment: env, until: 0.3)) == "other")
+        // 绑定的面板不存在：打开默认面板
+        #expect(activeID(run(fingers(4, lift: 0.12), tuning: t, environment: env, until: 0.3)) == "test")
     }
 
     @Test func cornerDoubleTapOpensThatCorner() {

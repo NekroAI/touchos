@@ -73,7 +73,7 @@ extension SessionEnvironment {
         var env = SessionEnvironment()
         env.devices = [.builtIn: TrackpadDevice(id: .builtIn, isBuiltIn: true, displayName: "内置触控板",
                                                 surfaceSizeMM: CGSize(width: 150, height: 100))]
-        env.layout = .test
+        env.panels = [.test]
         env.frontmostBundleID = "com.example.app"
         env.screenSize = CGSize(width: 1000, height: 1000)
         return env

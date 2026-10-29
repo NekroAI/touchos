@@ -53,6 +53,8 @@ final class EventTapController: @unchecked Sendable {
     }()
 
     private let onPhysicalPress: @Sendable () -> Void
+    /// 激活态松开按键（D23：长按关闭进入编辑，未到时长松开即取消）。在 `start()` 之前设置
+    var onPhysicalRelease: (@Sendable () -> Void)?
     private let onEscape: @Sendable () -> Void
     private let onDisabled: @Sendable () -> Void
 
@@ -205,6 +207,8 @@ final class EventTapController: @unchecked Sendable {
                     } else {
                         pendingDownAt = now  // 等压力事件确认；等不到就是轻点，忽略
                     }
+                } else {
+                    onPhysicalRelease?()
                 }
                 return nil
             case .cooldown:

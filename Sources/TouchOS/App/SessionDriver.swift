@@ -45,6 +45,8 @@ final class SessionDriver: @unchecked Sendable {
 
     /// 调试信息（状态、候选失败原因、会话结束原因），在 input.queue 上调用
     var onDebug: (@Sendable (String) -> Void)?
+    /// 在关闭上按住后打开编辑窗口（D23），在主线程调用
+    var onOpenEditor: (@MainActor @Sendable (String) -> Void)?
     /// 延迟样本，在主线程、浮层更新之后调用；为 nil 时不打点
     var onLatency: (@MainActor @Sendable (LatencySample) -> Void)?
 
@@ -129,10 +131,13 @@ final class SessionDriver: @unchecked Sendable {
         case .slider(let target, let value):
             switch target {
             case .volume: SystemVolume.set(value)
+            case .brightness: DisplayBrightness.set(value)
             case .demo: break
             }
         case .action(let request):
             executor.enqueue(request)
+        case .openEditor(let panelID):
+            DispatchQueue.main.async { self.onOpenEditor?(panelID) }
         case .armFailed(let reason):
             log.info("arm failed: \(reason.rawValue, privacy: .public)")
             onDebug?("候选失败：\(reason.rawValue)")
@@ -154,7 +159,7 @@ final class SessionDriver: @unchecked Sendable {
     static func dismissal(for end: SessionEnd?) -> OverlayController.Dismissal {
         switch end {
         case .committed(let id): .commit(id)
-        case .anchorLifted, .escape, .cancelSlot, .idleTimeout, .thirdFinger, .handoff, .liftAfterPress, .liftOutside, .tapToggle: .fade
+        case .anchorLifted, .escape, .cancelSlot, .idleTimeout, .thirdFinger, .handoff, .liftAfterPress, .liftOutside, .tapToggle, .edit: .fade
         default: .immediate
         }
     }
@@ -172,6 +177,7 @@ final class SessionDriver: @unchecked Sendable {
     private func refreshEnvironment() {
         environment.screenSize = Self.cursorScreenSize()
         environment.sliderValues[.volume] = SystemVolume.get()
+        environment.sliderValues[.brightness] = DisplayBrightness.get()
         _ = machine.handle(.environment(environment))
     }
 
@@ -266,6 +272,8 @@ final class OverlayController {
     func show(_ state: PanelState) {
         generation += 1
         model.dim = UserDefaults.standard.bool(forKey: Self.dimKey)
+        model.appearance = Appearance.load()
+        model.shownAt = ProcessInfo.processInfo.systemUptime
         model.phase = reduceMotion ? .shown : .entering
         model.apply(state)
         model.groupOrigin = panel.show(groupSize: state.size)

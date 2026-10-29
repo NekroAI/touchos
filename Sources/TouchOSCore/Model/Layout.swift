@@ -57,8 +57,16 @@ public enum SlotShape: Equatable, Sendable {
 public enum SliderTarget: String, Equatable, Sendable {
     /// 系统输出音量
     case volume
+    /// 主显示器亮度
+    case brightness
     /// 只显示数值，不控制任何东西
     case demo
+}
+
+/// 动态功能：内容随系统状态变化的槽位（D23，内容由外层提供）
+public enum WidgetKind: String, Equatable, Sendable, CaseIterable {
+    /// 正在播放：封面、曲名、进度；按压或抬起执行槽位的动作（通常是播放 / 暂停）
+    case nowPlaying
 }
 
 public struct Slot: Equatable, Sendable {
@@ -71,14 +79,17 @@ public struct Slot: Equatable, Sendable {
     public let action: Action
     /// 设置后为滑杆槽位：槽位内的位置直接对应数值，按压或抬起时确定（交互实验）
     public let slider: SliderTarget?
+    public let widget: WidgetKind?
 
-    public init(id: SlotID, shape: SlotShape, title: String, symbol: String, action: Action, slider: SliderTarget? = nil) {
+    public init(id: SlotID, shape: SlotShape, title: String, symbol: String, action: Action, slider: SliderTarget? = nil,
+                widget: WidgetKind? = nil) {
         self.id = id
         self.shape = shape
         self.title = title
         self.symbol = symbol
         self.action = action
         self.slider = slider
+        self.widget = widget
     }
 
     public init(id: SlotID, cell: GridCell, title: String, symbol: String, action: Action) {
@@ -115,6 +126,27 @@ public struct Layout: Equatable, Sendable {
     }
 
     public func slot(_ id: SlotID) -> Slot? { slots.first { $0.id == id } }
+
+    /// 环形排布（D23）：`items` 从正上方起顺时针均分一圈，内半径 `inner`（单位半径），向外延伸到面板边缘；
+    /// `center` 放在环心
+    public static func ring(id: String, name: String, items: [Slot], center: Slot?, inner: Double = 0.36) -> Layout {
+        let step = 360 / Double(max(items.count, 1))
+        var slots = items.enumerated().map { i, s in
+            Slot(id: s.id, shape: .sector(Sector(innerRadius: inner, outerRadius: nil, startAngle: Double(i) * step - step / 2,
+                                                 endAngle: Double(i) * step + step / 2)),
+                 title: s.title, symbol: s.symbol, action: s.action, slider: s.slider, widget: s.widget)
+        }
+        if let c = center {
+            slots.append(Slot(id: c.id, shape: .sector(Sector(innerRadius: 0, outerRadius: inner * 0.62, startAngle: 0, endAngle: 360)),
+                              title: c.title, symbol: c.symbol, action: c.action))
+        }
+        return Layout(id: id, name: name, slots: slots)
+    }
+
+    /// 环形排布（全部为扇区）
+    public var isRing: Bool {
+        !slots.isEmpty && slots.allSatisfy { if case .sector = $0.shape { true } else { false } }
+    }
 }
 
 public enum Modifier: String, Sendable, CaseIterable {
@@ -137,12 +169,14 @@ public struct KeyCombo: Equatable, Sendable {
 
 public enum ScriptLanguage: String, Sendable { case appleScript, javaScript }
 
-public enum SystemCommand: String, Sendable {
+public enum SystemCommand: String, Sendable, CaseIterable {
     case volumeUp, volumeDown, mute
     case brightnessUp, brightnessDown
     case playPause, nextTrack, previousTrack
     case lockScreen, missionControl, showDesktop, launchpad
     case screenshotArea, screenshotWindow
+    /// 前台窗口：左半屏、右半屏、填满、居中、移到下一个显示器（D23 预置"窗口"面板）
+    case windowLeftHalf, windowRightHalf, windowFill, windowCenter, windowNextDisplay
 }
 
 public enum Action: Equatable, Sendable {

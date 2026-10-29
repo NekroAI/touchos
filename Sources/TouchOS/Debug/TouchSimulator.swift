@@ -6,7 +6,7 @@ import TouchOSCore
 /// 调试用的浮层预演（只在调试叠层可用时注册）：收到 Darwin 通知后，用一份独立的状态机跑一段合成触点帧，
 /// 只把面板的显示、更新、退场交给浮层，用来在没有手指操作时录屏检查视觉与动效。
 /// 不经过真实会话：不冻结光标、不改拦截策略、不执行任何动作，也不受同时发生的真实触摸干扰。
-/// 用法：`notifyutil -p ai.nekro.touchos.simulate.cancel`（另有 `.idle`、`.commit`、`.press`、`.outside`、`.toggle`）。
+/// 用法：`notifyutil -p ai.nekro.touchos.simulate.cancel`（另有 `.idle`、`.commit`、`.press`、`.outside`、`.toggle`、`.navigate`、`.overview`、`.hold`）。
 @MainActor
 final class TouchSimulator {
     /// 合成帧间隔：与妙控板实测帧率相同（m0-report.md）
@@ -63,7 +63,18 @@ final class TouchSimulator {
     ]
 
     /// 各脚本中物理按压的时刻
-    private static let presses: [String: [TimeInterval]] = ["press": [1.3, 1.7, 2.1]]
+    private static let presses: [String: [TimeInterval]] = ["press": [1.3, 1.7, 2.1], "hold": [1.3]]
+
+    /// 双指在 `t` 时刻落下，0.25 秒内竖直移动约四分之一板高后抬起
+    private static func swipe(at t: TimeInterval, up: Bool) -> Script {
+        let from = up ? 0.35 : 0.6, to = up ? 0.6 : 0.35
+        return [
+            (t, [:]),
+            (t + 0.01, [5: CGPoint(x: 0.45, y: from), 6: CGPoint(x: 0.55, y: from)]),
+            (t + 0.26, [5: CGPoint(x: 0.45, y: to), 6: CGPoint(x: 0.55, y: to)]),
+            (t + 0.27, [:]),
+        ]
+    }
 
     private static let scripts: [String: Script] = [
         // 唤起后单指绕一圈经过各按钮，回到中心的取消上抬起：弹开、悬停、收拢
@@ -98,16 +109,34 @@ final class TouchSimulator {
             (3.3, [9: CGPoint(x: 0.5, y: 0.5)]),
             (3.31, [:]),
         ],
-        // 实验布局右下角"滑杆"页：在演示滑杆上抬起，看提交动效（演示滑杆不控制任何东西）
-        "commit": [
-            (0, [1: CGPoint(x: 0.62, y: 0.5), 2: CGPoint(x: 0.67, y: 0.52), 3: CGPoint(x: 0.72, y: 0.52), 4: CGPoint(x: 0.77, y: 0.5)]),
-            (0.1, [1: CGPoint(x: 0.62, y: 0.5), 2: CGPoint(x: 0.67, y: 0.52), 3: CGPoint(x: 0.72, y: 0.52), 4: CGPoint(x: 0.77, y: 0.5)]),
-            (0.11, [:]),
+        // 在"浏览器"面板左下的音量滑杆上移动后抬起，看提交动效（预演不执行动作，音量不变）
+        "commit": tap + [
             (0.8, [:]),
-            (0.81, [9: CGPoint(x: 0.45, y: 0.72)]),
-            (1.6, [9: CGPoint(x: 0.7, y: 0.72)]),
-            (2.0, [9: CGPoint(x: 0.7, y: 0.72)]),
+            (0.81, [9: CGPoint(x: 0.25, y: 0.3)]),
+            (1.6, [9: CGPoint(x: 0.36, y: 0.3)]),
+            (2.0, [9: CGPoint(x: 0.36, y: 0.3)]),
             (2.01, [:]),
+        ],
+        // 双指上推两次再下拉一次：面板 1 → 2 → 3 → 2（D23）
+        "navigate": tap + swipe(at: 1.0, up: true) + swipe(at: 2.0, up: true) + swipe(at: 3.0, up: false),
+        // 双指捏合进入总览，再单指在左下缩略图上抬起选中（D23）
+        "overview": tap + [
+            (1.0, [:]),
+            (1.01, [5: CGPoint(x: 0.3, y: 0.5), 6: CGPoint(x: 0.7, y: 0.5)]),
+            (1.26, [5: CGPoint(x: 0.45, y: 0.5), 6: CGPoint(x: 0.55, y: 0.5)]),
+            (1.27, [:]),
+            (2.2, [:]),
+            (2.21, [9: CGPoint(x: 0.6, y: 0.6)]),
+            (2.8, [9: CGPoint(x: 0.35, y: 0.35)]),
+            (3.4, [9: CGPoint(x: 0.35, y: 0.35)]),
+            (3.41, [:]),
+        ],
+        // 在正中的关闭上按下并一直按住：圆环充满后进入编辑（D23；预演不打开编辑器）
+        "hold": tap + [
+            (0.8, [:]),
+            (0.81, [9: CGPoint(x: 0.5, y: 0.5)]),
+            (3.0, [9: CGPoint(x: 0.5, y: 0.5)]),
+            (3.01, [:]),
         ],
     ]
 
