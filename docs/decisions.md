@@ -70,6 +70,8 @@
 1. 正式产品名（替换 TouchOS 暂定名）。
 2. 应用图标与菜单栏图标。
 3. Intel Mac 实机测试来源（开发机未装 Rosetta，x86_64 版本只能在 CI 构建）。
+4. SPEC-QUESTION（FR-4.2）：状态码为"接触中"、但此前没有该接触记录（例如注册回调时手指已在板上）时如何映射。当前按字面理解为 `stationary`，该接触没有 `began`，不会成为锚指或指点指。见 `ContactTracker`。
+5. SPEC-QUESTION（FR-4.1）：尺寸接口缺失时要求查"型号默认尺寸表"，但此时也拿不到型号。当前只用妙控板实测尺寸一个默认值。见 `MultitouchBridge.fallbackSurfaceMM`。
 
 ---
 

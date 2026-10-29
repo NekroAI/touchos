@@ -14,11 +14,22 @@
 |---|---|---|
 | 2026-10-29 | macOS 27.2 | `dlopen` 成功；`MTDeviceCreateList`、`MTRegisterContactFrameCallback`、`MTUnregisterContactFrameCallback`、`MTDeviceStart`、`MTDeviceStop`、`MTDeviceIsBuiltIn`、`MTDeviceGetSensorSurfaceDimensions` 全部存在；枚举到 1 台设备 |
 
+## K3 验证（输入层）
+
+| 项目 | 结果 | 备注 |
+|---|---|---|
+| 单设备实时触点（调试叠层） | 通过（27 / 妙控板） | 负责人目测：位置、方向、编号、阶段基本准确 |
+| 双设备实时触点 | 待其他硬件 | 开发机没有内置触控板（D7） |
+| 休眠唤醒后恢复 | 未验证 | 代码已实现（唤醒后 1 秒重新枚举） |
+| 热插拔 | 未验证 | 代码已实现（IOKit `AppleMultitouchDevice` 通知） |
+| `pressure` 字段（偏移 52） | 未确认 | 需用力按压时观察叠层数值变化 |
+| 角落触摸不误触发布局自检 | 未见降级 | 未专门测试极端边缘 |
+
 ## 实测数据
 
 | 项目 | 设备 / 系统 | 结果 | 日期 |
 |---|---|---|---|
-| 持续触摸帧率 | | 待测 | |
+| 持续触摸帧率 | 妙控板（蓝牙）/ 27.2 | **66.7 Hz**（帧间隔 15.0 ms）；229 段触摸中 227 段为 66.7 Hz，偶发单帧丢失（最大间隔 30 ms）。低于 SRS 估计的约 90 Hz，FR-8.9 的帧间插值是必要的 | 2026-10-29 |
 | 端到端延迟 p95（NFR-1） | | 待测 | |
 | 拦截回调耗时 p99 / 最大（NFR-2） | | 待测 | |
 
@@ -42,3 +53,7 @@ M0 闸门要求的 AC（K6、K7）。"通过"栏注明系统与设备，例如"2
 ## 发现与问题
 
 （按日期追加；需要改规格的，同时写入 decisions.md。）
+
+- **2026-10-29 私有框架细节**：`MTDeviceGetSensorSurfaceDimensions` 的单位是 1/100 毫米（妙控板 15600 × 11040 → 156 × 110.4 mm）。`MTDeviceGetDeviceID` 存在，返回值与 ioreg 的 Multitouch ID 一致，作为稳定的设备 ID 使用（不在 FR-4.1 列表中，作为可选符号）。
+- **2026-10-29 启动回调中的异常会被吞掉**：`applicationDidFinishLaunching` 里抛出的 ObjC 异常（例如把已属于另一个菜单的 `NSMenuItem` 加入新菜单）被 AppKit 静默吞掉，后续初始化全部跳过，进程照常运行，没有任何日志。排查方法：`lldb -o "breakpoint set -n objc_exception_throw" -o run <可执行文件>`。
+- **2026-10-29 查看日志**：`/usr/bin/log stream --style compact --level info --predicate 'subsystem == "ai.nekro.touchos"'`（zsh 中 `log` 是内建命令，需写全路径）；启动后需等几秒才开始接收。每段触摸结束会记录帧数、时长、平均帧率、p95 与最大帧间隔（不含坐标）。
