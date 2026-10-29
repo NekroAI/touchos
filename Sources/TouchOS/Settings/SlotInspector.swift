@@ -3,7 +3,7 @@ import SwiftUI
 import TouchOSCore
 import UniformTypeIdentifiers
 
-/// 右栏：选中按钮的属性（FR-11.5–11.7）
+/// 选中按钮时从右侧滑出的属性栏（FR-11.5–11.7）
 struct SlotInspector: View {
     let configs: ConfigController
     let executor: ActionExecutor
@@ -11,22 +11,32 @@ struct SlotInspector: View {
     let panel: PanelLayout
 
     var body: some View {
-        Group {
-            if let id = navigation.selectedSlot, let slot = panel.slot(id) {
+        if let id = navigation.selectedSlot, let slot = panel.slot(id) {
+            VStack(spacing: 0) {
+                HStack(spacing: 10) {
+                    Image(systemName: Self.symbol(slot.symbol)).font(.title3).foregroundStyle(.tint).frame(width: 24)
+                    Text(slot.title.isEmpty ? "按钮" : slot.title).font(.headline).lineLimit(1)
+                    Spacer()
+                    Button { navigation.selectedSlot = nil } label: {
+                        Image(systemName: "xmark").font(.callout.weight(.semibold)).foregroundStyle(.secondary)
+                            .frame(width: 22, height: 22)
+                            .background(Circle().fill(.quaternary))
+                    }
+                    .buttonStyle(.plain)
+                    .help("完成（Esc）")
+                }
+                .padding(.horizontal, 18)
+                .padding(.top, 18)
+                .padding(.bottom, 6)
                 SlotForm(configs: configs, executor: executor, navigation: navigation, panel: panel, slot: slot)
                     .id(slot.id)
-            } else {
-                VStack(spacing: 8) {
-                    Image(systemName: "cursorarrow.click.2").font(.largeTitle).foregroundStyle(.tertiary)
-                    Text("选择一个按钮编辑").foregroundStyle(.secondary)
-                    Text("正中的关闭：在面板上按住它可以直接来到这里").font(.caption).foregroundStyle(.tertiary)
-                        .multilineTextAlignment(.center)
-                }
-                .padding()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.4))
+    }
+
+    /// 图标名无效时显示占位
+    static func symbol(_ name: String) -> String {
+        NSImage(systemSymbolName: name, accessibilityDescription: nil) == nil ? "questionmark.square.dashed" : name
     }
 }
 
@@ -140,6 +150,22 @@ private struct SlotForm: View {
                     Text("1 秒后执行，可以先切到目标应用。")
                 }
             }
+            if panel.isRing, let index = panel.ringItems.firstIndex(where: { $0.id == slot.id }) {
+                Section {
+                    LabeledContent("顺序") {
+                        HStack(spacing: 6) {
+                            Text("第 \(index + 1) 个，共 \(panel.ringItems.count) 个").foregroundStyle(.secondary)
+                            ControlGroup {
+                                Button { moveInRing(by: -1) } label: { Image(systemName: "arrow.counterclockwise") }
+                                    .help("逆时针移动")
+                                Button { moveInRing(by: 1) } label: { Image(systemName: "arrow.clockwise") }
+                                    .help("顺时针移动")
+                            }
+                            .fixedSize()
+                        }
+                    }
+                }
+            }
             Section {
                 Button("删除按钮", role: .destructive) { delete() }
             }
@@ -247,6 +273,15 @@ private struct SlotForm: View {
         }
     }
 
+    /// 环形：与相邻项目交换位置（首尾相接）
+    private func moveInRing(by step: Int) {
+        var items = panel.ringItems
+        guard let i = items.firstIndex(where: { $0.id == slot.id }), items.count > 1 else { return }
+        let j = (i + step + items.count) % items.count
+        items.swapAt(i, j)
+        updatePanel(configs, panel.id) { $0 = $0.rebuiltRing(items: items) }
+    }
+
     private func delete() {
         updatePanel(configs, panel.id) { p in
             p.slots.removeAll { $0.id == slot.id }
@@ -300,7 +335,7 @@ private struct SymbolField: View {
     var body: some View {
         LabeledContent("图标") {
             HStack {
-                Image(systemName: NSImage(systemSymbolName: symbol, accessibilityDescription: nil) == nil ? "questionmark.square.dashed" : symbol)
+                Image(systemName: SlotInspector.symbol(symbol))
                     .frame(width: 22)
                 TextField("SF Symbols 名称", text: $symbol).labelsHidden()
                 Button { picking = true } label: { Image(systemName: "square.grid.3x3") }

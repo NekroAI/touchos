@@ -127,7 +127,7 @@ final class MultitouchBridge: Sendable {
 
     /// 尺寸接口缺失时的默认值：妙控板第二代的感应区尺寸（实测值）。
     /// SPEC-QUESTION: FR-4.1 要求"型号默认尺寸表"，但在尺寸接口缺失时也拿不到型号；目前只有这一个默认值。
-    private static let fallbackSurfaceMM = CGSize(width: 156, height: 110.4)
+    static let fallbackSurfaceMM = CGSize(width: 156, height: 110.4)
 
     fileprivate func deviceID(_ ref: UnsafeMutableRawPointer) -> TrackpadDeviceID {
         var raw: UInt64 = 0

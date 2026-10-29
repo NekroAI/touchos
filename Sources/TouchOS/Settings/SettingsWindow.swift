@@ -26,9 +26,8 @@ final class SettingsWindowController {
 
     /// 在关闭上按住后打开：直接进入该面板的编辑（D23）
     func show(editing panelID: String) {
-        navigation.selectedPanel = panelID
-        navigation.selectedSlot = nil
-        show(page: .panels)
+        navigation.open(panel: panelID)
+        show()
     }
 
     private func makeWindow() -> NSWindow {
@@ -36,8 +35,8 @@ final class SettingsWindowController {
         let window = NSWindow(contentViewController: NSHostingController(rootView: root))
         window.title = "TouchOS 设置"
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
-        window.setContentSize(NSSize(width: 1040, height: 680))
-        window.minSize = NSSize(width: 900, height: 600)
+        window.setContentSize(NSSize(width: 1120, height: 720))
+        window.minSize = NSSize(width: 980, height: 620)
         window.isReleasedWhenClosed = false
         window.center()
         window.setFrameAutosaveName("TouchOSSettings")
@@ -78,6 +77,18 @@ final class SettingsNavigation {
     var page = SettingsPage.panels
     var selectedPanel: String?
     var selectedSlot: SlotID?
+
+    func open(panel id: String?) {
+        page = .panels
+        selectedPanel = id
+        selectedSlot = nil
+    }
+}
+
+/// 侧栏选中项：某个面板，或某个设置页
+private enum SidebarItem: Hashable {
+    case panel(String)
+    case page(SettingsPage)
 }
 
 private struct SettingsRoot: View {
@@ -87,22 +98,98 @@ private struct SettingsRoot: View {
 
     var body: some View {
         NavigationSplitView {
-            List(SettingsPage.allCases, selection: $navigation.page) { page in
-                Label(page.title, systemImage: page.symbol).tag(page)
-            }
-            .navigationSplitViewColumnWidth(min: 150, ideal: 170, max: 200)
+            Sidebar(configs: configs, navigation: navigation)
+                .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 260)
         } detail: {
             VStack(spacing: 0) {
                 if let problem = configs.problem {
                     ProblemBanner(text: problem) { navigation.page = .general }
                 }
                 switch navigation.page {
-                case .panels: PanelsPage(configs: configs, executor: executor, navigation: navigation)
+                case .panels:
+                    let panels = configs.config.panels
+                    if let panel = panels.first(where: { $0.id == navigation.selectedPanel }) ?? panels.first {
+                        PanelEditorPage(configs: configs, executor: executor, navigation: navigation, panel: panel)
+                            .id(panel.id)
+                    }
                 case .triggers: TriggersPage(configs: configs)
                 case .appearance: AppearancePage(configs: configs)
                 case .general: GeneralPage(configs: configs)
                 case .about: AboutPage()
                 }
+            }
+            .navigationTitle(title)
+        }
+    }
+
+    private var title: String {
+        navigation.page == .panels ? "面板" : navigation.page.title
+    }
+}
+
+/// 侧栏：上面是面板（可拖动排序，第一个为默认），下面是设置页
+private struct Sidebar: View {
+    let configs: ConfigController
+    @Bindable var navigation: SettingsNavigation
+
+    var body: some View {
+        List(selection: selection) {
+            Section {
+                ForEach(Array(configs.config.panels.enumerated()), id: \.element.id) { i, panel in
+                    HStack(spacing: 10) {
+                        PanelThumbnail(panel: panel)
+                        Text(panel.name).lineLimit(1)
+                        Spacer(minLength: 4)
+                        if i == 0 {
+                            Text("默认").font(.caption2.weight(.medium)).foregroundStyle(.secondary)
+                                .padding(.horizontal, 5).padding(.vertical, 1)
+                                .background(Capsule().fill(.quaternary))
+                        }
+                    }
+                    .tag(SidebarItem.panel(panel.id))
+                    .contextMenu {
+                        Button("复制") { PanelCommands.add(panel, configs: configs, navigation: navigation) }
+                        Button("设为默认面板") { PanelCommands.makeDefault(panel.id, configs: configs) }.disabled(i == 0)
+                        Divider()
+                        Button("删除", role: .destructive) { PanelCommands.remove(panel.id, configs: configs, navigation: navigation) }
+                            .disabled(configs.config.panels.count <= 1)
+                    }
+                }
+                .onMove { from, to in configs.update { $0.panels.move(fromOffsets: from, toOffset: to) } }
+            } header: {
+                HStack {
+                    Text("面板")
+                    Spacer()
+                    Menu {
+                        PanelCommands.addMenu(configs: configs, navigation: navigation)
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help("新建面板")
+                }
+            }
+            Section("设置") {
+                ForEach(SettingsPage.allCases.filter { $0 != .panels }) { page in
+                    Label(page.title, systemImage: page.symbol).tag(SidebarItem.page(page))
+                }
+            }
+        }
+    }
+
+    private var selection: Binding<SidebarItem?> {
+        Binding {
+            if navigation.page == .panels {
+                return (navigation.selectedPanel ?? configs.config.panels.first?.id).map(SidebarItem.panel)
+            }
+            return .page(navigation.page)
+        } set: { item in
+            switch item {
+            case .panel(let id): if id != navigation.selectedPanel || navigation.page != .panels { navigation.open(panel: id) }
+            case .page(let page): navigation.page = page
+            case nil: break
             }
         }
     }
@@ -180,13 +267,7 @@ private struct TriggersPage: View {
     ]
 
     private var triggers: [(PanelTrigger, String)] {
-        let t = configs.config.triggers
-        var list: [(PanelTrigger, String)] = []
-        if t.fourFingerTap { list.append((.fourFingerTap, "四指轻点")) }
-        if t.threeFingerTap { list.append((.threeFingerTap, "三指轻点")) }
-        if t.hold { list.append((.hold(t.anchorCorner), "锚指按住")) }
-        if t.cornerDoubleTap { list.append((.cornerDoubleTap(t.anchorCorner), "角落轻点两下")) }
-        return list
+        configs.config.enabledTriggers.map { ($0.trigger, $0.title) }
     }
 
     private func bindingFor(_ trigger: PanelTrigger) -> Binding<String?> {
@@ -199,10 +280,13 @@ private struct LabeledSlider: View {
     @Binding var value: Double
     let range: ClosedRange<Double>
 
+    static let step = 0.05
+
     var body: some View {
         LabeledContent(title) {
             HStack {
-                Slider(value: $value, in: range, step: 0.05)
+                // 不用 step：macOS 会为每一档画刻度，改为写入时取整
+                Slider(value: Binding(get: { value }, set: { value = ($0 / Self.step).rounded() * Self.step }), in: range)
                 Text("\(Int((value * 100).rounded()))%").monospacedDigit().frame(width: 44, alignment: .trailing)
             }
         }

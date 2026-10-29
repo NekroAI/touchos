@@ -1,25 +1,34 @@
+import AppKit
+import ImageIO
 import SwiftUI
 import TouchOSCore
 
-/// 面板页（FR-11.3、FR-11.4）：左栏面板列表，中栏所见即所得编辑，右栏按钮属性
-struct PanelsPage: View {
+/// 面板编辑（FR-11.3、FR-11.4）：舞台上用浮层同一套渲染画出面板（跟随当前主题与强调色，所见即所得），
+/// 直接在上面添加、移动、调整大小；选中按钮时右侧滑出按钮属性
+struct PanelEditorPage: View {
     let configs: ConfigController
     let executor: ActionExecutor
     @Bindable var navigation: SettingsNavigation
+    let panel: PanelLayout
 
     var body: some View {
-        let panels = configs.config.panels
-        let current = panels.first { $0.id == navigation.selectedPanel } ?? panels.first
-        HSplitView {
-            PanelList(configs: configs, navigation: navigation, current: current?.id)
-                .frame(minWidth: 180, idealWidth: 200, maxWidth: 240)
-            if let current {
-                PanelCanvas(configs: configs, navigation: navigation, panel: current)
-                    .frame(minWidth: 420, maxWidth: .infinity)
-                SlotInspector(configs: configs, executor: executor, navigation: navigation, panel: current)
-                    .frame(minWidth: 260, idealWidth: 300, maxWidth: 360)
+        let selected = navigation.selectedSlot.flatMap { panel.slot($0) } != nil
+        HStack(spacing: 0) {
+            VStack(spacing: 0) {
+                PanelHeader(configs: configs, navigation: navigation, panel: panel)
+                PanelStage(configs: configs, navigation: navigation, panel: panel)
+                    .padding([.horizontal, .bottom], 20)
+            }
+            .frame(minWidth: 480, maxWidth: .infinity)
+            if selected {
+                Divider()
+                SlotInspector(configs: configs, executor: executor, navigation: navigation, panel: panel)
+                    .frame(width: 320)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
+        .animation(.snappy(duration: 0.25), value: selected)
+        .onExitCommand { navigation.selectedSlot = nil }
     }
 }
 
@@ -31,128 +40,149 @@ func updatePanel(_ configs: ConfigController, _ id: String, _ change: (inout Pan
     }
 }
 
-// MARK: 面板列表
+// MARK: 面板操作（侧栏与标题栏共用）
 
-private struct PanelList: View {
-    let configs: ConfigController
-    @Bindable var navigation: SettingsNavigation
-    let current: String?
-
-    var body: some View {
-        VStack(spacing: 0) {
-            List(selection: Binding(get: { current }, set: { navigation.selectedPanel = $0; navigation.selectedSlot = nil })) {
-                Section {
-                    ForEach(Array(configs.config.panels.enumerated()), id: \.element.id) { i, panel in
-                        HStack {
-                            Image(systemName: panel.isRing ? "circle.circle" : "square.grid.3x2").foregroundStyle(.secondary)
-                            Text(panel.name)
-                            Spacer()
-                            if i == 0 { Text("默认").font(.caption2).foregroundStyle(.secondary) }
-                        }
-                        .tag(Optional(panel.id))
-                    }
-                    .onMove { from, to in configs.update { $0.panels.move(fromOffsets: from, toOffset: to) } }
-                } header: {
-                    Text("面板（拖动排序，第一个为默认）")
-                }
-            }
-            Divider()
-            HStack(spacing: 4) {
-                Menu {
-                    Button("空白网格") { add(Self.blankGrid) }
-                    Button("环形") { add(Self.blankRing) }
-                    Divider()
-                    ForEach(PresetPanels.all, id: \.id) { preset in
-                        Button("模板：\(preset.name)") { add(preset) }
-                    }
-                } label: { Image(systemName: "plus") }
-                .menuIndicator(.hidden)
-                .fixedSize()
-                Button { duplicate() } label: { Image(systemName: "plus.square.on.square") }
-                    .help("复制面板")
-                Button { remove() } label: { Image(systemName: "minus") }
-                    .disabled(configs.config.panels.count <= 1)
-                    .help("删除面板")
-                Spacer()
-            }
-            .buttonStyle(.borderless)
-            .padding(8)
-        }
-    }
-
+@MainActor
+enum PanelCommands {
     static let blankGrid = PanelLayout(id: "panel", name: "新面板", rows: PresetPanels.rows, cols: PresetPanels.cols,
                                        slots: [PresetPanels.close("panel")])
     static let blankRing = PanelLayout.ring(id: "ring", name: "新环形面板", items: [],
                                             center: Slot(id: "ring.close", shape: .rect(.zero), title: "关闭", symbol: "xmark", action: .none))
 
-    private func add(_ template: PanelLayout) {
+    static func add(_ template: PanelLayout, configs: ConfigController, navigation: SettingsNavigation) {
         var c = configs.config
         var panel = c.duplicate(template)
-        if template.id == "panel" || template.id == "ring" { panel.name = template.name }
+        if template.id == blankGrid.id || template.id == blankRing.id { panel.name = template.name }
         c.panels.append(panel)
         configs.replace(c)
-        navigation.selectedPanel = panel.id
-        navigation.selectedSlot = nil
+        navigation.open(panel: panel.id)
     }
 
-    private func duplicate() {
-        guard let id = current, let panel = configs.config.panels.first(where: { $0.id == id }) else { return }
-        add(panel)
+    static func makeDefault(_ id: String, configs: ConfigController) {
+        configs.update { c in
+            guard let i = c.panels.firstIndex(where: { $0.id == id }) else { return }
+            c.panels.insert(c.panels.remove(at: i), at: 0)
+        }
     }
 
-    private func remove() {
-        guard let id = current else { return }
+    static func remove(_ id: String, configs: ConfigController, navigation: SettingsNavigation) {
+        guard configs.config.panels.count > 1 else { return }
         configs.update { $0.removePanel(id) }
-        navigation.selectedPanel = configs.config.panels.first?.id
-        navigation.selectedSlot = nil
+        if navigation.selectedPanel == id { navigation.open(panel: configs.config.panels.first?.id) }
+    }
+
+    /// "新建面板"菜单内容
+    @ViewBuilder static func addMenu(configs: ConfigController, navigation: SettingsNavigation) -> some View {
+        Button("空白网格") { add(blankGrid, configs: configs, navigation: navigation) }
+        Button("环形") { add(blankRing, configs: configs, navigation: navigation) }
+        Divider()
+        Section("从模板") {
+            ForEach(PresetPanels.all, id: \.id) { preset in
+                Button(preset.name) { add(preset, configs: configs, navigation: navigation) }
+            }
+        }
     }
 }
 
-// MARK: 中栏
+/// 侧栏里面板的缩略图：按布局画出按钮块
+struct PanelThumbnail: View {
+    let panel: PanelLayout
 
-/// 面板预览的宽高比：与触控板一致（妙控板约 1.4）
-private let canvasAspect: CGFloat = 1.42
+    static let size = CGSize(width: 26, height: 18)
 
-private struct PanelCanvas: View {
+    var body: some View {
+        Canvas { ctx, size in
+            if panel.isRing {
+                let n = max(panel.ringItems.count, 1)
+                let c = CGPoint(x: size.width / 2, y: size.height / 2), r = size.height / 2 - 2
+                for i in 0..<n {
+                    let a = Double(i) / Double(n) * 2 * .pi
+                    let p = CGPoint(x: c.x + r * sin(a), y: c.y - r * cos(a))
+                    ctx.fill(Path(ellipseIn: CGRect(x: p.x - 1.6, y: p.y - 1.6, width: 3.2, height: 3.2)), with: .style(.secondary))
+                }
+                ctx.stroke(Path(ellipseIn: CGRect(x: c.x - 2, y: c.y - 2, width: 4, height: 4)), with: .style(.tertiary), lineWidth: 1)
+            } else {
+                for slot in panel.slots {
+                    guard let n = panel.normalizedRect(of: slot) else { continue }
+                    let r = CGRect(x: n.minX * size.width, y: n.minY * size.height, width: n.width * size.width, height: n.height * size.height)
+                        .insetBy(dx: 0.8, dy: 0.8)
+                    if slot.isCancel {
+                        ctx.stroke(Path(ellipseIn: r.insetBy(dx: (r.width - 3.5) / 2, dy: (r.height - 3.5) / 2)), with: .style(.tertiary), lineWidth: 1)
+                    } else {
+                        ctx.fill(Path(roundedRect: r, cornerRadius: 1.2), with: .style(.secondary))
+                    }
+                }
+            }
+        }
+        .frame(width: Self.size.width, height: Self.size.height)
+        .padding(2)
+        .background(RoundedRectangle(cornerRadius: 4).strokeBorder(.quaternary))
+    }
+}
+
+// MARK: 标题栏
+
+private struct PanelHeader: View {
     let configs: ConfigController
     @Bindable var navigation: SettingsNavigation
     let panel: PanelLayout
+    @State private var note: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 3) {
                 TextField("面板名称", text: Binding(get: { panel.name }, set: { n in updatePanel(configs, panel.id) { $0.name = n } }))
-                    .textFieldStyle(.roundedBorder)
-                    .font(.title3)
-                    .frame(maxWidth: 260)
-                Spacer()
-                if !panel.isRing {
-                    GridSizeStepper(title: "行", value: panel.rows, range: 1...AppConfig.maxRows) { resize(rows: $0, cols: panel.cols) }
-                    GridSizeStepper(title: "列", value: panel.cols, range: 1...AppConfig.maxCols) { resize(rows: panel.rows, cols: $0) }
+                    .textFieldStyle(.plain)
+                    .font(.title2.weight(.semibold))
+                Text(subtitle).font(.callout).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 12)
+            if let note {
+                Label(note, systemImage: "exclamationmark.triangle.fill").font(.callout).foregroundStyle(.orange).lineLimit(2)
+            }
+            if !panel.isRing {
+                HStack(spacing: 4) {
+                    SizePicker(value: panel.rows, range: 1...AppConfig.maxRows, unit: "行") { resize(rows: $0, cols: panel.cols) }
+                    Text("×").foregroundStyle(.tertiary)
+                    SizePicker(value: panel.cols, range: 1...AppConfig.maxCols, unit: "列") { resize(rows: panel.rows, cols: $0) }
                 }
             }
-            if panel.isRing || panel.slots.allSatisfy({ if case .sector = $0.shape { true } else { false } }) && !panel.slots.isEmpty {
-                RingEditor(configs: configs, navigation: navigation, panel: panel)
-            } else {
-                GridEditor(configs: configs, navigation: navigation, panel: panel)
-                    .aspectRatio(canvasAspect, contentMode: .fit)
-                    .frame(maxWidth: .infinity)
-                Text("点空格添加按钮；拖动按钮移动；拖右下角改大小。触控板上的位置与这里一一对应。")
-                    .font(.callout).foregroundStyle(.secondary)
+            Menu {
+                Button("复制面板") { PanelCommands.add(panel, configs: configs, navigation: navigation) }
+                Button("设为默认面板") { PanelCommands.makeDefault(panel.id, configs: configs) }
+                    .disabled(isDefault)
+                Divider()
+                Button("删除面板", role: .destructive) { PanelCommands.remove(panel.id, configs: configs, navigation: navigation) }
+                    .disabled(configs.config.panels.count <= 1)
+            } label: {
+                Image(systemName: "ellipsis.circle").font(.title3)
             }
-            if let note {
-                Label(note, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange)
-            }
-            Spacer(minLength: 0)
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("更多操作")
         }
-        .padding(20)
+        .padding(.horizontal, 24)
+        .padding(.top, 18)
+        .padding(.bottom, 14)
+        .onChange(of: panel.id) { note = nil }
     }
 
-    @State private var note: String?
+    private var isDefault: Bool { configs.config.panels.first?.id == panel.id }
+
+    /// 哪些唤起方式会打开这个面板
+    private var subtitle: String {
+        let config = configs.config
+        let opens = config.enabledTriggers.filter { (config.binding(for: $0.trigger) ?? config.panels.first?.id) == panel.id }
+        var parts: [String] = []
+        if isDefault { parts.append("默认面板") }
+        parts.append(opens.isEmpty ? "双指上下滑动切换到这里" : opens.map(\.title).joined(separator: "、") + "打开")
+        return parts.joined(separator: " · ")
+    }
 
     private func resize(rows: Int, cols: Int) {
         guard let resized = panel.resized(rows: rows, cols: cols) else {
-            note = "有按钮会超出新的网格，先移动或删除它们"
+            note = "有按钮会超出新网格，先移动或删除它们"
             return
         }
         note = nil
@@ -160,85 +190,266 @@ private struct PanelCanvas: View {
     }
 }
 
-private struct GridSizeStepper: View {
-    let title: String
+private struct SizePicker: View {
     let value: Int
     let range: ClosedRange<Int>
+    let unit: String
     let set: (Int) -> Void
 
     var body: some View {
-        Stepper("\(title) \(value)", onIncrement: value < range.upperBound ? { set(value + 1) } : nil,
-                onDecrement: value > range.lowerBound ? { set(value - 1) } : nil).fixedSize()
+        Menu("\(value) \(unit)") {
+            ForEach(Array(range), id: \.self) { n in
+                Button { set(n) } label: {
+                    if n == value { Label("\(n) \(unit)", systemImage: "checkmark") } else { Text("\(n) \(unit)") }
+                }
+            }
+        }
+        .fixedSize()
+        .help(unit == "行" ? "行数" : "列数")
     }
 }
 
-/// 网格编辑：所见即所得，按触控板宽高比显示（FR-11.4）
-private struct GridEditor: View {
+// MARK: 舞台
+
+/// 舞台背景：当前桌面壁纸（压暗），面板在真实环境里的样子；取不到时用渐变
+@MainActor
+private enum StageBackdrop {
+    static let maxPixels = 1400
+    static let image: NSImage? = {
+        guard let screen = NSScreen.main, let url = NSWorkspace.shared.desktopImageURL(for: screen),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                  kCGImageSourceCreateThumbnailFromImageAlways: true,
+                  kCGImageSourceThumbnailMaxPixelSize: maxPixels,
+              ] as CFDictionary)
+        else { return nil }
+        return NSImage(cgImage: cg, size: .zero)
+    }()
+}
+
+private struct PanelStage: View {
     let configs: ConfigController
     @Bindable var navigation: SettingsNavigation
     let panel: PanelLayout
+
+    /// 面板在舞台里最多占的比例
+    static let fill: CGFloat = 0.86
+    static let hintHeight: CGFloat = 30
+
+    var body: some View {
+        GeometryReader { geo in
+            let real = realSize
+            let size = displaySize(in: CGSize(width: geo.size.width, height: geo.size.height - Self.hintHeight), real: real)
+            let geometry = StageGeometry(display: size, real: real)
+            VStack(spacing: 0) {
+                ZStack {
+                    Color.clear.contentShape(Rectangle())
+                        .onTapGesture { navigation.selectedSlot = nil }
+                    if panel.isRing {
+                        RingCanvas(configs: configs, navigation: navigation, panel: panel, stage: geometry)
+                    } else {
+                        GridCanvas(configs: configs, navigation: navigation, panel: panel, stage: geometry)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background { backdrop }
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.white.opacity(0.08)))
+                Text(hint)
+                    .font(.callout).foregroundStyle(.tertiary)
+                    .frame(height: Self.hintHeight, alignment: .bottom)
+            }
+        }
+        .environment(\.overlayStyle, OverlayStyle(Appearance(configs.config.appearance)))
+    }
+
+    @ViewBuilder private var backdrop: some View {
+        if let image = StageBackdrop.image {
+            Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
+                .blur(radius: 6, opaque: true)
+                .overlay(Color.black.opacity(0.3))
+        } else {
+            LinearGradient(colors: [Color(red: 0.13, green: 0.15, blue: 0.24), Color(red: 0.07, green: 0.07, blue: 0.11)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+        }
+    }
+
+    private var hint: String {
+        panel.isRing ? "点按钮编辑 · 外圈按钮顺时针排列，在属性里调整顺序"
+            : "点空位添加 · 拖动移动 · 拖右下角调整大小 · 位置与触控板一一对应"
+    }
+
+    /// 唤起时面板在主屏上的实际尺寸（FR-6.4）
+    private var realSize: CGSize {
+        let screen = NSScreen.main?.visibleFrame.size ?? CGSize(width: 1440, height: 900)
+        return panelSize(screen: screen, deviceMM: MultitouchBridge.fallbackSurfaceMM, scale: configs.config.sizes.panelScale)
+    }
+
+    /// 舞台上显示的尺寸：按实际尺寸整体缩小放进舞台，不放大
+    private func displaySize(in area: CGSize, real: CGSize) -> CGSize {
+        let fitted = panelSize(screen: area, deviceMM: real, scale: Self.fill)
+        return fitted.width < real.width ? fitted : real
+    }
+}
+
+/// 舞台坐标：面板按实际尺寸渲染后整体缩放，操作层在显示坐标里工作
+private struct StageGeometry {
+    let display: CGSize
+    let real: CGSize
+
+    var scale: CGFloat { real.width > 0 ? display.width / real.width : 1 }
+
+    /// 实际尺寸下的按钮外形换算到显示坐标
+    func shown(_ g: ChipGeometry) -> ChipGeometry {
+        ChipGeometry(frame: CGRect(x: g.frame.minX * scale, y: g.frame.minY * scale,
+                                   width: g.frame.width * scale, height: g.frame.height * scale), kind: g.kind)
+    }
+
+    func chip(_ slot: Slot, in layout: PanelLayout) -> ChipGeometry? {
+        let tester = HitTester(layout: layout, panelSize: real, slotGap: Tuning().slotGap, hysteresis: 0)
+        return ChipGeometry.of(slot, tester: tester).map(shown)
+    }
+}
+
+/// 舞台上的面板画面：与唤起时同一个视图，选中的按钮以"点亮"状态显示
+private struct LivePanel: View {
+    let layout: PanelLayout
+    let stage: StageGeometry
+    let lit: SlotID?
+
+    static let sliderPreview = 0.6
+
+    var body: some View {
+        let sliders = Dictionary(uniqueKeysWithValues: layout.slots.filter { $0.slider != nil }.map { ($0.id, Self.sliderPreview) })
+        PanelView(layout: layout, size: stage.real, slotGap: Tuning().slotGap, current: true, hovered: lit, phase: .shown,
+                  sliderValues: sliders, pulses: [:], presses: [:], origin: nil, outside: false)
+            .environment(\.colorScheme, .dark)
+            .scaleEffect(stage.scale, anchor: .topLeading)
+            .frame(width: stage.display.width, height: stage.display.height, alignment: .topLeading)
+            .allowsHitTesting(false)
+    }
+}
+
+/// 选中框
+private struct SelectionMark: View {
+    let geometry: ChipGeometry
+    static let outset: CGFloat = 5
+
+    var body: some View {
+        let r = geometry.frame.insetBy(dx: -Self.outset, dy: -Self.outset)
+        Group {
+            if geometry.kind == .tile {
+                RoundedRectangle(cornerRadius: min(r.width, r.height) * 0.28, style: .continuous).strokeBorder(Color.white, lineWidth: 1.5)
+            } else {
+                Circle().strokeBorder(Color.white, lineWidth: 1.5)
+            }
+        }
+        .shadow(color: .black.opacity(0.4), radius: 3)
+        .frame(width: r.width, height: r.height)
+        .position(x: r.midX, y: r.midY)
+        .allowsHitTesting(false)
+    }
+}
+
+// MARK: 网格
+
+private struct GridCanvas: View {
+    let configs: ConfigController
+    @Bindable var navigation: SettingsNavigation
+    let panel: PanelLayout
+    let stage: StageGeometry
     /// 正在拖动的按钮与位移（移动或改大小）
     @State private var drag: (id: SlotID, offset: CGSize, resize: Bool)?
     @State private var hoverCell: GridCell?
 
     var body: some View {
-        GeometryReader { geo in
-            let cw = geo.size.width / CGFloat(panel.cols), ch = geo.size.height / CGFloat(panel.rows)
-            ZStack(alignment: .topLeading) {
-                RoundedRectangle(cornerRadius: 14).fill(Color(white: 0.12))
-                ForEach(0..<panel.rows, id: \.self) { r in
-                    ForEach(0..<panel.cols, id: \.self) { c in
-                        if panel.slot(atRow: r, col: c) == nil {
-                            EmptyCell(hovered: hoverCell == GridCell(row: r, col: c))
-                                .frame(width: cw, height: ch)
-                                .offset(x: CGFloat(c) * cw, y: CGFloat(r) * ch)
-                                .onHover { hoverCell = $0 ? GridCell(row: r, col: c) : nil }
-                                .onTapGesture { addSlot(row: r, col: c) }
+        let size = stage.display
+        let cw = size.width / CGFloat(panel.cols), ch = size.height / CGFloat(panel.rows)
+        let shown = displayed(cw, ch)
+        ZStack(alignment: .topLeading) {
+            emptyCells(cw, ch)
+            LivePanel(layout: shown, stage: stage, lit: navigation.selectedSlot)
+                .animation(.spring(response: 0.28, dampingFraction: 0.8), value: shown)
+            if let id = navigation.selectedSlot, let slot = shown.slot(id), let g = stage.chip(slot, in: shown) {
+                SelectionMark(geometry: g)
+                    .animation(.spring(response: 0.28, dampingFraction: 0.8), value: g)
+            }
+            if let d = drag, let slot = panel.slot(d.id), case .cell(let cell) = slot.shape,
+               let target = proposed(cell, cw, ch), !panel.canPlace(target, ignoring: slot.id) {
+                let r = rect(target, cw, ch).insetBy(dx: gap, dy: gap)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Color.red.opacity(0.8), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                    .frame(width: r.width, height: r.height).position(x: r.midX, y: r.midY)
+                    .allowsHitTesting(false)
+            }
+            ForEach(panel.slots, id: \.id) { slot in
+                if case .cell(let cell) = slot.shape { handle(slot, cell, cw, ch) }
+            }
+        }
+        .frame(width: size.width, height: size.height, alignment: .topLeading)
+    }
+
+    /// 拖动中按落点实时显示（放不下时留在原处）
+    private func displayed(_ cw: CGFloat, _ ch: CGFloat) -> PanelLayout {
+        guard let d = drag, let i = panel.slots.firstIndex(where: { $0.id == d.id }),
+              case .cell(let cell) = panel.slots[i].shape,
+              let target = proposed(cell, cw, ch), panel.canPlace(target, ignoring: d.id) else { return panel }
+        var copy = panel
+        copy.slots[i].shape = .cell(target)
+        return copy
+    }
+
+    @ViewBuilder private func emptyCells(_ cw: CGFloat, _ ch: CGFloat) -> some View {
+        ForEach(0..<panel.rows, id: \.self) { r in
+            ForEach(0..<panel.cols, id: \.self) { c in
+                if panel.slot(atRow: r, col: c) == nil {
+                    let cell = GridCell(row: r, col: c)
+                    let hovered = hoverCell == cell && drag == nil
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(Color.white.opacity(hovered ? 0.45 : 0.12), style: StrokeStyle(lineWidth: 1, dash: [4, 5]))
+                        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(hovered ? 0.08 : 0)))
+                        .overlay(Image(systemName: "plus").font(.title3.weight(.medium)).foregroundStyle(.white.opacity(hovered ? 0.85 : 0)))
+                        .padding(gap + PanelMetrics.chipInset * stage.scale)
+                        .frame(width: cw, height: ch)
+                        .contentShape(Rectangle())
+                        .offset(x: CGFloat(c) * cw, y: CGFloat(r) * ch)
+                        .onHover { inside in
+                            if inside { hoverCell = cell } else if hoverCell == cell { hoverCell = nil }
                         }
-                    }
-                }
-                ForEach(panel.slots, id: \.id) { slot in
-                    if case .cell(let cell) = slot.shape {
-                        let frame = rect(cell, cw, ch)
-                        let moving = drag?.id == slot.id
-                        let proposal = moving ? proposed(cell, cw, ch) : nil
-                        if let proposal {
-                            // 松手后的落点
-                            RoundedRectangle(cornerRadius: 12)
-                                .strokeBorder(panel.canPlace(proposal, ignoring: slot.id) ? Color.accentColor : .red,
-                                              style: StrokeStyle(lineWidth: 2, dash: [5, 4]))
-                                .frame(width: rect(proposal, cw, ch).width - 8, height: rect(proposal, cw, ch).height - 8)
-                                .position(x: rect(proposal, cw, ch).midX, y: rect(proposal, cw, ch).midY)
-                        }
-                        EditorChip(slot: slot, selected: navigation.selectedSlot == slot.id)
-                            .frame(width: frame.width - 8 + (moving && drag!.resize ? drag!.offset.width : 0),
-                                   height: frame.height - 8 + (moving && drag!.resize ? drag!.offset.height : 0))
-                            .position(x: frame.midX + (moving && drag!.resize ? drag!.offset.width / 2 : 0),
-                                      y: frame.midY + (moving && drag!.resize ? drag!.offset.height / 2 : 0))
-                            .offset(moving && !drag!.resize ? drag!.offset : .zero)
-                            .zIndex(moving ? 10 : 1)
-                            .onTapGesture { navigation.selectedSlot = slot.id }
-                            .gesture(DragGesture(minimumDistance: 3)
-                                .onChanged { v in
-                                    navigation.selectedSlot = slot.id
-                                    drag = (slot.id, v.translation, false)
-                                }
-                                .onEnded { _ in commit(slot, cell, cw, ch) })
-                            .overlay(alignment: .bottomTrailing) {
-                                if navigation.selectedSlot == slot.id && !moving {
-                                    ResizeHandle()
-                                        .position(x: frame.width - 6, y: frame.height - 6)
-                                        .frame(width: frame.width, height: frame.height)
-                                        .gesture(DragGesture(minimumDistance: 1)
-                                            .onChanged { v in drag = (slot.id, v.translation, true) }
-                                            .onEnded { _ in commit(slot, cell, cw, ch) })
-                                }
-                            }
-                    }
+                        .onTapGesture { addSlot(row: r, col: c) }
+                        .animation(.easeOut(duration: 0.12), value: hovered)
                 }
             }
         }
     }
+
+    /// 按钮上方的透明操作区：点选、拖动移动；选中后右下角出现调整大小的把手
+    @ViewBuilder private func handle(_ slot: Slot, _ cell: GridCell, _ cw: CGFloat, _ ch: CGFloat) -> some View {
+        let frame = rect(cell, cw, ch)
+        Color.clear
+            .contentShape(Rectangle())
+            .frame(width: frame.width, height: frame.height)
+            .position(x: frame.midX, y: frame.midY)
+            .onTapGesture { navigation.selectedSlot = slot.id }
+            .gesture(DragGesture(minimumDistance: 3)
+                .onChanged { v in
+                    navigation.selectedSlot = slot.id
+                    drag = (slot.id, v.translation, false)
+                }
+                .onEnded { _ in commit(slot, cell, cw, ch) })
+        if navigation.selectedSlot == slot.id && !slot.isCancel && (drag == nil || drag?.resize == true) {
+            let target = proposed(cell, cw, ch).flatMap { panel.canPlace($0, ignoring: slot.id) ? $0 : nil } ?? cell
+            let r = rect(target, cw, ch).insetBy(dx: gap, dy: gap)
+            ResizeHandle()
+                .position(x: r.maxX - 2, y: r.maxY - 2)
+                .gesture(DragGesture(minimumDistance: 1)
+                    .onChanged { v in drag = (slot.id, v.translation, true) }
+                    .onEnded { _ in commit(slot, cell, cw, ch) })
+        }
+    }
+
+    /// 显示坐标下的槽位空隙
+    private var gap: CGFloat { Tuning().slotGap * stage.scale }
 
     private func rect(_ c: GridCell, _ cw: CGFloat, _ ch: CGFloat) -> CGRect {
         CGRect(x: CGFloat(c.col) * cw, y: CGFloat(c.row) * ch, width: CGFloat(c.colSpan) * cw, height: CGFloat(c.rowSpan) * ch)
@@ -255,11 +466,13 @@ private struct GridEditor: View {
     }
 
     private func commit(_ slot: Slot, _ cell: GridCell, _ cw: CGFloat, _ ch: CGFloat) {
-        defer { drag = nil }
-        guard let target = proposed(cell, cw, ch), target != cell, panel.canPlace(target, ignoring: slot.id) else { return }
-        updatePanel(configs, panel.id) { p in
-            if let i = p.slots.firstIndex(where: { $0.id == slot.id }) { p.slots[i].shape = .cell(target) }
+        // 先写入新位置再清掉拖动状态，松手时不会闪回原处
+        if let target = proposed(cell, cw, ch), target != cell, panel.canPlace(target, ignoring: slot.id) {
+            updatePanel(configs, panel.id) { p in
+                if let i = p.slots.firstIndex(where: { $0.id == slot.id }) { p.slots[i].shape = .cell(target) }
+            }
         }
+        drag = nil
     }
 
     private func addSlot(row: Int, col: Int) {
@@ -271,112 +484,71 @@ private struct GridEditor: View {
     }
 }
 
-private struct EmptyCell: View {
-    let hovered: Bool
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: 12)
-            .strokeBorder(Color.white.opacity(hovered ? 0.35 : 0.1), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
-            .overlay(Image(systemName: "plus").foregroundStyle(.white.opacity(hovered ? 0.7 : 0)))
-            .padding(4)
-            .contentShape(Rectangle())
-    }
-}
-
 private struct ResizeHandle: View {
-    var body: some View {
-        Circle().fill(Color.accentColor).frame(width: 12, height: 12)
-            .overlay(Circle().strokeBorder(.white, lineWidth: 1.5))
-            .onHover { inside in if inside { NSCursor.crosshair.push() } else { NSCursor.pop() } }
-    }
-}
-
-/// 编辑器里的按钮：不随主题变化，强调"是什么、在哪里"
-struct EditorChip: View {
-    let slot: Slot
-    let selected: Bool
+    static let size: CGFloat = 14
 
     var body: some View {
-        let close = slot.isCancel
-        RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .fill(close ? Color.black.opacity(0.4) : Color.white.opacity(selected ? 0.16 : 0.08))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(selected ? Color.accentColor : Color.white.opacity(0.15), lineWidth: selected ? 2 : 1))
-            .overlay {
-                VStack(spacing: 5) {
-                    Image(systemName: slot.symbol).font(.system(size: 18)).frame(height: 20)
-                    Text(slot.title).font(.caption).lineLimit(1)
-                    if let detail { Text(detail).font(.caption2).foregroundStyle(.white.opacity(0.5)).lineLimit(1) }
-                }
-                .foregroundStyle(.white)
-                .padding(4)
-            }
+        Circle().fill(Color.white).frame(width: Self.size, height: Self.size)
+            .overlay(Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 7, weight: .bold)).foregroundStyle(.black))
+            .shadow(color: .black.opacity(0.4), radius: 3)
+            .frame(width: Self.size * 2, height: Self.size * 2)
             .contentShape(Rectangle())
-    }
-
-    private var detail: String? {
-        if slot.widget != nil { return "正在播放" }
-        if let s = slot.slider { return s == .volume ? "音量滑杆" : s == .brightness ? "亮度滑杆" : "滑杆" }
-        if slot.isCancel { return "关闭 · 按住编辑" }
-        return slot.action.shortLabel ?? slot.action.summary
+            .help("拖动调整大小")
     }
 }
 
 // MARK: 环形
 
-/// 环形面板：外圈项目按顺时针排列，中心为关闭
-private struct RingEditor: View {
+private struct RingCanvas: View {
     let configs: ConfigController
     @Bindable var navigation: SettingsNavigation
     let panel: PanelLayout
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 20) {
-            ZStack {
-                Circle().fill(Color(white: 0.12))
-                ForEach(Array(panel.ringItems.enumerated()), id: \.element.id) { i, slot in
-                    let a = Double(i) / Double(max(panel.ringItems.count, 1)) * 2 * .pi
-                    EditorChip(slot: slot, selected: navigation.selectedSlot == slot.id)
-                        .frame(width: 70, height: 62)
-                        .offset(x: sin(a) * 120, y: -cos(a) * 120)
-                        .onTapGesture { navigation.selectedSlot = slot.id }
-                }
-                if let center = panel.ringCenter {
-                    EditorChip(slot: center, selected: navigation.selectedSlot == center.id)
-                        .frame(width: 64, height: 56)
-                        .onTapGesture { navigation.selectedSlot = center.id }
-                }
-            }
-            .frame(width: 330, height: 330)
-            VStack(alignment: .leading) {
-                Text("外圈项目（顺时针，从正上方开始）").font(.callout).foregroundStyle(.secondary)
-                List(selection: $navigation.selectedSlot) {
-                    ForEach(panel.ringItems, id: \.id) { slot in
-                        Label(slot.title, systemImage: slot.symbol).tag(Optional(slot.id))
-                    }
-                    .onMove { from, to in
-                        var items = panel.ringItems
-                        items.move(fromOffsets: from, toOffset: to)
-                        updatePanel(configs, panel.id) { $0 = $0.rebuiltRing(items: items) }
-                    }
-                }
-                .frame(minHeight: 200)
-                HStack {
-                    Button("添加项目") { addItem() }.disabled(panel.ringItems.count >= Self.maxItems)
-                    Spacer()
-                }
-            }
-        }
-    }
+    let stage: StageGeometry
 
     static let maxItems = 12
 
+    var body: some View {
+        let size = stage.display
+        let chips = panel.slots.compactMap { s in stage.chip(s, in: panel).map { (slot: s, geometry: $0) } }
+        ZStack(alignment: .topLeading) {
+            LivePanel(layout: panel, stage: stage, lit: navigation.selectedSlot)
+                .animation(.spring(response: 0.3, dampingFraction: 0.8), value: panel)
+            ForEach(chips, id: \.slot.id) { chip in
+                let r = chip.geometry.frame.insetBy(dx: -SelectionMark.outset, dy: -SelectionMark.outset)
+                Circle().fill(Color.clear).contentShape(Circle())
+                    .frame(width: r.width, height: r.height)
+                    .position(x: r.midX, y: r.midY)
+                    .onTapGesture { navigation.selectedSlot = chip.slot.id }
+                if navigation.selectedSlot == chip.slot.id { SelectionMark(geometry: chip.geometry) }
+            }
+        }
+        .frame(width: size.width, height: size.height, alignment: .topLeading)
+        .overlay(alignment: .bottomTrailing) {
+            Button { addItem() } label: { Label("添加按钮", systemImage: "plus") }
+                .disabled(panel.ringItems.count >= Self.maxItems)
+        }
+    }
+
     private func addItem() {
         let id = SlotID(AppConfig.uniqueID("\(panel.id).item", existing: configs.config.allSlotIDs))
-        let item = Slot(id: id, shape: .rect(.zero), title: "新项目", symbol: "star",
+        let item = Slot(id: id, shape: .rect(.zero), title: "新按钮", symbol: "star",
                         action: .keyboardShortcut(KeyCombo(keyCode: 0, modifiers: [.command], displayLabel: "⌘A")))
         updatePanel(configs, panel.id) { $0 = $0.rebuiltRing(items: $0.ringItems + [item]) }
         navigation.selectedSlot = id
+    }
+}
+
+// MARK: 文案
+
+extension AppConfig {
+    /// 已开启的唤起方式及其名称
+    var enabledTriggers: [(trigger: PanelTrigger, title: String)] {
+        var list: [(trigger: PanelTrigger, title: String)] = []
+        if triggers.fourFingerTap { list.append((.fourFingerTap, "四指轻点")) }
+        if triggers.threeFingerTap { list.append((.threeFingerTap, "三指轻点")) }
+        if triggers.hold { list.append((.hold(triggers.anchorCorner), "按住角落")) }
+        if triggers.cornerDoubleTap { list.append((.cornerDoubleTap(triggers.anchorCorner), "角落轻点两下")) }
+        return list
     }
 }
 
