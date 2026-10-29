@@ -1,0 +1,17 @@
+# 构建产物
+.build/
+/dist/
+*.dSYM/
+/.swiftpm/
+*.xcodeproj/
+
+# 本地环境与敏感内容
+.DS_Store
+*.p12
+*.pem
+*.keychain-db
+.env*
+
+# 触点录制夹具只在开发者确认后手动加入（SRS FR-14.3）
+/recordings/
+.claude/
