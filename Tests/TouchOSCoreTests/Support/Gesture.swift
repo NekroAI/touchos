@@ -12,7 +12,7 @@ extension TrackpadDeviceID {
 /// - 采样时刻为 `起点 + k / rate`，起点是最早一次落指的时间；事件时间向后取整到采样时刻。
 /// - 落指所在的采样帧为 `began`，抬起所在的采样帧为 `ended`（与 `began` 至少相隔一帧）；
 ///   其间按 FR-4.2 与上一帧比较位移，分为 `moved` / `stationary`。
-/// - 手指位置在关键帧之间线性插值，最后一个关键帧之后保持不动。
+/// - 手指位置在关键帧之间线性插值，最后一个关键帧之后保持不动；未抬起的手指一直出现到最后一帧。
 /// - 每台设备各出一帧；某台设备在某采样时刻没有任何接触时不出帧（私有框架在无接触时停止回调）。
 struct Gesture {
     /// 手指默认接触面积（框架原始单位），远小于手掌
@@ -93,13 +93,14 @@ struct Gesture {
         func index(_ t: TimeInterval) -> Int { Int(((t - start) * rate - 1e-9).rounded(.up)) }
         func time(_ k: Int) -> TimeInterval { start + Double(k) / rate }
 
-        // 每根手指的 [落指帧, 最后一帧]，以及最后一帧是否为抬起
-        let spans: [(first: Int, last: Int, lifted: Bool)] = fingers.map { f in
-            let first = index(f.keyframes[0].t)
-            if let lift = f.liftAt { return (first, max(index(lift), first + 1), true) }
-            return (first, max(index(f.lastTime), first), false)
+        // 每根手指的 [落指帧, 最后一帧]，以及最后一帧是否为抬起；未抬起的手指一直留在板上到整段手势结束
+        let lifted: [(first: Int, last: Int)?] = fingers.map { f in
+            f.liftAt.map { (index(f.keyframes[0].t), max(index($0), index(f.keyframes[0].t) + 1)) }
         }
-        let lastIndex = spans.map(\.last).max()!
+        let lastIndex = zip(fingers, lifted).map { f, span in span?.last ?? max(index(f.lastTime), index(f.keyframes[0].t)) }.max()!
+        let spans: [(first: Int, last: Int, lifted: Bool)] = zip(fingers, lifted).map { f, span in
+            span.map { ($0.first, $0.last, true) } ?? (index(f.keyframes[0].t), lastIndex, false)
+        }
         let devices = Set(fingers.map(\.device)).sorted { $0.raw < $1.raw }
 
         var frames: [TouchFrame] = []
