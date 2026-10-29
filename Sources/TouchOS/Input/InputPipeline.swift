@@ -5,8 +5,12 @@ import TouchOSCore
 /// input.queue 上的输入处理（SRS 2.3）：原始接触 → `TouchFrame`（FR-4.2、4.3）、布局自检（FR-4.1）、帧率统计。
 /// 私有框架回调经 `enqueue` 投递到串行队列（libdispatch 入队无锁），回调线程不加锁、不等待。
 /// 除 `queue` 外的状态只在 `queue` 上访问。
+///
+/// 时间戳换算：私有框架的时间戳是设备时钟，会话状态机、tick 与事件拦截统一使用 `systemUptime`。
+/// 每台设备记录"收到回调时的 uptime − 设备时间戳"的最小值作为偏移，帧时间戳 = 设备时间戳 + 偏移，
+/// 既保留设备时钟的帧间隔精度，又与其他时间可比。
 final class InputPipeline: @unchecked Sendable {
-    let queue = DispatchQueue(label: "ai.nekro.touchos.input", qos: .userInteractive)
+    let queue: DispatchQueue
 
     typealias DebugSink = @Sendable (TouchFrame, FrameRateMeter.Summary?) -> Void
 
@@ -18,18 +22,22 @@ final class InputPipeline: @unchecked Sendable {
     private var trackers: [TrackpadDeviceID: ContactTracker] = [:]
     private var selfChecks: [TrackpadDeviceID: LayoutSelfCheck] = [:]
     private var meters: [TrackpadDeviceID: FrameRateMeter] = [:]
+    private var clockOffsets: [TrackpadDeviceID: TimeInterval] = [:]
     private var layoutMismatch = false
     private var debugSink: DebugSink?
 
     /// `onFrame`、`onLayoutMismatch` 在 input.queue 上调用。
-    init(onFrame: @escaping @Sendable (TouchFrame) -> Void, onLayoutMismatch: @escaping @Sendable () -> Void) {
+    init(queue: DispatchQueue, onFrame: @escaping @Sendable (TouchFrame) -> Void,
+         onLayoutMismatch: @escaping @Sendable () -> Void) {
+        self.queue = queue
         self.onFrame = onFrame
         self.onLayoutMismatch = onLayoutMismatch
     }
 
     /// 在私有框架回调线程上调用。
     func enqueue(device: TrackpadDeviceID, timestamp: TimeInterval, raw: [RawContact]) {
-        queue.async { self.process(device: device, timestamp: timestamp, raw: raw) }
+        let received = ProcessInfo.processInfo.systemUptime
+        queue.async { self.process(device: device, timestamp: timestamp, received: received, raw: raw) }
     }
 
     /// 设置当前启用的设备；其他设备的帧（例如停止注册前仍在途中的帧）一律丢弃，其跟踪状态清空。
@@ -40,6 +48,7 @@ final class InputPipeline: @unchecked Sendable {
                 self.trackers[id] = nil
                 self.selfChecks[id] = nil
                 self.meters[id] = nil
+                self.clockOffsets[id] = nil
             }
         }
     }
@@ -49,8 +58,11 @@ final class InputPipeline: @unchecked Sendable {
         queue.async { self.debugSink = sink }
     }
 
-    private func process(device: TrackpadDeviceID, timestamp: TimeInterval, raw: [RawContact]) {
+    private func process(device: TrackpadDeviceID, timestamp deviceTime: TimeInterval, received: TimeInterval, raw: [RawContact]) {
         guard !layoutMismatch, activeDevices.contains(device) else { return }
+        let offset = min(clockOffsets[device] ?? .infinity, received - deviceTime)
+        clockOffsets[device] = offset
+        let timestamp = deviceTime + offset
         if selfChecks[device, default: LayoutSelfCheck()].observe(raw) {
             layoutMismatch = true
             log.error("contact layout self-check failed; input disabled")

@@ -18,8 +18,11 @@ public struct Tuning: Equatable, Sendable {
     public var stillThresholdMM = 2.0
     /// `P.palmSize`：nil 表示使用校准值，未校准时用 `defaultPalmSize`（FR-10.8）
     public var palmSize: Float?
-    /// `P.mappingMargin`
+    /// `P.mappingMargin`：四周不接受指点指落下的边缘宽度（触控板比例；修订见 decisions.md D9）
     public var mappingMargin = 0.05
+    /// `P.mappingScale`：映射区占触控板的比例，宽高同比，居中（decisions.md D9）
+    public var mappingScale = 0.6
+    public static let mappingScaleRange = 0.4...1.0
     /// `P.hysteresis`（面板比例）
     public var hysteresis = 0.02
     /// `P.liftLookbackMs`

@@ -13,4 +13,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.start()
         log.info("launched")
     }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // 退出前先恢复光标并停止拦截（SRS 5.5、NFR-7）
+        coordinator?.shutdown()
+    }
 }

@@ -10,7 +10,7 @@ struct Harness {
     var machine: SessionStateMachine
     private(set) var log: [(t: TimeInterval, effect: SessionEffect)] = []
 
-    init(tuning: Tuning = Tuning(), environment: SessionEnvironment = .test) {
+    init(tuning: Tuning = .test, environment: SessionEnvironment = .test) {
         machine = SessionStateMachine(tuning: tuning, environment: environment)
     }
 
@@ -80,6 +80,15 @@ extension SessionEnvironment {
     }
 }
 
+extension Tuning {
+    /// 映射区 0.9：与边缘 0.05 重合，即 0.05–0.95 全部映射，便于用整数比例推算测试点
+    static var test: Tuning {
+        var t = Tuning()
+        t.mappingScale = 0.9
+        return t
+    }
+}
+
 extension Layout {
     /// 3×3 网格：右上"关闭"、右中"音量 +"（连续触发）、左上 ⌘A、左下安全区，其余为空隙
     static let test = Layout(id: "test", name: "测试", rows: 3, cols: 3, slots: [
@@ -93,7 +102,7 @@ extension Layout {
     ])
 }
 
-/// 测试布局中各区域在触控板上的代表点（映射区边距 0.05）
+/// 测试布局中各区域在触控板上的代表点（`Tuning.test`：映射区 0.05–0.95）
 enum Spot {
     static let anchor = (0.05, 0.06)
     static let close = (0.85, 0.85)

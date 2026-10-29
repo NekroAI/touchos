@@ -9,7 +9,9 @@ let package = Package(
     targets: [
         // 状态机与算法：不得引用 AppKit、CoreGraphics 事件或私有框架类型（SRS FR-3.2）
         .target(name: "TouchOSCore"),
-        .executableTarget(name: "TouchOS", dependencies: ["TouchOSCore"]),
+        // 事件拦截回调用的无锁原子变量（SRS FR-7.2）
+        .target(name: "TouchOSAtomics"),
+        .executableTarget(name: "TouchOS", dependencies: ["TouchOSCore", "TouchOSAtomics"]),
         .testTarget(name: "TouchOSCoreTests", dependencies: ["TouchOSCore"]),
     ]
 )

@@ -3,7 +3,7 @@ import SwiftUI
 import TouchOSCore
 
 /// 调试叠层（SRS FR-14.4）：每台设备的实时触点与帧率。只在内存中显示，永不写盘（FR-4.7）。
-/// 状态机、候选失败原因、拦截耗时、最近状态转移随 K4、K6 加入。
+/// 另显示最近 10 条状态转移、候选失败与会话结束原因；拦截耗时待加入。
 @MainActor
 @Observable
 final class DebugOverlayModel {
@@ -16,6 +16,16 @@ final class DebugOverlayModel {
 
     var devices: [DeviceState] = []
     var status = ""
+    /// 会话状态、最近一次候选失败或会话结束原因
+    var session: [String] = []
+
+    /// 只保留最近 10 条（FR-14.4）
+    static let sessionLines = 10
+
+    func log(_ line: String) {
+        session.append(line)
+        if session.count > Self.sessionLines { session.removeFirst(session.count - Self.sessionLines) }
+    }
 
     func setDevices(_ list: [TrackpadDevice]) {
         devices = list.map { d in devices.first { $0.device.id == d.id } ?? DeviceState(device: d) }
@@ -76,7 +86,7 @@ final class DebugOverlayController {
     }
 
     private func makePanel() -> NSPanel {
-        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: 300),
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: 520),
                             styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: false)
         panel.level = .statusBar
         panel.isOpaque = false
@@ -108,6 +118,10 @@ private struct DebugOverlayView: View {
             ForEach(model.devices, id: \.device.id) { state in
                 DeviceSection(state: state)
             }
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(Array(model.session.enumerated()), id: \.offset) { _, line in Text(line) }
+            }
+            .frame(height: CGFloat(DebugOverlayModel.sessionLines) * 15, alignment: .top)
         }
         .font(.system(size: 11, design: .monospaced))
         .padding(12)

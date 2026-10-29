@@ -14,16 +14,27 @@ import Testing
     }
 
     @Test func mapperNormalizesClampsAndFlipsY() {
-        let m = Mapper(margin: 0.05)
-        #expect(m.normalizedPanelPoint(CGPoint(x: 0.05, y: 0.05)) == CGPoint(x: 0, y: 1))
+        let m = Mapper(margin: 0.05, scale: 0.9)
+        let origin = m.normalizedPanelPoint(CGPoint(x: 0.05, y: 0.05))
+        #expect(abs(origin.x) < 1e-9 && abs(origin.y - 1) < 1e-9)
         let corner = m.normalizedPanelPoint(CGPoint(x: 0.95, y: 0.95))
         #expect(abs(corner.x - 1) < 1e-9 && abs(corner.y) < 1e-9)
         #expect(m.normalizedPanelPoint(CGPoint(x: -1, y: 2)) == CGPoint(x: 0, y: 0))
         let p = m.panelPoint(CGPoint(x: 0.5, y: 0.5), panelSize: CGSize(width: 600, height: 400))
         #expect(abs(p.x - 300) < 1e-9 && abs(p.y - 200) < 1e-9)
-        #expect(m.isInMappingZone(CGPoint(x: 0.5, y: 0.5)))
-        #expect(!m.isInMappingZone(CGPoint(x: 0.02, y: 0.5)))
-        #expect(!m.isInMappingZone(CGPoint(x: 0.5, y: 0.97)))
+        #expect(m.acceptsPointerStart(CGPoint(x: 0.5, y: 0.5)))
+        #expect(!m.acceptsPointerStart(CGPoint(x: 0.02, y: 0.5)))
+        #expect(!m.acceptsPointerStart(CGPoint(x: 0.5, y: 0.97)))
+    }
+
+    @Test func smallerMappingRectIsCenteredAndClampsBeyond() {
+        let m = Mapper(margin: 0.05, scale: 0.6)
+        #expect(m.mappingRect == CGRect(x: 0.2, y: 0.2, width: 0.6, height: 0.6))
+        let mid = m.normalizedPanelPoint(CGPoint(x: 0.35, y: 0.65))
+        #expect(abs(mid.x - 0.25) < 1e-9 && abs(mid.y - 0.25) < 1e-9)
+        // 映射区以外、边缘以内：仍可落指，坐标钳制到面板边缘
+        #expect(m.acceptsPointerStart(CGPoint(x: 0.9, y: 0.9)))
+        #expect(m.normalizedPanelPoint(CGPoint(x: 0.9, y: 0.9)) == CGPoint(x: 1, y: 0))
     }
 
     @Test func panelKeepsDeviceAspectInsideScaledScreen() {
@@ -38,7 +49,10 @@ import Testing
         let t = HitTester(layout: .test, panelSize: CGSize(width: 600, height: 400), slotGap: 6, hysteresis: 0.02)
         #expect(t.hit(CGPoint(x: 500, y: 60)) == "close")
         #expect(t.hit(CGPoint(x: 300, y: 200)) == nil)        // 空单元格
-        #expect(t.hit(CGPoint(x: 402, y: 60)) == nil)         // 内缩形成的空隙
+        #expect(t.hit(CGPoint(x: 402, y: 60)) == nil)         // 槽位之间内缩形成的空隙
+        #expect(t.hit(CGPoint(x: 600, y: 0)) == "close")      // 面板外边不留空隙
+        let visual = t.visualRect(of: Layout.test.slots[1])
+        #expect(abs(visual.minX - 406) < 1e-9 && abs(visual.minY - 6) < 1e-9 && abs(visual.maxX - 594) < 1e-9)
         let overlap = Layout(id: "o", name: "o", rows: 1, cols: 1, slots: [
             Slot(id: "first", cell: GridCell(row: 0, col: 0), title: "", symbol: "", action: .none),
             Slot(id: "last", cell: GridCell(row: 0, col: 0), title: "", symbol: "", action: .none),

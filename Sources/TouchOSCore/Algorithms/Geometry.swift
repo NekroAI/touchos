@@ -18,24 +18,33 @@ func closedContains(_ rect: CGRect, _ p: CGPoint) -> Bool {
     p.x >= rect.minX && p.x <= rect.maxX && p.y >= rect.minY && p.y <= rect.maxY
 }
 
-/// 坐标映射（SRS 6.2）：触控板归一化坐标 → 面板坐标。
+/// 坐标映射（SRS 6.2，按 decisions.md D9 修订）：触控板归一化坐标 → 面板坐标。
+/// 映射区是居中、占触控板 `scale` 比例（宽高同比）的矩形，与面板线性绝对映射；映射区以外的坐标钳制到面板边缘，
+/// 因此边缘与角落的槽位相当于向外延伸。指点指可以落在四周 `margin` 宽的边缘以内的任何位置。
 public struct Mapper: Sendable {
     public let margin: Double
+    public let scale: Double
 
-    public init(margin: Double) {
+    public init(margin: Double, scale: Double) {
         self.margin = margin
+        self.scale = scale
     }
 
-    /// 落在边距里的触点不当作指点指
-    public func isInMappingZone(_ p: CGPoint) -> Bool {
+    /// 新接触可以成为指点指的区域（锚定区另行排除，FR-6.5）
+    public func acceptsPointerStart(_ p: CGPoint) -> Bool {
         p.x >= margin && p.x <= 1 - margin && p.y >= margin && p.y <= 1 - margin
+    }
+
+    /// 映射区（触控板归一化坐标，原点左下）
+    public var mappingRect: CGRect {
+        CGRect(x: (1 - scale) / 2, y: (1 - scale) / 2, width: scale, height: scale)
     }
 
     /// 面板归一化坐标（0–1，原点左上，y 向下），越界钳制在边缘
     public func normalizedPanelPoint(_ p: CGPoint) -> CGPoint {
-        let span = 1 - 2 * margin
-        let u = min(max((p.x - margin) / span, 0), 1)
-        let v = min(max((p.y - margin) / span, 0), 1)
+        let r = mappingRect
+        let u = min(max((p.x - r.minX) / r.width, 0), 1)
+        let v = min(max((p.y - r.minY) / r.height, 0), 1)
         return CGPoint(x: u, y: 1 - v)
     }
 
@@ -47,7 +56,7 @@ public struct Mapper: Sendable {
 }
 
 /// 面板尺寸（FR-6.4、FR-8.6）：宽高比等于设备映射区的物理宽高比，取能放入"屏幕可见区域 × 比例"的最大矩形。
-/// 映射区每边内缩相同比例，物理宽高比与整块触控板相同。
+/// 映射区宽高按同一比例缩放，物理宽高比与整块触控板相同。
 public func panelSize(screen: CGSize, deviceMM: CGSize, scale: Double) -> CGSize {
     let aspect = deviceMM.width / deviceMM.height
     let maxW = screen.width * scale, maxH = screen.height * scale
@@ -70,12 +79,24 @@ public struct HitTester: Sendable {
         self.hysteresis = hysteresis
     }
 
-    /// 槽位在面板上的可命中矩形（pt）
-    public func rect(of slot: Slot) -> CGRect {
+    /// 槽位的绘制矩形（pt）：各边内缩 `slotGap`（FR-10.5）
+    public func visualRect(of slot: Slot) -> CGRect {
         let n = layout.normalizedRect(of: slot)
         return CGRect(x: n.minX * panelSize.width, y: n.minY * panelSize.height,
                       width: n.width * panelSize.width, height: n.height * panelSize.height)
             .insetBy(dx: slotGap, dy: slotGap)
+    }
+
+    /// 槽位的可命中矩形（pt）：槽位之间保留空隙；贴着面板外边的一侧延伸到面板边界，
+    /// 使钳制到边缘的坐标仍能命中边缘槽位（decisions.md D9）
+    public func rect(of slot: Slot) -> CGRect {
+        let n = layout.normalizedRect(of: slot)
+        var r = visualRect(of: slot)
+        if n.minX <= 0 { r = CGRect(x: 0, y: r.minY, width: r.maxX, height: r.height) }
+        if n.minY <= 0 { r = CGRect(x: r.minX, y: 0, width: r.width, height: r.maxY) }
+        if n.maxX >= 1 { r.size.width = panelSize.width - r.minX }
+        if n.maxY >= 1 { r.size.height = panelSize.height - r.minY }
+        return r
     }
 
     /// 不带滞回的命中（FR-6.7、FR-6.11）；重叠时取 z 序最后一个（FR-6.9）。nil 表示空隙。

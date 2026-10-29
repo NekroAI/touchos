@@ -4,13 +4,14 @@ macOS 菜单栏工具：一指按住触控板角落唤起浮层面板，另一�
 
 ## 当前阶段
 
-**M0 技术原型，K1–K3 已完成（K3 的双设备、休眠唤醒、热插拔待验证，见 `docs/m0-report.md`）；下一项 K4（状态机 T1–T21）。** 任务顺序与完成条件见 `docs/srs.md` 第 15 章；M0 闸门不通过，不开始 M1 的界面类任务。
+**M0 技术原型，K1–K7 已实现，正在实机验证 M0 闸门的验收用例（见 `docs/m0-report.md`）；K3 的双设备、休眠唤醒、热插拔待验证。** 任务顺序与完成条件见 `docs/srs.md` 第 15 章；M0 闸门不通过，不开始 M1 的界面类任务。
 
 - 构建：`scripts/build-macos.sh`（产物 `dist/TouchOS.app`，本机开发证书「TouchOS Dev」签名，重新构建不丢辅助功能授权）
 - 测试：`swift test`；覆盖率闸门：`scripts/coverage.sh`（`TouchOSCore` 行覆盖率 ≥ 85%，NFR-15）
 - 合成帧：测试中用 `Gesture`（`Tests/TouchOSCoreTests/Support/Gesture.swift`，FR-14.1）按时间与位置描述手势再采样成帧
 - CI：私有仓库 macOS 构建有额度限制。推送前先在本地跑 `scripts/coverage.sh` 与 `scripts/build-macos.sh`；提交攒到阶段节点再推送，不零散触发 CI
 - 调试叠层：发布构建中执行 `defaults write ai.nekro.touchos showDebugOverlayMenu -bool true` 后，菜单栏出现"调试叠层"（直接运行 `.build/release/TouchOS` 时 defaults 域为 `TouchOS`）
+- 临时调节（K12 设置界面之前）：`defaults write ai.nekro.touchos mappingScale -float 0.5`（映射区大小，D9），下一次唤起生效
 - 排查：`applicationDidFinishLaunching` 中的 ObjC 异常会被 AppKit 静默吞掉；启动"没反应"时用 lldb 在 `objc_exception_throw` 下断点。日志命令见 `docs/m0-report.md`
 - 开发机：Mac mini M4 + macOS 27 + 蓝牙妙控板，没有内置触控板（D7）。内置板、双设备、macOS 14/15/26 相关验收不能在本机声称通过。
 

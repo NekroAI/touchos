@@ -106,6 +106,8 @@ public enum SessionEvent: Equatable, Sendable {
     case tapDisabled
     case forceCancel(String)
     case environment(SessionEnvironment)
+    /// 可调参数变更；会话进行中收到时延到回到空闲后生效
+    case tuning(Tuning)
 }
 
 public struct ArmedContext: Equatable, Sendable {
@@ -136,7 +138,9 @@ public enum SessionState: Equatable, Sendable {
 }
 
 public struct SessionStateMachine: Sendable {
-    public let tuning: Tuning
+    public private(set) var tuning: Tuning
+    /// 会话进行中收到的参数变更，回到空闲时生效（FR-10.3：配置变更只影响下一次会话）
+    private var pendingTuning: Tuning?
     public private(set) var environment: SessionEnvironment
     public private(set) var state: SessionState = .idle
     /// 最近一次发布的拦截策略（冷却结束后仍保留惯性滚动截止时刻）
@@ -154,6 +158,14 @@ public struct SessionStateMachine: Sendable {
         if case .environment(let env) = event {
             environment = env
             return []
+        }
+        if case .tuning(let t) = event {
+            if state == .idle { tuning = t } else { pendingTuning = t }
+            return []
+        }
+        if state == .idle, let t = pendingTuning {
+            tuning = t
+            pendingTuning = nil
         }
         switch state {
         case .idle: return idle(event)
@@ -277,7 +289,7 @@ public struct SessionStateMachine: Sendable {
     }
 
     private mutating func pointerFrame(_ ctx: inout ActiveContext, _ frame: TouchFrame) -> [SessionEffect] {
-        let mapper = Mapper(margin: tuning.mappingMargin)
+        let mapper = Mapper(margin: tuning.mappingMargin, scale: tuning.mappingScale)
         let tester = HitTester(layout: ctx.layout, panelSize: ctx.panelSize, slotGap: tuning.slotGap, hysteresis: tuning.hysteresis)
         var effects: [SessionEffect] = []
 
@@ -298,10 +310,10 @@ public struct SessionStateMachine: Sendable {
                 effects.append(.haptic)
             }
         } else if let c = frame.contacts.first(where: { candidate in
-            candidate.id != ctx.anchorID && candidate.phase == .began && mapper.isInMappingZone(candidate.position)
+            candidate.id != ctx.anchorID && candidate.phase == .began && mapper.acceptsPointerStart(candidate.position)
                 && !closedContains(anchorZone(tuning.anchorCorner, width: tuning.anchorZoneW, height: tuning.anchorZoneH), candidate.position)
         }) {
-            // T8：新接触落在映射区且不在锚定区（FR-6.5）
+            // T8：新接触落在边缘以内且不在锚定区（FR-6.5；映射区修订见 decisions.md D9）
             ctx.pointer = PointerTrack(id: c.id, t: frame.timestamp, p: c.position)
             let hovered = tester.hit(mapper.panelPoint(c.position, panelSize: ctx.panelSize))
             if hovered != ctx.hovered {
@@ -383,7 +395,7 @@ public struct SessionStateMachine: Sendable {
     }
 
     private func panelState(_ ctx: ActiveContext) -> PanelState {
-        let mapper = Mapper(margin: tuning.mappingMargin)
+        let mapper = Mapper(margin: tuning.mappingMargin, scale: tuning.mappingScale)
         return PanelState(layout: ctx.layout, size: ctx.panelSize,
                           pointer: ctx.pointer.map { mapper.panelPoint($0.latest, panelSize: ctx.panelSize) },
                           hovered: ctx.hovered)

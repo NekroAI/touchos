@@ -7,10 +7,6 @@ final class MenuBarController: NSObject {
     private let statusLine = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private var debugItem: NSMenuItem?
 
-    var inputStatus: AppCoordinator.InputStatus = .normal {
-        didSet { updateStatus() }
-    }
-
     /// 设置后菜单中出现"调试叠层"（FR-14.4）
     var onToggleDebugOverlay: (() -> Void)? {
         didSet { rebuildMenu() }
@@ -24,7 +20,16 @@ final class MenuBarController: NSObject {
         super.init()
         statusLine.isEnabled = false
         rebuildMenu()
-        updateStatus()
+        setStatus("正常", warning: false)
+    }
+
+    /// FR-11.1 当前状态：正常 / 输入不可用 / 拦截不可用 / 缺少权限
+    func setStatus(_ text: String, warning: Bool) {
+        statusLine.title = "状态：\(text)"
+        // 图标待定（docs/decisions.md 待决事项 2），暂用 SF Symbols
+        statusItem.button?.image = warning
+            ? NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: "TouchOS：\(text)")
+            : NSImage(systemSymbolName: "hand.point.up.left", accessibilityDescription: "TouchOS")
     }
 
     private func rebuildMenu() {
@@ -47,18 +52,6 @@ final class MenuBarController: NSObject {
         }
         menu.addItem(NSMenuItem(title: "退出 TouchOS", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         statusItem.menu = menu
-    }
-
-    private func updateStatus() {
-        // 图标待定（docs/decisions.md 待决事项 2），暂用 SF Symbols
-        switch inputStatus {
-        case .normal:
-            statusLine.title = "状态：正常"
-            statusItem.button?.image = NSImage(systemSymbolName: "hand.point.up.left", accessibilityDescription: "TouchOS")
-        case .unavailable(let reason):
-            statusLine.title = "状态：输入不可用（\(reason)）"
-            statusItem.button?.image = NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: "TouchOS：输入不可用")
-        }
     }
 
     @objc private func toggleDebugOverlay() {

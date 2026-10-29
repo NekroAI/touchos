@@ -36,7 +36,7 @@ Oct 28, 2026 · @Aurnxt
 | 锚指 | `anchorTouch` | 在锚定区落下并满足驻留条件、持续按住以维持激活态的手指 |
 | 指点指 | `pointerTouch` | 激活态下第一根落在映射区的新手指，用于选择槽位 |
 | 锚定区 | `anchorZone` | 允许锚定手势发生的触控板区域（归一化坐标矩形） |
-| 映射区 | `mappingZone` | 触控板去掉四周边距后的矩形，与面板线性绝对映射 |
+| 映射区 | `mappingZone` | 触控板去掉四周边距后的矩形，与面板线性绝对映射（修订：居中、占触控板 `P.mappingScale` 比例的矩形，区外坐标钳制到面板边缘，见 decisions.md D9） |
 | 激活态 | `Active` | 锚指保持期间的准模式；锚指抬起即结束 |
 | 浮层面板 | `OverlayPanel` | 激活态下显示的不抢焦点悬浮窗口 |
 | 面板布局 | `Layout` | 一组槽位及其几何位置 |
@@ -304,7 +304,7 @@ public struct ActiveContext: Sendable {
 | T5 | 候选 | 同设备出现第二个接触 | 补位光标；恢复放行 | 空闲 |
 | T6 | 候选 | 锚指抬起 | 补位光标；恢复放行 | 空闲 |
 | T7 | 候选 | 接触面积 ≥ `P.palmSize` | 补位光标；恢复放行 | 空闲 |
-| T8 | 激活 | 同设备新接触落在映射区，且当前无指点指 | 记为指点指，开始跟踪 | 激活 |
+| T8 | 激活 | 同设备新接触落在映射区，且当前无指点指（修订：落在边缘以内即可，见 decisions.md D9） | 记为指点指，开始跟踪 | 激活 |
 | T9 | 激活 | 指点指移动 | 更新映射坐标、命中槽位；槽位变化时触发触觉 | 激活 |
 | T10 | 激活 | 距进入 ≥ `P.panelDelayMs` 且面板未显示 | 显示面板 | 激活 |
 | T11 | 激活 | 指点指抬起，提交坐标命中普通槽位，槽位未开连续触发 | 见 5.5 退出；发出 `ActionRequest` | 冷却 |
@@ -355,7 +355,7 @@ Z_{anchor} = [0, w_a] \times [0, h_a]
 
 ### 6.2 坐标映射（Mapper）
 
-映射区为每边内缩 `P.mappingMargin`（比例 m）后的矩形。指点指归一化坐标 (x, y) 先归一到映射区并钳制：
+映射区为每边内缩 `P.mappingMargin`（比例 m）后的矩形。（修订：映射区改为居中、边长为触控板 `P.mappingScale` 倍的矩形，下式中 m 相应替换为 (1 − scale)/2；`P.mappingMargin` 只表示不接受指点指落下的边缘，见 decisions.md D9）指点指归一化坐标 (x, y) 先归一到映射区并钳制：
 
 ```latex
 u = \mathrm{clamp}\left(\frac{x - m}{1 - 2m}, 0, 1\right), \quad v = \mathrm{clamp}\left(\frac{y - m}{1 - 2m}, 0, 1\right)
@@ -813,7 +813,8 @@ let frames = Gesture(device: .builtIn)
 | `P.dwellMs` | 200 ms | 80–600 | 是 | 驻留时长 |
 | `P.stillThresholdMM` | 2.0 mm | 0.5–6 | 是 | 驻留期允许位移 |
 | `P.palmSize` | 校准值 × 1.5 | 由校准决定 | 校准 | 手掌判定阈值 |
-| `P.mappingMargin` | 0.05 | 0–0.15 | 是 | 映射区每边边距 |
+| `P.mappingMargin` | 0.05 | 0–0.15 | 是 | 映射区每边边距（修订：不接受指点指落下的边缘宽度，见 decisions.md D9） |
+| `P.mappingScale` | 0.6 | 0.4–1.0 | 是 | 映射区占触控板的比例，居中（新增，见 decisions.md D9） |
 | `P.hysteresis` | 0.02 | 0–0.08 | 是 | 槽位滞回（面板比例） |
 | `P.liftLookbackMs` | 60 ms | 0–150 | 否 | 抬起去抖回看时间 |
 | `P.panelDelayMs` | 200 ms | 0–600 | 是 | 面板显示延迟 |

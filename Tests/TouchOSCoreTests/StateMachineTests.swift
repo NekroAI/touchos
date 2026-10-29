@@ -11,7 +11,7 @@ private func anchorDown() -> Gesture {
     Gesture(device: .builtIn).touch(id: 1, at: Spot.anchor, t: 0)
 }
 
-private func run(_ g: Gesture, tuning: Tuning = Tuning(), environment: SessionEnvironment = .test,
+private func run(_ g: Gesture, tuning: Tuning = .test, environment: SessionEnvironment = .test,
                  events: [(TimeInterval, SessionEvent)] = [], until: TimeInterval? = nil) -> Harness {
     var h = Harness(tuning: tuning, environment: environment)
     h.run(g.frames(rate: rate), events: events, until: until)
@@ -53,7 +53,7 @@ private func run(_ g: Gesture, tuning: Tuning = Tuning(), environment: SessionEn
     }
 
     @Test func t2ZeroDelayShowsPanelImmediately() throws {
-        var tuning = Tuning()
+        var tuning = Tuning.test
         tuning.panelDelayMs = 0
         let h = run(anchorDown().hold(id: 1, until: 0.3), tuning: tuning, until: 0.3)
         let entered = try #require(h.firstTime { $0 == .policy(TapPolicy(mode: .active)) })
@@ -146,7 +146,7 @@ private func run(_ g: Gesture, tuning: Tuning = Tuning(), environment: SessionEn
 
     @Test func t10BlindSelectionBeforePanelAppears() {
         // AC-11、FR-6.12
-        var tuning = Tuning()
+        var tuning = Tuning.test
         tuning.panelDelayMs = 300
         let g = anchorDown().hold(id: 1, until: 1.0).touch(id: 2, at: Spot.close, t: 0.25).lift(id: 2, t: 0.35)
         let h = run(g, tuning: tuning)
@@ -213,7 +213,7 @@ private func run(_ g: Gesture, tuning: Tuning = Tuning(), environment: SessionEn
     }
 
     @Test func t18MaxDurationCancels() {
-        var tuning = Tuning()
+        var tuning = Tuning.test
         tuning.maxSessionSec = 0.5
         let h = run(anchorDown().hold(id: 1, until: 1.0), tuning: tuning)
         #expect(h.ends == [.maxDuration])
@@ -235,6 +235,14 @@ private func run(_ g: Gesture, tuning: Tuning = Tuning(), environment: SessionEn
         let g = anchorDown().hold(id: 1, until: 1.0)
             .touch(id: 2, at: Spot.close, t: 0.3).hold(id: 2, until: 0.6).move(id: 2, to: Spot.vol, over: 0.03).lift(id: 2, t: 0.633)
         #expect(run(g).actions.map(\.action) == [close])
+    }
+
+    @Test func smallMappingRectExtendsEdgeSlotsOutward() {
+        // 映射区 0.6（0.2–0.8）：落在映射区外的右上方仍选中右上角的"关闭"（decisions.md D9）
+        var tuning = Tuning.test
+        tuning.mappingScale = 0.6
+        let g = anchorDown().hold(id: 1, until: 1.0).touch(id: 2, at: (0.9, 0.9), t: 0.3).lift(id: 2, t: 0.4)
+        #expect(run(g, tuning: tuning).actions.map(\.action) == [close])
     }
 
     @Test func pointerOnAnotherDeviceIsIgnored() {
@@ -281,6 +289,24 @@ private func run(_ g: Gesture, tuning: Tuning = Tuning(), environment: SessionEn
         #expect(h.failures.isEmpty)
         #expect(h.effects.filter { $0 == .armed(.builtIn) }.count == 2)
         #expect(h.isActive)
+    }
+
+    @Test func tuningChangesWaitUntilIdle() {
+        var h = Harness()
+        h.run(anchorDown().hold(id: 1, until: 0.3).frames(rate: rate), until: 0.3)
+        var t = Tuning.test
+        t.mappingScale = 0.5
+        h.send(.tuning(t), at: 0.3)
+        #expect(h.machine.tuning.mappingScale == 0.9)  // 激活中：延后
+        h.send(.escapeKey, at: 0.31)
+        h.send(.tick(0.5), at: 0.5)                    // 冷却结束回到空闲
+        h.send(.tick(0.52), at: 0.52)
+        #expect(h.machine.state == .idle)
+        h.send(.frame(TouchFrame(device: .builtIn, timestamp: 0.6, contacts: [])), at: 0.6)
+        #expect(h.machine.tuning.mappingScale == 0.5)
+        var idle = Harness()
+        idle.send(.tuning(t), at: 0)
+        #expect(idle.machine.tuning.mappingScale == 0.5)  // 空闲：立即生效
     }
 
     @Test func environmentUpdatesApplyToNextSession() {
