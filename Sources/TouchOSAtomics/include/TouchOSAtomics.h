@@ -14,3 +14,9 @@ void TOAtomicStoreDouble(TOAtomic64 *a, double value);
 double TOAtomicAddDouble(TOAtomic64 *a, double delta);
 /// 原子地取出当前值并置零
 double TOAtomicExchangeDouble(TOAtomic64 *a, double value);
+/// 原子加一（整数）
+void TOAtomicIncrement(TOAtomic64 *a);
+/// 原子地把值更新为 max(当前值, value)（整数）
+void TOAtomicMax(TOAtomic64 *a, uint64_t value);
+/// 原子地取出当前值并替换（整数）
+uint64_t TOAtomicExchange(TOAtomic64 *a, uint64_t value);

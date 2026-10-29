@@ -33,3 +33,15 @@ double TOAtomicAddDouble(TOAtomic64 *a, double delta) {
 double TOAtomicExchangeDouble(TOAtomic64 *a, double value) {
     return real(atomic_exchange_explicit(&a->value, bits(value), memory_order_acq_rel));
 }
+
+void TOAtomicIncrement(TOAtomic64 *a) { atomic_fetch_add_explicit(&a->value, 1, memory_order_relaxed); }
+
+void TOAtomicMax(TOAtomic64 *a, uint64_t value) {
+    uint64_t old = atomic_load_explicit(&a->value, memory_order_relaxed);
+    while (old < value && !atomic_compare_exchange_weak_explicit(&a->value, &old, value, memory_order_relaxed, memory_order_relaxed)) {
+    }
+}
+
+uint64_t TOAtomicExchange(TOAtomic64 *a, uint64_t value) {
+    return atomic_exchange_explicit(&a->value, value, memory_order_acq_rel);
+}

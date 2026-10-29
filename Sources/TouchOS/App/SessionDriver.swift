@@ -23,9 +23,14 @@ final class SessionDriver: @unchecked Sendable {
     private let overlay: OverlayController
     private var timer: DispatchSourceTimer?
     private var lastHaptic: TimeInterval = 0
+    // 延迟打点（调试叠层）：当前处理的触点帧时间戳、本次候选的锚指落下时刻
+    private var frameTimestamp: TimeInterval?
+    private var armStartedAt: TimeInterval?
 
     /// 调试信息（状态、候选失败原因、会话结束原因），在 input.queue 上调用
     var onDebug: (@Sendable (String) -> Void)?
+    /// 延迟样本，在主线程、浮层更新之后调用；为 nil 时不打点
+    var onLatency: (@MainActor @Sendable (LatencySample) -> Void)?
 
     init(queue: DispatchQueue, tuning: Tuning, tap: EventTapController, cursor: CursorLock,
          executor: ActionExecutor, overlay: OverlayController) {
@@ -63,6 +68,7 @@ final class SessionDriver: @unchecked Sendable {
         if case .frame(let f) = event, machine.state == .idle, f.contacts.contains(where: { $0.phase == .began }) {
             applyOverrides()
         }
+        if case .frame(let f) = event { frameTimestamp = f.timestamp } else { frameTimestamp = nil }
         for effect in machine.handle(event) { apply(effect) }
         updateTimer()
     }
@@ -78,10 +84,19 @@ final class SessionDriver: @unchecked Sendable {
             // 冻结光标所在屏幕决定面板尺寸（FR-8.5、8.6）；在进入激活前送回状态机
             environment.screenSize = Self.cursorScreenSize()
             _ = machine.handle(.environment(environment))
+            if case .armed(let ctx) = machine.state { armStartedAt = ctx.startedAt }
         case .showPanel(let s):
-            DispatchQueue.main.async { self.overlay.show(s) }
+            let sample = panelShownSample()
+            DispatchQueue.main.async {
+                self.overlay.show(s)
+                if let sample { self.onLatency?(sample(ProcessInfo.processInfo.systemUptime)) }
+            }
         case .updatePanel(let s):
-            DispatchQueue.main.async { self.overlay.update(s) }
+            let frameAt = onLatency == nil ? nil : frameTimestamp
+            DispatchQueue.main.async {
+                self.overlay.update(s)
+                if let frameAt { self.onLatency?(.pointer(ProcessInfo.processInfo.systemUptime - frameAt)) }
+            }
         case .hidePanel:
             DispatchQueue.main.async { self.overlay.hide() }
         case .flashSlot(let id):
@@ -103,6 +118,13 @@ final class SessionDriver: @unchecked Sendable {
             log.info("session ended: \(String(describing: end), privacy: .public)")
             onDebug?("会话结束：\(end)")
         }
+    }
+
+    /// AC-1：锚指落下 → 进入激活 → 面板在主线程显示，后一段在主线程上补全
+    private func panelShownSample() -> (@Sendable (TimeInterval) -> LatencySample)? {
+        guard onLatency != nil, let armedAt = armStartedAt, case .active(let ctx) = machine.state else { return nil }
+        let entered = ctx.enteredAt
+        return { now in .panelShown(anchorToActive: entered - armedAt, activeToShown: now - entered) }
     }
 
     /// 空闲时有新手指落下才读取一次，改动在下一次唤起生效
@@ -141,6 +163,13 @@ final class SessionDriver: @unchecked Sendable {
         let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.screens.first
         return screen?.visibleFrame.size ?? SessionEnvironment().screenSize
     }
+}
+
+/// 调试叠层显示的延迟样本（NFR-1、AC-1）。只到主线程应用浮层状态为止，不含 SwiftUI 渲染、窗口合成与屏幕扫描。
+enum LatencySample: Sendable {
+    /// 触点帧时间戳 → 主线程更新指示点
+    case pointer(TimeInterval)
+    case panelShown(anchorToActive: TimeInterval, activeToShown: TimeInterval)
 }
 
 /// 主线程上的浮层控制

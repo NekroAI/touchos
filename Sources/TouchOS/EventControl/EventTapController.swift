@@ -19,6 +19,12 @@ final class EventTapController: @unchecked Sendable {
     ]
     private static let escapeKeyCode: Int64 = 53
 
+    /// NFR-2 打点：1 µs 一个桶，统计到 2 ms，超出计入溢出桶
+    static let timingBucketWidth: TimeInterval = 0.000_001
+    static let timingBuckets = 2000
+    /// AC-17 调试开关：在回调里阻塞这么久，超过系统对拦截回调的超时，触发系统停用拦截
+    static let debugStallDuration: TimeInterval = 2
+
     private let log = Logger(subsystem: TouchOSCore.logSubsystem, category: "tap")
 
     // 无锁发布的策略快照：先写截止时刻，最后写模式
@@ -28,6 +34,17 @@ final class EventTapController: @unchecked Sendable {
     // 候选期被丢弃的指针位移，由 CursorLock 取走（FR-7.6）
     private let deltaX = TOAtomicCreate()!
     private let deltaY = TOAtomicCreate()!
+    // NFR-2 回调耗时（调试叠层可用时才统计）：每桶一个计数器，最大值以纳秒记
+    private let measure: Bool
+    private let timing: [OpaquePointer]
+    private let timingMaxNs = TOAtomicCreate()!
+    // AC-17：到达该时刻（systemUptime）后的第一个事件在回调里阻塞，0 表示未预约
+    private let stallAt = TOAtomicCreate()!
+    private let ticksToNs: Double = {
+        var info = mach_timebase_info_data_t()
+        mach_timebase_info(&info)
+        return Double(info.numer) / Double(info.denom)
+    }()
 
     private let onPhysicalPress: @Sendable () -> Void
     private let onEscape: @Sendable () -> Void
@@ -37,8 +54,11 @@ final class EventTapController: @unchecked Sendable {
     private var thread: Thread?
 
     /// 三个回调在拦截线程上调用，实现方只能异步投递（FR-7.2）。
-    init(onPhysicalPress: @escaping @Sendable () -> Void, onEscape: @escaping @Sendable () -> Void,
+    /// `measure` 为真时统计回调耗时（NFR-2），供调试叠层显示。
+    init(measure: Bool, onPhysicalPress: @escaping @Sendable () -> Void, onEscape: @escaping @Sendable () -> Void,
          onDisabled: @escaping @Sendable () -> Void) {
+        self.measure = measure
+        timing = measure ? (0...Self.timingBuckets).map { _ in TOAtomicCreate()! } : []
         self.onPhysicalPress = onPhysicalPress
         self.onEscape = onEscape
         self.onDisabled = onDisabled
@@ -61,6 +81,40 @@ final class EventTapController: @unchecked Sendable {
     /// 取出候选期累计的指针位移并清零
     func takeCursorDelta() -> CGVector {
         CGVector(dx: TOAtomicExchangeDouble(deltaX, 0), dy: TOAtomicExchangeDouble(deltaY, 0))
+    }
+
+    /// 回调耗时快照（NFR-2）；未开启统计时为 nil
+    func timingSnapshot() -> LatencyHistogram? {
+        guard measure else { return nil }
+        return LatencyHistogram(bucketWidth: Self.timingBucketWidth, counts: timing.map { TOAtomicLoad($0) },
+                                max: Double(TOAtomicLoad(timingMaxNs)) / 1e9)
+    }
+
+    func resetTiming() {
+        for t in timing { TOAtomicStore(t, 0) }
+        TOAtomicStore(timingMaxNs, 0)
+    }
+
+    /// AC-17 调试：`delay` 秒后的第一个事件在回调里阻塞 `debugStallDuration`，让系统以超时停用拦截
+    func scheduleDebugStall(after delay: TimeInterval) {
+        TOAtomicStoreDouble(stallAt, ProcessInfo.processInfo.systemUptime + delay)
+    }
+
+    /// 回调入口：AC-17 的人为阻塞不计入耗时统计
+    fileprivate func callback(_ type: CGEventType, _ event: CGEvent) -> Unmanaged<CGEvent>? {
+        let at = TOAtomicLoadDouble(stallAt)
+        if at > 0, ProcessInfo.processInfo.systemUptime >= at, TOAtomicExchangeDouble(stallAt, 0) > 0 {
+            log.info("debug stall in tap callback (AC-17)")
+            Thread.sleep(forTimeInterval: Self.debugStallDuration)
+        }
+        guard measure else { return handle(type, event) }
+        let start = mach_absolute_time()
+        let result = handle(type, event)
+        let ns = Double(mach_absolute_time() - start) * ticksToNs
+        let bucket = Swift.min(Int(ns / 1e9 / Self.timingBucketWidth), Self.timingBuckets)
+        TOAtomicIncrement(timing[bucket])
+        TOAtomicMax(timingMaxNs, UInt64(ns))
+        return result
     }
 
     /// 在专用线程上创建拦截。没有辅助功能权限时创建失败，返回 false。
@@ -156,5 +210,5 @@ final class EventTapController: @unchecked Sendable {
 
 private let tapCallback: CGEventTapCallBack = { _, type, event, refcon in
     guard let refcon else { return Unmanaged.passUnretained(event) }
-    return Unmanaged<EventTapController>.fromOpaque(refcon).takeUnretainedValue().handle(type, event)
+    return Unmanaged<EventTapController>.fromOpaque(refcon).takeUnretainedValue().callback(type, event)
 }

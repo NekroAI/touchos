@@ -3,7 +3,7 @@ import SwiftUI
 import TouchOSCore
 
 /// 调试叠层（SRS FR-14.4）：每台设备的实时触点与帧率。只在内存中显示，永不写盘（FR-4.7）。
-/// 另显示最近 10 条状态转移、候选失败与会话结束原因；拦截耗时待加入。
+/// 另显示最近 10 条状态转移、候选失败与会话结束原因，以及延迟实测（NFR-1、NFR-2、AC-1），统计从打开叠层时开始。
 @MainActor
 @Observable
 final class DebugOverlayModel {
@@ -21,6 +21,26 @@ final class DebugOverlayModel {
 
     /// 只保留最近 10 条（FR-14.4）
     static let sessionLines = 10
+    /// NFR-1 指示点延迟：0.5 ms 一个桶，统计到 100 ms
+    static let pointerBucketWidth: TimeInterval = 0.0005
+    static let pointerBuckets = 200
+
+    var pointerLatency = LatencyHistogram(bucketWidth: pointerBucketWidth, buckets: pointerBuckets)
+    var tapTiming: LatencyHistogram?
+    var lastPanelShown: (anchorToActive: TimeInterval, activeToShown: TimeInterval)?
+
+    func record(_ sample: LatencySample) {
+        switch sample {
+        case .pointer(let t): pointerLatency.record(t)
+        case .panelShown(let a, let b): lastPanelShown = (a, b)
+        }
+    }
+
+    func resetLatency() {
+        pointerLatency = LatencyHistogram(bucketWidth: Self.pointerBucketWidth, buckets: Self.pointerBuckets)
+        tapTiming = nil
+        lastPanelShown = nil
+    }
 
     func log(_ line: String) {
         session.append(line)
@@ -47,6 +67,8 @@ final class DebugOverlayModel {
 final class DebugOverlayController {
     /// 隐藏开关：发布构建中 `defaults write ai.nekro.touchos showDebugOverlayMenu -bool true` 后菜单出现该项
     static let hiddenSwitchKey = "showDebugOverlayMenu"
+    /// 叠层可见时刷新拦截耗时统计的间隔
+    static let timingRefreshInterval: TimeInterval = 1
 
     static var isAvailable: Bool {
         #if DEBUG
@@ -58,12 +80,15 @@ final class DebugOverlayController {
 
     let model = DebugOverlayModel()
     private let pipeline: InputPipeline
+    private let tap: EventTapController
     private var panel: NSPanel?
+    private var timer: Timer?
 
     var isVisible: Bool { panel?.isVisible ?? false }
 
-    init(pipeline: InputPipeline) {
+    init(pipeline: InputPipeline, tap: EventTapController) {
         self.pipeline = pipeline
+        self.tap = tap
     }
 
     func toggle() {
@@ -77,16 +102,24 @@ final class DebugOverlayController {
         pipeline.setDebugSink { frame, live in
             DispatchQueue.main.async { model.receive(frame, live: live) }
         }
+        model.resetLatency()
+        tap.resetTiming()
+        let tap = self.tap
+        timer = Timer.scheduledTimer(withTimeInterval: Self.timingRefreshInterval, repeats: true) { _ in
+            MainActor.assumeIsolated { model.tapTiming = tap.timingSnapshot() }
+        }
         panel.orderFrontRegardless()
     }
 
     private func hide() {
         pipeline.setDebugSink(nil)
+        timer?.invalidate()
+        timer = nil
         panel?.orderOut(nil)
     }
 
     private func makePanel() -> NSPanel {
-        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: 520),
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: 600),
                             styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: false)
         panel.level = .statusBar
         panel.isOpaque = false
@@ -118,6 +151,7 @@ private struct DebugOverlayView: View {
             ForEach(model.devices, id: \.device.id) { state in
                 DeviceSection(state: state)
             }
+            LatencySection(model: model)
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(Array(model.session.enumerated()), id: \.offset) { _, line in Text(line) }
             }
@@ -164,5 +198,28 @@ private struct DeviceSection: View {
 
     private func rate(_ s: FrameRateMeter.Summary) -> String {
         String(format: "%.1f Hz · p95 %.1f ms · max %.1f ms · %d 帧", s.meanHz, s.p95Interval * 1000, s.maxInterval * 1000, s.frames)
+    }
+}
+
+/// 延迟实测（NFR-1、NFR-2、AC-1）
+private struct LatencySection: View {
+    let model: DebugOverlayModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("指示点 \(summary(model.pointerLatency, p: 0.95, label: "p95"))")
+            Text("拦截回调 \(model.tapTiming.map { summary($0, p: 0.99, label: "p99", micro: true) } ?? "—")")
+            if let s = model.lastPanelShown {
+                Text(String(format: "锚定→激活 %.0f ms · 激活→面板 %.0f ms", s.anchorToActive * 1000, s.activeToShown * 1000))
+            } else {
+                Text("锚定→激活 — · 激活→面板 —")
+            }
+        }
+    }
+
+    private func summary(_ h: LatencyHistogram, p: Double, label: String, micro: Bool = false) -> String {
+        guard let v = h.percentile(p) else { return "—" }
+        let (scale, unit) = micro ? (1e6, "µs") : (1e3, "ms")
+        return String(format: "%@ %.1f %@ · max %.1f %@ · %llu 次", label, v * scale, unit, h.max * scale, unit, h.count)
     }
 }

@@ -12,6 +12,11 @@ final class MenuBarController: NSObject {
         didSet { rebuildMenu() }
     }
 
+    /// 设置后调试区出现"5 秒后阻塞拦截"（AC-17）
+    var onDebugStall: (() -> Void)? {
+        didSet { rebuildMenu() }
+    }
+
     var debugOverlayVisible = false {
         didSet { debugItem?.state = debugOverlayVisible ? .on : .off }
     }
@@ -48,10 +53,19 @@ final class MenuBarController: NSObject {
             item.state = debugOverlayVisible ? .on : .off
             debugItem = item
             menu.addItem(item)
+            if onDebugStall != nil {
+                let stall = NSMenuItem(title: "5 秒后阻塞拦截（AC-17）", action: #selector(debugStall), keyEquivalent: "")
+                stall.target = self
+                menu.addItem(stall)
+            }
             menu.addItem(.separator())
         }
         menu.addItem(NSMenuItem(title: "退出 TouchOS", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         statusItem.menu = menu
+    }
+
+    @objc private func debugStall() {
+        onDebugStall?()
     }
 
     @objc private func toggleDebugOverlay() {

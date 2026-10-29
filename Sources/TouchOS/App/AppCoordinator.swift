@@ -8,6 +8,8 @@ import TouchOSCore
 final class AppCoordinator {
     /// FR-12.2：等待辅助功能授权时的检查间隔
     static let permissionPollInterval: TimeInterval = 2
+    /// AC-17 调试：点菜单后留给用户唤起面板的时间
+    static let debugStallDelay: TimeInterval = 5
 
     private let log = Logger(subsystem: TouchOSCore.logSubsystem, category: "app")
     private let tuning = Tuning()  // K8 起从配置读取
@@ -28,7 +30,7 @@ final class AppCoordinator {
     func start() {
         // 拦截回调与输入回调都只异步投递到 input.queue（SRS 2.3）
         let ref = DriverRef()
-        tap = EventTapController(onPhysicalPress: { ref.driver?.send(.physicalPress) },
+        tap = EventTapController(measure: DebugOverlayController.isAvailable, onPhysicalPress: { ref.driver?.send(.physicalPress) },
                                  onEscape: { ref.driver?.send(.escapeKey) },
                                  onDisabled: { ref.driver?.send(.tapDisabled) })
         let overlay = OverlayController(slotGap: tuning.slotGap)
@@ -46,13 +48,19 @@ final class AppCoordinator {
             })
 
         if DebugOverlayController.isAvailable {
-            let debug = DebugOverlayController(pipeline: pipeline)
+            let debug = DebugOverlayController(pipeline: pipeline, tap: tap)
             debugOverlay = debug
             menuBar.onToggleDebugOverlay = { [weak self] in
                 debug.toggle()
                 self?.menuBar.debugOverlayVisible = debug.isVisible
             }
             driver.onDebug = { line in DispatchQueue.main.async { debug.model.log(line) } }
+            driver.onLatency = { sample in debug.model.record(sample) }
+            let tap = self.tap!
+            menuBar.onDebugStall = {
+                tap.scheduleDebugStall(after: Self.debugStallDelay)
+                debug.model.log("已预约：\(Int(Self.debugStallDelay)) 秒后阻塞拦截")
+            }
         }
 
         watchdog = TapWatchdog(tap: tap)
