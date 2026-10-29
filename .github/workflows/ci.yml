@@ -1,9 +1,16 @@
 name: CI
 
+# 私有仓库的 macOS 构建有额度限制：只改文档不触发；同一分支有新推送时取消旧的运行
 on:
   push:
     branches: [main]
+    paths-ignore: ["docs/**", "**.md", ".github/ISSUE_TEMPLATE/**", "LICENSE"]
   pull_request:
+    paths-ignore: ["docs/**", "**.md", ".github/ISSUE_TEMPLATE/**", "LICENSE"]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   macos:
