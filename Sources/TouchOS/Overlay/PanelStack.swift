@@ -234,9 +234,15 @@ struct PanelView: View, Equatable {
         let fading: Bool = { if case .dissolving = phase { true } else { phase == .collapsing } }()
         ZStack(alignment: .topLeading) {
             if style.theme == .holo {
-                HoloDecor(size: size, ring: layout.isRing, accent: style.accent)
-                    .opacity(phase.appeared && !phase.leaving ? 1 : 0)
-                    .animation(.easeOut(duration: 0.25), value: phase)
+                Group {
+                    if layout.isRing {
+                        HoloRadar(size: size, layout: layout, hovered: phase.chosen ?? hovered, accent: style.accent)
+                    } else {
+                        HoloDecor(size: size, accent: style.accent)
+                    }
+                }
+                .opacity(phase.appeared && !phase.leaving ? 1 : 0)
+                .animation(.easeOut(duration: 0.25), value: phase)
             }
             if style.theme == .lens {
                 LensGlass(target: fading ? nil : lit?.geometry, slider: lit.map { $0.slot.slider != nil || $0.slot.widget != nil } ?? false,
@@ -299,7 +305,6 @@ private struct LensGlass: View {
 /// 全息主题的面板装饰：点阵底与四角取景框
 private struct HoloDecor: View {
     let size: CGSize
-    let ring: Bool
     let accent: Color
 
     static let margin: CGFloat = 18
@@ -313,21 +318,11 @@ private struct HoloDecor: View {
         let m = Self.margin
         let rect = CGRect(x: -m, y: -m, width: size.width + 2 * m, height: size.height + 2 * m)
         Canvas { ctx, _ in
-            let clip = ring ? Path(ellipseIn: rect.offsetBy(dx: m, dy: m)) : Path(roundedRect: rect.offsetBy(dx: m, dy: m), cornerRadius: 6)
+            let clip = Path(roundedRect: rect.offsetBy(dx: m, dy: m), cornerRadius: 6)
             ctx.clip(to: clip)
             ctx.fill(clip, with: .color(Self.screen.opacity(Self.screenOpacity)))
             ctx.stroke(clip, with: .color(accent.opacity(0.22)), lineWidth: 1)
-            var dots = Path()
-            var y = Self.spacing / 2
-            while y < rect.height {
-                var x = Self.spacing / 2
-                while x < rect.width {
-                    dots.addEllipse(in: CGRect(x: x - 1, y: y - 1, width: 2, height: 2))
-                    x += Self.spacing
-                }
-                y += Self.spacing
-            }
-            ctx.fill(dots, with: .color(accent.opacity(0.12)))
+            ctx.fill(Self.dots(in: rect.size), with: .color(accent.opacity(0.12)))
         }
         .frame(width: rect.width, height: rect.height)
         .overlay {
@@ -335,6 +330,111 @@ private struct HoloDecor: View {
         }
         .offset(x: -m, y: -m)
         .allowsHitTesting(false)
+    }
+
+    /// 点阵底：间距 `spacing`，直径 2 pt
+    static func dots(in size: CGSize) -> Path {
+        var dots = Path()
+        var y = spacing / 2
+        while y < size.height {
+            var x = spacing / 2
+            while x < size.width {
+                dots.addEllipse(in: CGRect(x: x - 1, y: y - 1, width: 2, height: 2))
+                x += spacing
+            }
+            y += spacing
+        }
+        return dots
+    }
+}
+
+/// 全息主题的环形面板：雷达表盘。环形按离圆心的距离与角度判定，是正圆，不随面板宽高比压成椭圆（D42）。
+/// 外圈刻度环，各方向的分界画长刻度；内圈虚线表示中心区；悬停时外圈对应方向的那段弧点亮
+private struct HoloRadar: View {
+    let size: CGSize
+    let layout: PanelLayout
+    let hovered: SlotID?
+    let accent: Color
+
+    /// 底板比判定圆向外多出的宽度；刻度长短；悬停弧线宽
+    static let margin: CGFloat = 18
+    static let minorTick: CGFloat = 4
+    static let majorTick: CGFloat = 12
+    static let tickStep = 5.0
+    static let arcWidth: CGFloat = 3
+
+    var body: some View {
+        let unit = min(size.width, size.height) / 2
+        let radius = unit + Self.margin
+        let center = CGPoint(x: radius, y: radius)
+        let sectors = layout.slots.compactMap { slot -> (id: SlotID, sector: Sector)? in
+            if case .sector(let s) = slot.shape { (slot.id, s) } else { nil }
+        }
+        let items = sectors.filter { !$0.sector.isFullCircle }
+        let inner = items.first?.sector.innerRadius ?? 0
+        let centerID = sectors.first { $0.sector.isFullCircle }?.id
+        ZStack {
+            RadarDial(radius: radius, inner: inner * unit, bounds: items.map(\.sector.startAngle), accent: accent)
+            ForEach(items, id: \.id) { item in
+                Path { p in
+                    p.addArc(center: center, radius: radius - Self.arcWidth, startAngle: .degrees(item.sector.startAngle - 90),
+                             endAngle: .degrees(item.sector.endAngle - 90), clockwise: false)
+                }
+                .stroke(accent, style: StrokeStyle(lineWidth: Self.arcWidth, lineCap: .round))
+                .opacity(hovered == item.id ? 0.9 : 0)
+            }
+            Circle()
+                .stroke(accent, lineWidth: 1.5)
+                .frame(width: 2 * inner * unit, height: 2 * inner * unit)
+                .opacity(centerID != nil && hovered == centerID ? 0.8 : 0)
+        }
+        .animation(.easeOut(duration: 0.15), value: hovered)
+        .frame(width: 2 * radius, height: 2 * radius)
+        .overlay {
+            CornerBrackets(length: HoloDecor.bracket, inset: 0).stroke(accent.opacity(0.6), lineWidth: 1)
+        }
+        .position(x: size.width / 2, y: size.height / 2)
+        .frame(width: size.width, height: size.height)
+        .allowsHitTesting(false)
+    }
+}
+
+/// 雷达表盘的静态部分：输入不变时不重画（悬停只改上层的弧）
+private struct RadarDial: View, Equatable {
+    let radius: CGFloat
+    let inner: CGFloat
+    /// 各方向扇区的起始角（0 为正上方，顺时针）
+    let bounds: [Double]
+    let accent: Color
+
+    var body: some View {
+        Canvas { ctx, size in
+            let c = CGPoint(x: size.width / 2, y: size.height / 2)
+            let disk = Path(ellipseIn: CGRect(x: c.x - radius, y: c.y - radius, width: 2 * radius, height: 2 * radius))
+            ctx.fill(disk, with: .color(HoloDecor.screen.opacity(HoloDecor.screenOpacity)))
+            var dots = ctx
+            dots.clip(to: disk)
+            dots.fill(HoloDecor.dots(in: size), with: .color(accent.opacity(0.12)))
+            ctx.stroke(disk, with: .color(accent.opacity(0.3)), lineWidth: 1)
+            func tick(_ deg: Double, _ length: CGFloat) -> Path {
+                let a = (deg - 90) * .pi / 180
+                var p = Path()
+                p.move(to: CGPoint(x: c.x + cos(a) * radius, y: c.y + sin(a) * radius))
+                p.addLine(to: CGPoint(x: c.x + cos(a) * (radius - length), y: c.y + sin(a) * (radius - length)))
+                return p
+            }
+            var minor = Path()
+            for deg in stride(from: 0.0, to: 360, by: HoloRadar.tickStep) { minor.addPath(tick(deg, HoloRadar.minorTick)) }
+            ctx.stroke(minor, with: .color(accent.opacity(0.22)), lineWidth: 1)
+            var major = Path()
+            for deg in bounds { major.addPath(tick(deg, HoloRadar.majorTick)) }
+            ctx.stroke(major, with: .color(accent.opacity(0.55)), lineWidth: 1)
+            if inner > 0 {
+                let ring = Path(ellipseIn: CGRect(x: c.x - inner, y: c.y - inner, width: 2 * inner, height: 2 * inner))
+                ctx.stroke(ring, with: .color(accent.opacity(0.3)), style: StrokeStyle(lineWidth: 1, dash: [3, 4]))
+            }
+        }
+        .frame(width: 2 * radius, height: 2 * radius)
     }
 }
 

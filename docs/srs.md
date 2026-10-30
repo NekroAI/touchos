@@ -314,7 +314,7 @@ public struct ActiveContext: Sendable {
 | T15 | 激活 | 同设备接触数 ≥ 3（修订：见 decisions.md D22，只限锚指仍按着时；常驻状态下多指按轻点 / 移动区分） | 见 5.5 退出（取消）；冷却期内对三指及以上事件一律放行 | 冷却 |
 | T16 | 激活 | `escapeKey` | 吞掉该按键；退出（取消） | 冷却 |
 | T17 | 激活 | 距上一帧 > `P.frameTimeoutMs` | 退出（取消） | 冷却 |
-| T18 | 激活 | 激活总时长 > `P.maxSessionSec` | 退出（取消） | 冷却 |
+| T18 | 激活 | 激活总时长 > `P.maxSessionSec`（修订：见 decisions.md D42，从最后一次活动算起） | 退出（取消） | 冷却 |
 | T19 | 候选或激活 | `deviceRemoved`（本设备）、`tapDisabled`、`forceCancel` | 立即退出（取消），光标校正，停止所有拦截 | 空闲 |
 | T20 | 冷却 | 当前时间 ≥ 冷却截止 | 停止冷却期拦截 | 空闲 |
 | T21 | 冷却 | 任何新接触 | 忽略（不能开始新的候选） | 冷却 |

@@ -265,6 +265,10 @@ public struct ActiveContext: Equatable, Sendable {
     public var sliderApplied: [SliderTarget: Double] = [:]
     /// 最近一次板上有手指的时刻（无触摸超时）
     public var lastTouchAt: TimeInterval = 0
+    /// 板上手指上一次明显移动（超过 `P.stillThresholdMM`）、按压或连续触发的时刻；`P.maxSessionSec` 从这里算起（D42）
+    public var lastActivityAt: TimeInterval = 0
+    /// 判断"明显移动"的参照点：板上手指的平均位置（触控板归一化坐标）
+    public var activityPoint: CGPoint?
     /// 板上出现多指，到全部抬起为止
     public var gesture: MultiGesture?
 }
@@ -485,6 +489,7 @@ public struct SessionStateMachine: Sendable {
         active.sliderApplied = environment.sliderValues
         active.entryPoint = entry
         active.lastTouchAt = now
+        active.lastActivityAt = now
         var effects: [SessionEffect] = [setPolicy(TapPolicy(mode: .active, momentumUntil: policy.momentumUntil))]
         if !cursorArmed { effects.append(.cursor(.arm)) }
         effects.append(.cursor(.lock))
@@ -511,6 +516,7 @@ public struct SessionStateMachine: Sendable {
             ctx.lastFrameAt = frame.timestamp
             let touching = frame.contacts.filter(\.isTouching)
             if !touching.isEmpty { ctx.lastTouchAt = frame.timestamp }
+            noteActivity(&ctx, touching, at: frame.timestamp)
             if let effects = multiFinger(&ctx, frame, touching) { return effects }
             return pointerFrame(&ctx, frame)
         case .tick(let now):
@@ -531,6 +537,7 @@ public struct SessionStateMachine: Sendable {
                 } else if now >= at, let slot = ctx.layout.slot(id) {
                     // 落后太多（例如 tick 卡顿）不补发，从现在起按间隔继续
                     ctx.repeatAt = max(at + tuning.repeatIntervalMs / 1000, now)
+                    ctx.lastActivityAt = now
                     state = .active(ctx)
                     return [.action(ActionRequest(action: slot.action, title: slot.title, frontmostBundleID: ctx.frontmostBundleID,
                                                   notBefore: now)), .flashSlot(id), .updatePanel(panelState(ctx))]
@@ -542,7 +549,8 @@ public struct SessionStateMachine: Sendable {
             } else if now - ctx.lastFrameAt > tuning.frameTimeoutMs / 1000 {
                 return exit(ctx, now: now, end: .frameTimeout)  // T17
             }
-            if now - ctx.enteredAt > tuning.maxSessionSec { return exit(ctx, now: now, end: .maxDuration) }  // T18
+            // T18：只兜住输入卡住的情况，手指一直在动、按压或连续触发时不关（D42，修订 T18 的"激活总时长"）
+            if now - ctx.lastActivityAt > tuning.maxSessionSec { return exit(ctx, now: now, end: .maxDuration) }
             // 切换或总览过渡停稳后，手指没动也要按当前位置重新命中
             if ctx.pointer != nil && ctx.hovered == nil && ctx.overviewHover == nil && settled(ctx, at: now) {
                 let effects = rehover(&ctx)
@@ -551,6 +559,8 @@ public struct SessionStateMachine: Sendable {
             }
             return []
         case .physicalPress:
+            ctx.lastActivityAt = clock
+            state = .active(ctx)  // 按压没有命中任何按钮时 press 不写回状态
             return press(&ctx)
         case .physicalRelease:
             if ctx.repeatSlot != nil {
@@ -745,6 +755,21 @@ public struct SessionStateMachine: Sendable {
         ctx.pressConsumed = false
         updateSliderPreview(&ctx, point: mapper(ctx).panelPoint(pointer.latest, panelSize: ctx.panelSize))
         return [.haptic] + syncSliders(&ctx) + [.updatePanel(panelState(ctx))]
+    }
+
+    /// 手指落下，或板上手指的平均位置离参照点超过 `P.stillThresholdMM`，算一次活动并把参照点移过来（D42）
+    private func noteActivity(_ ctx: inout ActiveContext, _ touching: [Contact], at t: TimeInterval) {
+        guard !touching.isEmpty else {
+            ctx.activityPoint = nil
+            return
+        }
+        let n = Double(touching.count)
+        let p = CGPoint(x: touching.map(\.position.x).reduce(0, +) / n, y: touching.map(\.position.y).reduce(0, +) / n)
+        let mm = environment.devices[ctx.device]?.surfaceSizeMM ?? .zero
+        if let last = ctx.activityPoint,
+           hypot((p.x - last.x) * mm.width, (p.y - last.y) * mm.height) <= tuning.stillThresholdMM { return }
+        ctx.lastActivityAt = t
+        ctx.activityPoint = p
     }
 
     private mutating func pointerFrame(_ ctx: inout ActiveContext, _ frame: TouchFrame) -> [SessionEffect] {

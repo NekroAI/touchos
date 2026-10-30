@@ -45,7 +45,7 @@ struct Appearance: Equatable, Sendable {
     static let holoAccent = "5BE7FF"
 
     var theme = OverlayTheme.orb
-    var nav = NavStyle.depth
+    var nav = NavStyle.drum
     /// 强调色 RRGGBB；nil 为自动（跟随系统强调色）
     var accentHex: String?
 
@@ -53,7 +53,7 @@ struct Appearance: Equatable, Sendable {
 
     init(_ c: AppConfig.Appearance) {
         theme = OverlayTheme(rawValue: c.theme) ?? .orb
-        nav = NavStyle(rawValue: c.nav) ?? .depth
+        nav = NavStyle(rawValue: c.nav) ?? .drum
         accentHex = c.accent.flatMap { Self.rgb($0) == nil ? nil : $0 }
     }
 
@@ -88,7 +88,7 @@ struct Appearance: Equatable, Sendable {
 /// 视图树里传递的外观
 struct OverlayStyle {
     var theme = OverlayTheme.orb
-    var nav = NavStyle.depth
+    var nav = NavStyle.drum
     var accent = Color.accentColor
 
     init() {}

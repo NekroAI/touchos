@@ -248,6 +248,23 @@ private func shown(_ h: Harness) -> Bool {
         tuning.maxSessionSec = 0.5
         let h = run(.tapHold(until: 1.0), tuning: tuning)
         #expect(h.ends == [.maxDuration])
+        // 上限从最后一次明显移动算起：一直在动就不关，停下满上限才关（D42）
+        let moving = Gesture.tapHold(until: 0.3).move(id: 2, to: Spot.a, over: 0.4).move(id: 2, to: Spot.gap, over: 0.4)
+            .hold(id: 2, until: 2.0)
+        let m = run(moving, tuning: tuning, until: 2.0)
+        let end = m.firstTime { $0 == .sessionEnded(.maxDuration) } ?? 0
+        #expect(m.ends == [.maxDuration] && end > 1.4 && end < 1.6 + 2 * Harness.tickInterval)
+        // 原地抖动（不超过 `P.stillThresholdMM`）不算活动
+        let jitter = Gesture.tapHold(until: 0.3).move(id: 2, to: (Spot.gap.0 + 0.003, Spot.gap.1), over: 0.5).hold(id: 2, until: 1.0)
+        #expect(run(jitter, tuning: tuning, until: 1.0).ends == [.maxDuration])
+    }
+
+    @Test func pressKeepsSessionAlive() {
+        var tuning = Tuning.test
+        tuning.maxSessionSec = 0.5
+        let pressed = run(.tapHold(until: 1.2), tuning: tuning, events: [(0.6, .physicalPress), (0.65, .physicalRelease)], until: 1.2)
+        let end = pressed.firstTime { $0 == .sessionEnded(.maxDuration) } ?? 0
+        #expect(end > 1.1)
     }
 
     @Test func t19AbortsActiveImmediatelyToIdle() {

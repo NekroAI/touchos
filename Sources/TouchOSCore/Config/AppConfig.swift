@@ -50,7 +50,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         /// orb / lens / holo
         public var theme = "orb"
         /// depth / drum
-        public var nav = "depth"
+        public var nav = "drum"
         /// RRGGBB；nil 为自动
         public var accent: String?
 
