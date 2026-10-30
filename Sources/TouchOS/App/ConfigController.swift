@@ -21,6 +21,8 @@ final class ConfigController {
     /// 首次启动（没有配置文件）：显示引导
     let isFirstLaunch: Bool
     @ObservationIgnored private var observers: [(AppConfig) -> Void] = []
+    /// 写盘之后（iCloud 同步据此上传，D35）
+    @ObservationIgnored var onSaved: (() -> Void)?
     @ObservationIgnored private var saveWork: DispatchWorkItem?
 
     init(store: ConfigStore = .standard) {
@@ -75,6 +77,7 @@ final class ConfigController {
         do {
             try store.save(config)
             problem = nil
+            onSaved?()
         } catch {
             log.error("config save failed: \(error.localizedDescription, privacy: .public)")
         }
@@ -83,6 +86,15 @@ final class ConfigController {
     // MARK: 备份、导入、导出
 
     var backups: [URL] { store.backups() }
+    var directory: URL { store.directory }
+    /// 本机配置文件的修改时间（iCloud 同步冲突时比较新旧）
+    var modifiedAt: Date? {
+        (try? FileManager.default.attributesOfItem(atPath: store.fileURL.path))?[.modificationDate] as? Date
+    }
+
+    func keepBackup(_ data: Data) {
+        try? store.keepBackup(data)
+    }
 
     func restore(_ backup: URL) throws {
         let c = try store.restore(backup)

@@ -68,6 +68,11 @@ public struct ConfigStore: Sendable {
         return files.filter { $0.pathExtension == "json" }.sorted { $0.lastPathComponent > $1.lastPathComponent }
     }
 
+    /// 把一份配置内容放进备份（iCloud 同步冲突时落选的一方，D35）
+    public func keepBackup(_ data: Data) throws {
+        try rotate(data)
+    }
+
     /// 从备份恢复：校验通过后写回（当前文件先进入备份）
     public func restore(_ backup: URL) throws -> AppConfig {
         let config = try AppConfig.decode(try Data(contentsOf: backup))

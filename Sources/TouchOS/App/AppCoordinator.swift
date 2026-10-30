@@ -18,6 +18,7 @@ final class AppCoordinator {
     private var appearanceMenu: AppearanceMenu!
     private var settings: SettingsWindowController!
     private let welcome = WelcomeWindowController()
+    private lazy var cloud = CloudSyncController(configs: configs)
     private var frontmost: String?
     private let queue = DispatchQueue(label: "ai.nekro.touchos.input", qos: .userInteractive)
     private var driver: SessionDriver!
@@ -50,7 +51,7 @@ final class AppCoordinator {
         appearanceMenu = AppearanceMenu(read: { Appearance(configs.config.appearance) },
                                         write: { a in configs.update { $0.appearance = a.config } })
         menuBar.appearanceItem = appearanceMenu.item
-        settings = SettingsWindowController(configs: configs, executor: executor)
+        settings = SettingsWindowController(configs: configs, executor: executor, cloud: cloud)
         menuBar.onOpenSettings = { [weak self] in self?.settings.show() }
         menuBar.onToggleEnabled = { configs.update { $0.general.enabled.toggle() } }
         driver.onOpenEditor = { [weak self] panelID in self?.settings.show(editing: panelID) }
@@ -99,6 +100,9 @@ final class AppCoordinator {
             self?.refreshStatus()
         }
         // K13：首次启动或缺少辅助功能权限时显示引导，由引导页带用户去授权（不再直接弹系统提示）
+        cloud.start()
+        // 新装的 Mac：iCloud 云盘里已有配置时先问是否接入（D35）
+        if configs.isFirstLaunch { cloud.offerToJoin() }
         let needsWelcome = configs.isFirstLaunch || !AXIsProcessTrusted()
         welcome.onOpenSettings = { [weak self] in self?.settings.show() }
         startTap(prompt: !needsWelcome)

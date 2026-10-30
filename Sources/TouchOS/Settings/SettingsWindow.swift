@@ -8,12 +8,14 @@ import TouchOSCore
 final class SettingsWindowController {
     private let configs: ConfigController
     private let executor: ActionExecutor
+    private let cloud: CloudSyncController
     private let navigation = SettingsNavigation()
     private var window: NSWindow?
 
-    init(configs: ConfigController, executor: ActionExecutor) {
+    init(configs: ConfigController, executor: ActionExecutor, cloud: CloudSyncController) {
         self.configs = configs
         self.executor = executor
+        self.cloud = cloud
     }
 
     func show(page: SettingsPage? = nil) {
@@ -34,7 +36,7 @@ final class SettingsWindowController {
     }
 
     private func makeWindow() -> NSWindow {
-        let root = SettingsRoot(configs: configs, executor: executor, navigation: navigation)
+        let root = SettingsRoot(configs: configs, executor: executor, cloud: cloud, navigation: navigation)
         let window = NSWindow(contentViewController: NSHostingController(rootView: root))
         window.title = "TouchOS 设置"
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
@@ -97,6 +99,7 @@ private enum SidebarItem: Hashable {
 private struct SettingsRoot: View {
     let configs: ConfigController
     let executor: ActionExecutor
+    let cloud: CloudSyncController
     @Bindable var navigation: SettingsNavigation
 
     var body: some View {
@@ -117,7 +120,7 @@ private struct SettingsRoot: View {
                     }
                 case .triggers: TriggersPage(configs: configs)
                 case .appearance: AppearancePage(configs: configs)
-                case .general: GeneralPage(configs: configs)
+                case .general: GeneralPage(configs: configs, cloud: cloud)
                 case .about: AboutPage()
                 }
             }
@@ -220,6 +223,27 @@ private struct ProblemBanner: View {
 @MainActor
 func binding<T>(_ configs: ConfigController, _ path: WritableKeyPath<AppConfig, T>) -> Binding<T> {
     Binding(get: { configs.config[keyPath: path] }, set: { v in configs.update { $0[keyPath: path] = v } })
+}
+
+/// 分组表单下方的说明：左对齐（macOS 默认把 footer 靠右排）
+struct FormFooter: View {
+    let text: String
+
+    init(_ text: String) {
+        self.text = text
+    }
+
+    var body: some View {
+        Text(text)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Self.inset)
+    }
+
+    /// 与分组标题、分组内文字的左缘对齐
+    static let inset: CGFloat = 10
 }
 
 struct LabeledSlider: View {
@@ -363,6 +387,7 @@ private struct AccentSwatch: View {
 
 private struct GeneralPage: View {
     let configs: ConfigController
+    let cloud: CloudSyncController
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var message: String?
     @State private var pendingImport: (config: AppConfig, risky: [(panel: String, slot: String, action: Action)])?
@@ -400,7 +425,25 @@ private struct GeneralPage: View {
             } header: {
                 Text("排除的应用")
             } footer: {
-                Text("这些应用在前台时不唤起面板（例如游戏、远程桌面）。")
+                FormFooter("这些应用在前台时不唤起面板（例如游戏、远程桌面）。")
+            }
+            Section {
+                Toggle(isOn: Binding(get: { configs.config.sync.iCloud }, set: { cloud.setEnabled($0) })) {
+                    Text("通过 iCloud 同步配置")
+                    Text(cloudStatus).foregroundStyle(cloudStatusIsProblem ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
+                }
+                .disabled(!cloud.isAvailable && !configs.config.sync.iCloud)
+                LabeledContent("存放位置") {
+                    HStack {
+                        Text("iCloud 云盘 › \(CloudSync.folderName)").foregroundStyle(.secondary)
+                        Button("在访达中显示") { cloud.revealInFinder() }.disabled(!cloud.isAvailable)
+                    }
+                }
+            } header: {
+                Text("iCloud 同步")
+            } footer: {
+                FormFooter("面板、外观、唤起方式、排除的应用在各台 Mac 之间同步；面板大小、映射区、按钮间隙与「启用 TouchOS」只属于这台 Mac。"
+                           + "在另一台 Mac 上安装后打开这个开关即可接入。")
             }
             Section("配置文件") {
                 HStack {
@@ -424,12 +467,31 @@ private struct GeneralPage: View {
             if let pending = pendingImport {
                 ImportConfirmation(risky: pending.risky) { accept in
                     if accept {
-                        configs.replace(pending.config)
+                        var c = pending.config
+                        c.sync = configs.config.sync  // 同步开关只属于这台 Mac（D35）
+                        configs.replace(c)
                         message = "已导入"
                     }
                     pendingImport = nil
                 }
             }
+        }
+    }
+
+    private var cloudStatus: String {
+        switch cloud.status {
+        case .off: cloud.isAvailable ? "未开启" : "这台 Mac 没有开启 iCloud 云盘（系统设置 → Apple 账户 → iCloud）"
+        case .unavailable: "这台 Mac 没有开启 iCloud 云盘（系统设置 → Apple 账户 → iCloud）"
+        case .downloading: "正在从 iCloud 下载配置…"
+        case .synced(let date): "已同步 · \(date.formatted(date: .omitted, time: .shortened))"
+        case .blocked(let reason): reason
+        }
+    }
+
+    private var cloudStatusIsProblem: Bool {
+        switch cloud.status {
+        case .unavailable, .blocked: true
+        default: false
         }
     }
 
@@ -467,7 +529,9 @@ private struct GeneralPage: View {
         do {
             let result = try ConfigController.readImport(url)
             if result.risky.isEmpty {
-                configs.replace(result.config)
+                var c = result.config
+                c.sync = configs.config.sync  // 同步开关只属于这台 Mac（D35）
+                configs.replace(c)
                 message = "已导入"
             } else {
                 pendingImport = result  // FR-9.5：先逐条确认

@@ -150,7 +150,7 @@ private struct SlotForm: View {
                         if let testNote { Text(testNote).font(.caption).foregroundStyle(.secondary) }
                     }
                 } footer: {
-                    Text("1 秒后执行，可以先切到目标应用。")
+                    FormFooter("1 秒后执行，可以先切到目标应用。")
                 }
             }
             if panel.isRing, let index = panel.ringItems.firstIndex(where: { $0.id == slot.id }) {

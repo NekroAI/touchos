@@ -133,6 +133,26 @@ public struct AppConfig: Codable, Equatable, Sendable {
         }
     }
 
+    /// 同步（D35）：只属于这台 Mac，不写进 iCloud
+    public struct Sync: Codable, Equatable, Sendable {
+        /// 通过 iCloud 云盘同步配置
+        public var iCloud = false
+
+        public init() {}
+
+        private enum Keys: String, CodingKey { case iCloud }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: Keys.self)
+            iCloud = try c.decodeIfPresent(Bool.self, forKey: .iCloud) ?? false
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: Keys.self)
+            try c.encode(iCloud, forKey: .iCloud)
+        }
+    }
+
     public struct Binding: Codable, Equatable, Sendable {
         /// `PanelTrigger.key`
         public var trigger: String
@@ -152,13 +172,14 @@ public struct AppConfig: Codable, Equatable, Sendable {
     /// 第一个为默认面板（D23）
     public var panels: [Layout] = PresetPanels.all
     public var bindings: [Binding] = []
+    public var sync = Sync()
 
     public init() {}
 
     /// 内置默认配置：预置四个面板，轻点后按住与四指轻点打开第一个
     public static let `default` = AppConfig()
 
-    private enum Keys: String, CodingKey { case schemaVersion, general, appearance, triggers, sizes, panels, bindings }
+    private enum Keys: String, CodingKey { case schemaVersion, general, appearance, triggers, sizes, panels, bindings, sync }
 
     /// 缺省的段落取默认值：手写或旧版本的文件只写了部分内容也能读取
     public init(from decoder: Decoder) throws {
@@ -170,6 +191,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         sizes = try c.decodeIfPresent(Sizes.self, forKey: .sizes) ?? Sizes()
         panels = try c.decodeIfPresent([Layout].self, forKey: .panels) ?? PresetPanels.all
         bindings = try c.decodeIfPresent([Binding].self, forKey: .bindings) ?? []
+        sync = try c.decodeIfPresent(Sync.self, forKey: .sync) ?? Sync()
         if let old = try? c.nestedContainer(keyedBy: Triggers.Keys.self, forKey: .triggers), !old.contains(.enabled) {
             // D26 之前：开着按住 / 轻点两下时，绑定了面板的其他角也能唤起
             for trigger in bindingMap.keys {
