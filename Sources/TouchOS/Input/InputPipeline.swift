@@ -71,6 +71,7 @@ final class InputPipeline: @unchecked Sendable {
         if resynced {
             TOAtomicIncrement(clockResyncCount)
             log.info("device clock resynced: device \(device.raw, privacy: .public)")
+            DiagnosticLog.shared.record("时钟重对齐：设备 \(device.raw)")  // l10n-ignore
         }
         if selfChecks[device, default: LayoutSelfCheck()].observe(raw) {
             layoutMismatch = true
@@ -81,6 +82,10 @@ final class InputPipeline: @unchecked Sendable {
         let contacts = trackers[device, default: ContactTracker()].process(raw)
         guard !contacts.isEmpty else { return }
         let frame = TouchFrame(device: device, timestamp: timestamp, contacts: contacts)
+        if contacts.contains(where: { $0.phase == .began }) {
+            // 手指落下时帧时间比实际收到时间落后多少（D49）；只记时间，不记触点
+            DiagnosticLog.shared.record(String(format: "手指落下：设备 %llu · 接触 %d · 帧时间落后 %.1f ms", device.raw, contacts.count, (received - timestamp) * 1000))  // l10n-ignore
+        }
 
         // 一段持续触摸以所有接触 ended / cancelled 的那一帧结束
         let stillTouching = contacts.contains { $0.phase != .ended && $0.phase != .cancelled }
@@ -89,6 +94,7 @@ final class InputPipeline: @unchecked Sendable {
         let live = debugSink == nil ? nil : meter.summary
         if !stillTouching, let s = meter.observe(timestamp: timestamp, hasContacts: false) {
             log.info("touch: device \(device.raw, privacy: .public) frames \(s.frames, privacy: .public) duration \(s.duration, format: .fixed(precision: 3), privacy: .public)s mean \(s.meanHz, format: .fixed(precision: 1), privacy: .public)Hz p95 \(s.p95Interval * 1000, format: .fixed(precision: 1), privacy: .public)ms max \(s.maxInterval * 1000, format: .fixed(precision: 1), privacy: .public)ms")
+            DiagnosticLog.shared.record(String(format: "手指抬起：设备 %llu · %d 帧 · %.2f s · %.1f Hz · 最大帧间隔 %.1f ms", device.raw, s.frames, s.duration, s.meanHz, s.maxInterval * 1000))  // l10n-ignore
         }
         meters[device] = meter
 

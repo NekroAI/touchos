@@ -24,6 +24,13 @@ final class MenuBarController: NSObject {
         didSet { rebuildMenu() }
     }
 
+    /// 设置后调试区出现诊断日志的清除、标记与复制（D51）
+    var onCopyDiagnostics: (() -> Void)? {
+        didSet { rebuildMenu() }
+    }
+    var onClearDiagnostics: (() -> Void)?
+    var onMarkDiagnostics: ((String) -> Void)?
+
     /// FR-11.1：启用 / 暂停、打开设置
     var onToggleEnabled: (() -> Void)? {
         didSet { rebuildMenu() }
@@ -119,6 +126,17 @@ final class MenuBarController: NSObject {
                 stall.target = self
                 menu.addItem(stall)
             }
+            if onCopyDiagnostics != nil {
+                // 调试菜单不翻译
+                for (title, action) in [("清除诊断日志", #selector(clearDiagnostics)),  // l10n-ignore
+                                        ("标记：刚才光标在动", #selector(markMoving)),  // l10n-ignore
+                                        ("标记：刚才光标不动", #selector(markStill)),  // l10n-ignore
+                                        ("复制诊断日志", #selector(copyDiagnostics))] {  // l10n-ignore
+                    let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+                    item.target = self
+                    menu.addItem(item)
+                }
+            }
             menu.addItem(.separator())
         }
         menu.addItem(NSMenuItem(title: String(localized: "退出 TouchOS"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
@@ -135,6 +153,22 @@ final class MenuBarController: NSObject {
 
     @objc private func openSettings() {
         onOpenSettings?()
+    }
+
+    @objc private func clearDiagnostics() {
+        onClearDiagnostics?()
+    }
+
+    @objc private func markMoving() {
+        onMarkDiagnostics?("光标在动")  // l10n-ignore
+    }
+
+    @objc private func markStill() {
+        onMarkDiagnostics?("光标不动")  // l10n-ignore
+    }
+
+    @objc private func copyDiagnostics() {
+        onCopyDiagnostics?()
     }
 
     @objc private func debugStall() {

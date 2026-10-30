@@ -87,7 +87,14 @@ final class AppCoordinator {
                 debug.toggle()
                 self?.menuBar.debugOverlayVisible = debug.isVisible
             }
-            driver.onDebug = { line in DispatchQueue.main.async { debug.model.log(line) } }
+            DiagnosticLog.shared.enable()
+            menuBar.onCopyDiagnostics = { DiagnosticLog.shared.copyToPasteboard() }
+            menuBar.onClearDiagnostics = { DiagnosticLog.shared.clear() }
+            menuBar.onMarkDiagnostics = { note in DiagnosticLog.shared.record("★ 用户标记：\(note)") }  // l10n-ignore
+            driver.onDebug = { line in
+                DiagnosticLog.shared.record(line)
+                DispatchQueue.main.async { debug.model.log(line) }
+            }
             driver.onLatency = { sample in debug.model.record(sample) }
             let tap = self.tap!
             tap.onPressureDebug = { stage, pressure in
@@ -161,6 +168,7 @@ final class AppCoordinator {
             let manager = DeviceManager(bridge: bridge, pipeline: pipeline)
             manager.onChange = { [weak self] devices, removed in
                 self?.debugOverlay?.model.setDevices(devices)
+                DiagnosticLog.shared.record("触控设备：\(devices.map { "\($0.displayName) \($0.id.raw)" }.joined(separator: ", ")) · 移除 \(removed.count)")  // l10n-ignore
                 let map = Dictionary(uniqueKeysWithValues: devices.map { ($0.id, $0) })
                 self?.driver.updateEnvironment { $0.devices = map }
                 for id in removed { self?.driver.send(.deviceRemoved(id)) }  // FR-4.5
@@ -183,6 +191,10 @@ final class AppCoordinator {
                 self?.frontmost = id
                 self?.refreshStatus()  // 黑名单
             }
+            DiagnosticLog.shared.record("前台应用：\(id ?? "?")")  // l10n-ignore
+        }
+        NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { _ in
+            DiagnosticLog.shared.record("显示器变化：\(DiagnosticLog.displaySummary)")  // l10n-ignore
         }
         let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         self.frontmost = frontmost

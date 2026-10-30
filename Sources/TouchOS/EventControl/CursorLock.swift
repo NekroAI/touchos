@@ -31,6 +31,9 @@ final class CursorLock: @unchecked Sendable {
     /// 这次会话实际施加的方式，退出时撤销
     private var applied: FreezeMethod?
     private var watchdog: DispatchSourceTimer?
+    // 诊断日志：冻结时的计数，退出时算出这次会话的增量
+    private var sessionMovesAtLock: UInt64 = 0
+    private var sessionCorrectionsAtLock: UInt64 = 0
     private let watchdogQueue = DispatchQueue(label: "ai.nekro.touchos.cursor-watchdog", qos: .userInteractive)
     /// input.queue 最后一次校验的时刻
     private let heartbeat = TOAtomicCreate()!
@@ -83,18 +86,38 @@ final class CursorLock: @unchecked Sendable {
         freezeLock.lock()
         defer { freezeLock.unlock() }
         guard applied == nil else { return }
-        var method = FreezeMethod.current
+        let requested = FreezeMethod.current
+        var method = requested
+        var result = "-"
         switch method {
         case .tap: break
         case .hide:
             Self.allowHidingInBackground()
-            CGDisplayHideCursor(CGMainDisplayID())
+            result = "\(CGDisplayHideCursor(CGMainDisplayID()).rawValue)"
         case .detach:
             // 调用失败时退回只靠拦截
-            if CGAssociateMouseAndMouseCursorPosition(0) != .success { method = .tap }
+            let error = CGAssociateMouseAndMouseCursorPosition(0)
+            result = "\(error.rawValue)"
+            if error != .success { method = .tap }
         }
         applied = method
         startWatchdog()
+        sessionMovesAtLock = tap.droppedActiveMoves
+        sessionCorrectionsAtLock = TOAtomicLoad(corrections)
+        DiagnosticLog.shared.record("光标冻结：设置 \(requested.rawValue) 实际 \(method.rawValue) 返回 \(result) · \(Self.systemState)")  // l10n-ignore
+    }
+
+    /// 诊断日志用：前台应用、TouchOS 是否在前台、系统报告的光标状态
+    private static var systemState: String {
+        let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "?"
+        return "前台 \(front) · TouchOS 在前台 \(NSRunningApplication.current.isActive) · 光标可见 \(cursorFlag("CGCursorIsVisible")) · 软件光标 \(cursorFlag("CGCursorIsDrawnInFramebuffer"))"  // l10n-ignore
+    }
+
+    /// 这两个函数在 SDK 中已标为不可用，运行时查找；取不到时显示问号（只用于诊断日志）
+    private static func cursorFlag(_ name: String) -> String {
+        typealias Flag = @convention(c) () -> Int32
+        guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), name) else { return "?" }
+        return "\(unsafeBitCast(symbol, to: Flag.self)())"
     }
 
     /// 撤销这次会话施加的方式，可重复调用。所有退出路径（含退出应用时的取消）都经过 `.restore`，
@@ -102,6 +125,9 @@ final class CursorLock: @unchecked Sendable {
     private func releaseFreezeMethod() {
         freezeLock.lock()
         defer { freezeLock.unlock() }
+        if let applied {
+            DiagnosticLog.shared.record("光标恢复：\(applied.rawValue) · 本次丢弃指针事件 \(self.tap.droppedActiveMoves &- self.sessionMovesAtLock) · 校正 \(TOAtomicLoad(self.corrections) &- self.sessionCorrectionsAtLock) · \(Self.systemState)")  // l10n-ignore
+        }
         switch applied {
         case .hide: CGDisplayShowCursor(CGMainDisplayID())
         case .detach: CGAssociateMouseAndMouseCursorPosition(1)
@@ -120,6 +146,7 @@ final class CursorLock: @unchecked Sendable {
         timer.schedule(deadline: .now() + Self.watchdogInterval, repeating: Self.watchdogInterval)
         timer.setEventHandler { [weak self] in
             guard let self, ProcessInfo.processInfo.systemUptime - TOAtomicLoadDouble(self.heartbeat) > self.stallLimit else { return }
+            DiagnosticLog.shared.record("看门狗：输入队列无响应，恢复光标")  // l10n-ignore
             self.releaseFreezeMethod()
             self.onStall?()
         }

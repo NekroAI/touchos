@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format is based on 
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-10-30
+
+### Added
+- Debug Tools: an in-memory diagnostic log with clear, mark and copy commands in the menu. It contains no touch or cursor coordinates.
+
+### Known issues
+- The on-screen cursor can still follow the finger while a panel is open; the 0.1.3 fix does not hold in all cases. Still under investigation.
+
 ## [0.1.3] - 2026-10-30
 
 ### Fixed
