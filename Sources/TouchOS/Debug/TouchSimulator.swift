@@ -102,6 +102,8 @@ final class TouchSimulator {
         ],
         // 唤起后再四指轻点一次：轻点完成后关闭（D22）
         "toggle": tap + tap.map { (1.5 + $0.t, $0.fingers) },
+        // 连续唤起与关闭：收拢途中再次唤起，隐藏后再唤起
+        "reopen": tap + [1.0, 1.12, 2.0, 2.6].flatMap { t in tap.map { (t + $0.t, $0.fingers) } },
         // 停在左上按钮上按压三次（显示 ×N 计数与回弹），再到中心的取消上抬起。动作不会执行
         "press": tap + [
             (0.8, [:]),

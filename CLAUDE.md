@@ -13,7 +13,7 @@ macOS 菜单栏工具：一指按住触控板角落唤起浮层面板，另一�
 - 调试叠层：发布构建中执行 `defaults write ai.nekro.touchos showDebugOverlayMenu -bool true` 后，菜单栏出现"调试叠层"（直接运行 `.build/release/TouchOS` 时 defaults 域为 `TouchOS`）
 - 外观：菜单栏「外观」子菜单（主题、切换动画、强调色，D23），存在 UserDefaults `overlayTheme` / `overlayNav` / `overlayAccent`，下一次唤起生效
 - 配置：`~/Library/Application Support/TouchOS/config.json`（schema v1，自动备份 5 份，D24）；唤起方式、常驻、背景压暗、主题等都在设置窗口（菜单栏「设置…」⌘,），原调试菜单开关与 UserDefaults 键已废弃
-- 浮层预演（调试叠层可用时）：`notifyutil -p ai.nekro.touchos.simulate.cancel`（另有 `idle`、`offset`（偏离中心轻点）、`press`、`commit`、`outside`、`toggle`、`navigate`、`overview`、`hold`），只驱动浮层、不碰真实输入，配合 `screencapture -v -V 5 out.mov` 录屏逐帧检查视觉
+- 浮层预演（调试叠层可用时）：`notifyutil -p ai.nekro.touchos.simulate.cancel`（另有 `idle`、`offset`（偏离中心轻点）、`reopen`（连续唤起与关闭）、`press`、`commit`、`outside`、`toggle`、`navigate`、`overview`、`hold`），只驱动浮层、不碰真实输入，配合 `screencapture -v -V 5 out.mov` 录屏逐帧检查视觉
 - 发布：改 `VERSION` → 推送 `v<版本>` 标签，`release.yml` 构建 arm64 / x64 DMG 并发布预发布版；本地打包 `ARCH=x86_64 scripts/package-macos.sh`。发布证书「Nekro TouchOS Release」的 p12 在 `~/.touchos-release/`（`scripts/release-cert.sh` 一次性创建并写入 Actions Secrets），不得更换（D3）
 - 排查：`applicationDidFinishLaunching` 中的 ObjC 异常会被 AppKit 静默吞掉；启动"没反应"时用 lldb 在 `objc_exception_throw` 下断点。日志命令见 `docs/m0-report.md`
 - 开发机：Mac mini M4 + macOS 27 + 蓝牙妙控板，没有内置触控板（D7）。内置板、双设备、macOS 14/15/26 相关验收不能在本机声称通过。

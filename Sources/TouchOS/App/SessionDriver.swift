@@ -267,8 +267,11 @@ final class OverlayController {
         model.appearance = appearance
         model.showTrail = showTrail
         model.shownAt = ProcessInfo.processInfo.systemUptime
-        model.phase = reduceMotion ? .shown : .entering
-        model.apply(state)
+        // 落到"未弹开"不能带动画：否则上一次留下的状态（已显示、正在收拢）会先倒放回起点，再弹开，看起来抖一下
+        Self.withoutAnimation {
+            model.phase = reduceMotion ? .shown : .entering
+            model.apply(state)
+        }
         model.groupOrigin = panel.show(groupSize: state.size)
         guard !reduceMotion else { return }
         after(Self.enterKick) { $0.model.phase = .shown }
@@ -309,8 +312,16 @@ final class OverlayController {
 
     func hide() {
         panel.hide()
-        model.apply(nil)
-        model.phase = .shown
+        Self.withoutAnimation {
+            model.apply(nil)
+            model.phase = .entering
+        }
+    }
+
+    private static func withoutAnimation(_ change: () -> Void) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction, change)
     }
 
     /// 按压执行（D18）：计数、回弹与波纹
