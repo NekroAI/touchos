@@ -425,6 +425,42 @@ private func activeLayout(_ h: Harness) -> String? {
         #expect(!Action.openApp(bundleID: "com.apple.finder").repeatsWhileHeld)
     }
 
+    @Test func liftWaitsForGraceBeforeCommitting() throws {
+        // D36：抬起 100 ms 后才执行
+        let g = anchorThenLift().touch(id: 2, at: Spot.close, t: 0.8).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
+        let h = runSticky(g, until: 1.4)
+        #expect(h.actions.map(\.action) == [closeTab])
+        let at = try #require(h.firstTime { if case .action = $0 { true } else { false } })
+        #expect(at >= 1.1 && at < 1.12)
+    }
+
+    @Test func fingerReturningNearbyContinues() {
+        // 宽限期内在 1.5 mm 外落回：接着移动到音量上再抬起，只执行音量
+        let g = anchorThenLift().touch(id: 2, at: Spot.close, t: 0.8).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
+            .touch(id: 3, at: (0.86, 0.85), t: 1.05).move(id: 3, to: Spot.vol, over: 0.2).hold(id: 3, until: 1.5).lift(id: 3, t: 1.5)
+        let h = runSticky(g, until: 1.8)
+        #expect(h.actions.map(\.action) == [.system(.volumeUp)])
+        #expect(h.ends == [.committed("vol")])
+    }
+
+    @Test func fingerLandingFarIsANewTouch() {
+        // 落在 15 mm 以外：原来的抬起立即执行
+        let g = anchorThenLift().touch(id: 2, at: Spot.close, t: 0.8).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
+            .touch(id: 3, at: Spot.a, t: 1.05).hold(id: 3, until: 1.3)
+        let h = runSticky(g, until: 1.3)
+        #expect(h.actions.map(\.action) == [closeTab])
+        #expect((h.firstTime { if case .action = $0 { true } else { false } } ?? 0) < 1.07)
+    }
+
+    @Test func gapLiftStillAllowsANewPointer() {
+        // 在空隙里抬起，宽限期内落到远处：面板保留，新手指成为指点指
+        let g = anchorThenLift().touch(id: 2, at: Spot.gap, t: 0.8).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
+            .touch(id: 3, at: Spot.close, t: 1.05).hold(id: 3, until: 1.4)
+        let h = runSticky(g, until: 1.4)
+        #expect(h.isActive && h.actions.isEmpty)
+        if case .active(let ctx) = h.machine.state { #expect(ctx.hovered == "close") }
+    }
+
     @Test func idleTimeoutClosesOnlyWithoutFingers() {
         let idle = runSticky(anchorThenLift(), until: 6.0)
         #expect(idle.ends == [.idleTimeout])

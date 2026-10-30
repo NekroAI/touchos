@@ -31,6 +31,9 @@ public struct Tuning: Equatable, Sendable {
     public static let hitGapRange = 0.0...5.0
     /// `P.liftLookbackMs`
     public var liftLookbackMs = 60.0
+    /// 指点指抬起后等这么久再执行；期间手指在抬起点 `liftReturnMM` 以内落回则当作没抬起，接着移动（D36）
+    public var liftGraceMs = 100.0
+    public var liftReturnMM = 15.0
     /// `P.panelDelayMs`
     public var panelDelayMs = 200.0
     /// `P.cooldownMs`

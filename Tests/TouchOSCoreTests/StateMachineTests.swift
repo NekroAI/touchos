@@ -308,6 +308,14 @@ private func run(_ g: Gesture, tuning: Tuning = .test, environment: SessionEnvir
         #expect(h.isActive)
     }
 
+    @Test func anchorLiftDuringGraceCommitsThePointerLift() {
+        // D36：指点指先抬起、锚指在宽限期内跟着抬起，仍执行指点指所在的按钮
+        let g = anchorDown().hold(id: 1, until: 0.53).touch(id: 2, at: Spot.close, t: 0.3).hold(id: 2, until: 0.5).lift(id: 2, t: 0.5)
+            .lift(id: 1, t: 0.53)
+        let h = run(g, until: 0.8)
+        #expect(h.ends == [.committed("close")] && h.actions.count == 1)
+    }
+
     @Test func tuningChangesWaitUntilIdle() {
         var h = Harness()
         h.run(anchorDown().hold(id: 1, until: 0.3).frames(rate: rate), until: 0.3)

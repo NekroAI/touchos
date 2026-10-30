@@ -254,6 +254,8 @@ public struct ActiveContext: Equatable, Sendable {
     public var pressConsumed = false
     /// 在关闭上按住的开始时刻（D23）
     public var holdStartedAt: TimeInterval?
+    /// 指点指刚抬起、还在宽限期内（D36）：抬起前的轨迹与抬起时刻。宽限期过后按它提交
+    public var pendingLift: PendingLift?
     /// 按住按钮连续触发（D33）：哪个按钮、下一次触发的时刻。松开、移出这个按钮即停止
     public var repeatSlot: SlotID?
     public var repeatAt: TimeInterval?
@@ -270,6 +272,12 @@ public struct ActiveContext: Equatable, Sendable {
     public var lastTouchAt: TimeInterval = 0
     /// 常驻模式下板上出现多指，到全部抬起为止
     public var gesture: MultiGesture?
+}
+
+/// 抬起防抖（D36）
+public struct PendingLift: Equatable, Sendable {
+    public let pointer: PointerTrack
+    public let liftAt: TimeInterval
 }
 
 public enum SessionState: Equatable, Sendable {
@@ -542,6 +550,11 @@ public struct SessionStateMachine: Sendable {
                 return exit(ctx, now: frame.timestamp, end: .thirdFinger, thirdFinger: true)  // T15
             }
             let anchorDown = !ctx.anchorLifted && touching.contains { $0.id == ctx.anchorID }
+            if !anchorDown && !ctx.anchorLifted, let pending = ctx.pendingLift {
+                // 宽限期内锚指也抬起：两指先后松开，按指点指抬起的那一刻提交（D36）
+                ctx.pendingLift = nil
+                return commit(&ctx, pending.pointer, liftAt: pending.liftAt)
+            }
             if !anchorDown && !ctx.anchorLifted {
                 guard tuning.stickyPanel else { return exit(ctx, now: frame.timestamp, end: .anchorLifted) }  // T14
                 ctx.anchorLifted = true  // 常驻模式：面板保留（D14）
@@ -553,6 +566,10 @@ public struct SessionStateMachine: Sendable {
             }
             return pointerFrame(&ctx, frame)
         case .tick(let now):
+            if let pending = ctx.pendingLift, now - pending.liftAt >= tuning.liftGraceMs / 1000 {
+                ctx.pendingLift = nil
+                return commit(&ctx, pending.pointer, liftAt: pending.liftAt)  // 宽限期过了，手指没回来（D36）
+            }
             if let hold = ctx.holdStartedAt, now - hold >= tuning.editHoldMs / 1000 {
                 var effects = exit(ctx, now: now, end: .edit(ctx.layout.id))  // D23：按住关闭进入编辑
                 effects.insert(.openEditor(ctx.layout.id), at: effects.count - 1)
@@ -790,7 +807,23 @@ public struct SessionStateMachine: Sendable {
         let mapper = mapper(ctx)
         var effects: [SessionEffect] = []
 
-        if var pointer = ctx.pointer {
+        if let pending = ctx.pendingLift {
+            guard let c = frame.contacts.first(where: { ($0.id != ctx.anchorID || ctx.anchorLifted) && $0.phase == .began }) else {
+                state = .active(ctx)
+                return []
+            }
+            ctx.pendingLift = nil
+            let mm = environment.devices[ctx.device]?.surfaceSizeMM ?? .zero
+            let p = pending.pointer.latest
+            guard hypot((c.position.x - p.x) * mm.width, (c.position.y - p.y) * mm.height) <= tuning.liftReturnMM else {
+                // 落得远：是新的一次触摸。原来的抬起照常提交，面板还在就接着处理这一帧（新手指可以成为指点指）
+                var effects = commit(&ctx, pending.pointer, liftAt: pending.liftAt)
+                if case .active(var after) = state { effects += pointerFrame(&after, frame) }
+                return effects
+            }
+            // 手指回来了：当作没抬起过，从落点接着移动，悬停与按压状态都保留
+            ctx.pointer = PointerTrack(id: c.id, t: frame.timestamp, p: c.position)
+        } else if var pointer = ctx.pointer {
             guard let c = frame.contacts.first(where: { $0.id == pointer.id }), c.phase != .cancelled else {
                 clearPointer(&ctx)  // 指点指异常消失：不提交，允许重新选择
                 let reverted = syncSliders(&ctx)
@@ -798,7 +831,11 @@ public struct SessionStateMachine: Sendable {
                 return reverted + (ctx.panelVisible ? [.updatePanel(panelState(ctx))] : [])
             }
             if c.phase == .ended {
-                return commit(&ctx, pointer, liftAt: frame.timestamp)  // T11–T13
+                guard tuning.liftGraceMs > 0 else { return commit(&ctx, pointer, liftAt: frame.timestamp) }  // T11–T13
+                // 抬起防抖：先等一小段时间，手指回来就接着移动（D36）
+                ctx.pendingLift = PendingLift(pointer: pointer, liftAt: frame.timestamp)
+                state = .active(ctx)
+                return []
             }
             pointer.append(t: frame.timestamp, p: c.position)  // T9
             ctx.pointer = pointer
@@ -889,6 +926,7 @@ public struct SessionStateMachine: Sendable {
 
     private func clearPointer(_ ctx: inout ActiveContext) {
         ctx.pointer = nil
+        ctx.pendingLift = nil
         ctx.releaseAfter = nil
         ctx.hovered = nil
         ctx.overviewHover = nil
