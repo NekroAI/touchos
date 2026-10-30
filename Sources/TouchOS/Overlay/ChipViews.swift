@@ -69,6 +69,8 @@ struct ChipView: View {
     private var offset: CGSize {
         let c = CGPoint(x: geometry.frame.midX, y: geometry.frame.midY)
         if !phase.appeared {
+            // 中心的关闭是整组的锚点，原地淡入，不随唤起位置偏移（负责人反馈：出场时中心会偏一下）
+            if geometry.kind == .cancel { return .zero }
             return CGSize(width: (origin.x - c.x) * PanelMetrics.enterPull, height: (origin.y - c.y) * PanelMetrics.enterPull)
         }
         if phase == .collapsing {

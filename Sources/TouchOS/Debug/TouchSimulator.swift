@@ -90,6 +90,8 @@ final class TouchSimulator {
         ],
         // 唤起后不动：5 秒无触摸超时
         "idle": tap,
+        // 在触控板左下方轻点唤起：唤起点在面板之外，检查弹开动画的起点
+        "offset": tap.map { k in (k.t, k.fingers.mapValues { CGPoint(x: $0.x - 0.3, y: $0.y - 0.3) }) },
         // 从按钮上移到按钮组之外停住再抬起：取消样式的指示点，抬起关闭（D21、D22）
         "outside": tap + [
             (0.8, [:]),
