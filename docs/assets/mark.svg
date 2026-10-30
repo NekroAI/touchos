@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Nekro TouchOS">
+  <defs>
+    <linearGradient id="ink" gradientUnits="userSpaceOnUse" x1="220" y1="260" x2="780" y2="860">
+      <stop offset="0" stop-color="#FFC27A"/><stop offset="0.45" stop-color="#FF5C7A"/><stop offset="1" stop-color="#9A4DFF"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(512 500) scale(1.24) translate(-512 -530)" fill="url(#ink)">
+    <path d="M228 384C340 306 566 296 806 258C772 336 602 374 590 382C594 510 540 660 456 790C438 816 396 800 408 770C476 640 490 500 462 396C380 408 280 416 228 384Z"/>
+    <circle cx="426" cy="792" r="54"/>
+  </g>
+</svg>

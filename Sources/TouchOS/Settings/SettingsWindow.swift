@@ -619,7 +619,7 @@ private struct AboutPage: View {
     var body: some View {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
         VStack(spacing: 14) {
-            Image(systemName: "hand.point.up.left.fill").font(.system(size: 52)).foregroundStyle(.tint)
+            Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 96, height: 96)
             Text("Nekro TouchOS").font(.title.weight(.semibold))
             Text("版本 \(version)").foregroundStyle(.secondary)
             Text("轻点后按住唤出面板，手指在触控板上的位置直接对应按钮，抬起即执行。").multilineTextAlignment(.center)

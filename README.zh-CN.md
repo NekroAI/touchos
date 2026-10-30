@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/icon-128.png" width="96" height="96" alt="Nekro TouchOS icon">
+</p>
+
 <h1 align="center">Nekro TouchOS</h1>
 
 <p align="center">

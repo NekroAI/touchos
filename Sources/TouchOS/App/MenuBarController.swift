@@ -6,6 +6,8 @@ final class MenuBarController: NSObject {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let statusLine = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private var debugItem: NSMenuItem?
+    private let warningDot = NSView()
+    private static let warningDotSize: CGFloat = 7
 
     /// 设置后菜单中出现"调试叠层"（FR-14.4）
     var onToggleDebugOverlay: (() -> Void)? {
@@ -51,10 +53,21 @@ final class MenuBarController: NSObject {
     /// FR-11.1 当前状态：正常 / 输入不可用 / 拦截不可用 / 缺少权限
     func setStatus(_ text: String, warning: Bool) {
         statusLine.title = "状态：\(text)"
-        // 图标待定（docs/decisions.md 待决事项 2），暂用 SF Symbols
-        statusItem.button?.image = warning
-            ? NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: "TouchOS：\(text)")
-            : NSImage(systemSymbolName: "hand.point.up.left", accessibilityDescription: "TouchOS")
+        // 品牌标志（D43）；异常时右下角加一个橙点，文字说明在菜单的状态行
+        guard let button = statusItem.button else { return }
+        button.image = BrandMark.menuBarImage(description: warning ? "TouchOS：\(text)" : "TouchOS")
+        warningDot.isHidden = !warning
+        if warningDot.superview == nil {
+            warningDot.wantsLayer = true
+            warningDot.layer?.backgroundColor = NSColor.systemOrange.cgColor
+            warningDot.layer?.cornerRadius = Self.warningDotSize / 2
+            button.addSubview(warningDot)
+        }
+        let side = Self.warningDotSize
+        warningDot.frame = NSRect(x: button.bounds.midX + BrandMark.menuBarSize / 2 - side,
+                                  y: button.isFlipped ? button.bounds.midY + BrandMark.menuBarSize / 2 - side
+                                      : button.bounds.midY - BrandMark.menuBarSize / 2,
+                                  width: side, height: side)
     }
 
     private func rebuildMenu() {

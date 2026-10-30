@@ -44,7 +44,7 @@ private struct WelcomeView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             HStack(spacing: 14) {
-                Image(systemName: "hand.point.up.left.fill").font(.system(size: 40)).foregroundStyle(.tint)
+                Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 64, height: 64)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Nekro TouchOS").font(.title.weight(.semibold))
                     Text("看着选，不用记手势。").foregroundStyle(.secondary)

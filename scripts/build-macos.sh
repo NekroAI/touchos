@@ -33,6 +33,7 @@ APP="$DIST/TouchOS.app"
 rm -rf "$APP"; mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN/TouchOS" "$APP/Contents/MacOS/TouchOS"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
+cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" -c "Set :CFBundleVersion $BUILD_NUMBER" \
   "$APP/Contents/Info.plist"
 
