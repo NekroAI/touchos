@@ -256,29 +256,33 @@ struct PanelView: View, Equatable {
     }
 }
 
-/// 液态光斑主题：一块共享的玻璃跟着悬停在按钮之间流动（弹簧略欠阻尼，移动时带一点拉伸感）
+/// 液态光斑主题：一团强调色的柔光跟着悬停在按钮之间流动（弹簧略欠阻尼，移动时带一点拉伸感）。
+/// 原来是一块灰色玻璃，负责人反馈不好看，改为从中心向外渐隐的光（D34）；只用渐变，不做实时模糊与阴影
 private struct LensGlass: View {
     let target: ChipGeometry?
     let slider: Bool
     let accent: Color
     @State private var last: ChipGeometry?
 
+    /// 光斑直径：图标外圈（`LensFace.glyphRing` 54）的两倍；圆形按钮为按钮直径的两倍。中心亮度
+    static let spot: CGFloat = 108
+    static let roundSpread: CGFloat = 2
+    static let core = 0.8
+    /// 格子里图标的中心在格子中心之上：图标加名称高 62，图标 28 → 上移 (62 − 28) / 2
+    static let glyphLift: CGFloat = 17
+
     var body: some View {
         ZStack(alignment: .topLeading) {
             if let g = target ?? last {
                 let round = g.kind != .tile
-                let rect = round ? g.scaled(1.25).frame : g.frame.insetBy(dx: 4, dy: 4)
-                let shape = RoundedRectangle(cornerRadius: round ? rect.width / 2 : (slider ? 26 : 24), style: .continuous)
-                shape.fill(Color.white.opacity(0.11))
-                    .background(shape.fill(.ultraThinMaterial).opacity(PanelMetrics.materialOpacity + 0.2))
-                    .overlay(shape.strokeBorder(Color.white.opacity(0.32), lineWidth: 0.5))
-                    .overlay(alignment: .top) {
-                        // 顶部一道高光
-                        shape.strokeBorder(LinearGradient(colors: [.white.opacity(0.35), .clear], startPoint: .top, endPoint: .center),
-                                           lineWidth: 1)
-                    }
-                    .shadow(color: .black.opacity(0.35), radius: 18, y: 7)
-                    .shadow(color: accent.opacity(0.3), radius: 22)
+                // 落在图标后面；滑杆铺满整条
+                let d = round ? min(g.frame.width, g.frame.height) * Self.roundSpread : Self.spot
+                let rect = slider ? g.frame.insetBy(dx: -10, dy: -10)
+                    : CGRect(x: g.frame.midX - d / 2, y: g.frame.midY - d / 2 - (round ? 0 : Self.glyphLift), width: d, height: d)
+                EllipticalGradient(stops: [.init(color: accent.opacity(Self.core), location: 0),
+                                           .init(color: accent.opacity(Self.core * 0.5), location: 0.3),
+                                           .init(color: accent.opacity(0), location: 1)],
+                                   center: .center, startRadiusFraction: 0, endRadiusFraction: 0.5)
                     .frame(width: rect.width, height: rect.height)
                     .position(x: rect.midX, y: rect.midY)
                     .opacity(target == nil ? 0 : 1)
@@ -301,6 +305,9 @@ private struct HoloDecor: View {
     static let margin: CGFloat = 18
     static let spacing: CGFloat = 14
     static let bracket: CGFloat = 22
+    /// 深色"显示屏"底板：透明线框压不住身后的窗口文字（负责人反馈可读性差，D34）
+    static let screen = Color(.sRGB, red: 0.02, green: 0.05, blue: 0.07)
+    static let screenOpacity = 0.8
 
     var body: some View {
         let m = Self.margin
@@ -308,6 +315,8 @@ private struct HoloDecor: View {
         Canvas { ctx, _ in
             let clip = ring ? Path(ellipseIn: rect.offsetBy(dx: m, dy: m)) : Path(roundedRect: rect.offsetBy(dx: m, dy: m), cornerRadius: 6)
             ctx.clip(to: clip)
+            ctx.fill(clip, with: .color(Self.screen.opacity(Self.screenOpacity)))
+            ctx.stroke(clip, with: .color(accent.opacity(0.22)), lineWidth: 1)
             var dots = Path()
             var y = Self.spacing / 2
             while y < rect.height {
@@ -318,7 +327,7 @@ private struct HoloDecor: View {
                 }
                 y += Self.spacing
             }
-            ctx.fill(dots, with: .color(accent.opacity(0.16)))
+            ctx.fill(dots, with: .color(accent.opacity(0.12)))
         }
         .frame(width: rect.width, height: rect.height)
         .overlay {

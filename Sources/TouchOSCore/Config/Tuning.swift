@@ -80,6 +80,9 @@ public struct Tuning: Equatable, Sendable {
     public var overviewDamping = 0.9
     /// `P.editHoldMs`：在关闭上按住多久进入编辑（D23）
     public var editHoldMs = 600.0
+    /// 在按钮上按住多久开始连续触发、之后每隔多久触发一次（D33）。应用启动后换成系统键盘的「重复前延迟」与「按键重复速度」
+    public var repeatDelayMs = 500.0
+    public var repeatIntervalMs = 83.0
     /// `P.actionDelayMs`
     public var actionDelayMs = 30.0
     /// `P.smoothing`

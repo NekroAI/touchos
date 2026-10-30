@@ -195,4 +195,15 @@ public enum Action: Equatable, Sendable {
     /// 输入一段文字（D30，SRS 预留的 M2 动作提前实现）：直接送字符，与键盘布局、输入法无关，任何符号都能输入
     case textSnippet(String)
     // M2 预留：macro([Action])、windowManagement(WindowCommand)、subPanel(LayoutID)
+
+    /// 按住按钮时是否连续触发（D33）：输入文字、不带 ⌘ 的按键（删除、方向、回车、Tab）、音量与亮度步进。
+    /// 带 ⌘ 的快捷键（⌘W、⌘Q 连发会连关窗口）、打开、脚本、锁屏、窗口摆放等只触发一次
+    public var repeatsWhileHeld: Bool {
+        switch self {
+        case .textSnippet: true
+        case .keyboardShortcut(let combo): !combo.modifiers.contains(.command)
+        case .system(let command): [.volumeUp, .volumeDown, .brightnessUp, .brightnessDown].contains(command)
+        default: false
+        }
+    }
 }

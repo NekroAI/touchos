@@ -183,6 +183,9 @@ final class SessionDriver: @unchecked Sendable {
     private func applyTuning() {
         var t = baseTuning
         config.apply(to: &t)
+        // 连续触发跟随系统键盘的「重复前延迟」与「按键重复速度」（D33）
+        t.repeatDelayMs = NSEvent.keyRepeatDelay * 1000
+        t.repeatIntervalMs = NSEvent.keyRepeatInterval * 1000
         guard t != machine.tuning else { return }
         _ = machine.handle(.tuning(t))
         onDebug?("面板 \(t.panelScale) · 映射区 \(t.mappingScale) · 常驻 \(t.stickyPanel ? "开" : "关")")

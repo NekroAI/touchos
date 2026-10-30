@@ -569,7 +569,7 @@ private struct HoloFace: View {
                 plate
                 if let code = slot.action.shortLabel, kind != .widget {
                     Text(code).font(.system(size: 9, weight: .medium, design: .monospaced)).tracking(0.7)
-                        .foregroundStyle(accent.opacity(lit ? 0.9 : 0.4))
+                        .foregroundStyle(accent.opacity(lit ? 0.95 : 0.6))
                         .padding(.leading, 12).padding(.top, 10)
                 }
                 content
@@ -580,16 +580,17 @@ private struct HoloFace: View {
     private var plate: some View {
         let shape = RoundedRectangle(cornerRadius: 2)
         return shape.fill(accent.opacity(lit ? 0.08 : 0))
-            .overlay(shape.strokeBorder(accent.opacity(lit ? 0 : 0.12), lineWidth: 0.5))
+            .overlay(shape.strokeBorder(accent.opacity(lit ? 0 : 0.2), lineWidth: 0.5))
             .overlay(shape.stroke(accent.opacity(lit ? 0.35 : 0), lineWidth: 10).blur(radius: 10).clipShape(shape))
-            .overlay(CornerBrackets(length: 12, inset: lit ? 0 : 6).stroke(accent.opacity(lit ? 1 : 0.42), lineWidth: 1.5))
+            .overlay(CornerBrackets(length: 12, inset: lit ? 0 : 6).stroke(accent.opacity(lit ? 1 : 0.6), lineWidth: 1.5))
             .chipBody(.rounded(2))
             .padding(4)
     }
 
     private var label: some View {
-        Text(slot.title.uppercased()).font(.system(size: 11, design: .monospaced)).tracking(1.3)
-            .foregroundStyle(Self.ink.opacity(lit ? 1 : 0.62)).lineLimit(1)
+        Text(slot.title.uppercased()).font(.system(size: 11, weight: .medium, design: .monospaced)).tracking(1.3)
+            .foregroundStyle(Self.ink.opacity(lit ? 1 : 0.8)).lineLimit(1)
+            .floatingLabel("holo|\(slot.title)|\(lit)")
     }
 
     @ViewBuilder private var content: some View {
@@ -638,7 +639,8 @@ private struct HoloFace: View {
             .padding(22)
         default:
             VStack(spacing: 10) {
-                Glyph(slot: slot, size: 26, weight: .light).foregroundStyle(accent.opacity(lit ? 1 : 0.85))
+                Glyph(slot: slot, size: 26, weight: .light).foregroundStyle(lit ? Self.ink : accent)
+                    .floatingLabel("holo.glyph|\(slot.symbol)|\(slot.title)|\(lit)")
                 label.opacity(Glyph.isText(slot) ? 0 : 1)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -254,6 +254,9 @@ public struct ActiveContext: Equatable, Sendable {
     public var pressConsumed = false
     /// 在关闭上按住的开始时刻（D23）
     public var holdStartedAt: TimeInterval?
+    /// 按住按钮连续触发（D33）：哪个按钮、下一次触发的时刻。松开、移出这个按钮即停止
+    public var repeatSlot: SlotID?
+    public var repeatAt: TimeInterval?
     /// 各滑杆的基准值：进入激活时的实际值，接受调整后换成新值；离开滑杆时恢复为该值（D29）
     public var sliderBase: [SlotID: Double] = [:]
     public var sliderValues: [SlotID: Double] = [:]
@@ -555,6 +558,21 @@ public struct SessionStateMachine: Sendable {
                 effects.insert(.openEditor(ctx.layout.id), at: effects.count - 1)
                 return effects
             }
+            if let id = ctx.repeatSlot, let at = ctx.repeatAt {
+                if ctx.hovered != id {
+                    ctx.repeatSlot = nil  // 移出按钮：停止连续触发
+                    ctx.repeatAt = nil
+                    state = .active(ctx)
+                } else if now >= at, let slot = ctx.layout.slot(id) {
+                    // 落后太多（例如 tick 卡顿）不补发，从现在起按间隔继续
+                    ctx.repeatAt = max(at + tuning.repeatIntervalMs / 1000, now)
+                    state = .active(ctx)
+                    var effects: [SessionEffect] = [.action(ActionRequest(action: slot.action, title: slot.title,
+                                                                          frontmostBundleID: ctx.frontmostBundleID, notBefore: now))]
+                    if ctx.panelVisible { effects += [.flashSlot(id), .updatePanel(panelState(ctx))] }
+                    return effects
+                }
+            }
             if ctx.anchorLifted && ctx.pointer == nil && ctx.gesture == nil {
                 // 常驻模式下板上没有手指时本来就没有帧，改用无触摸超时（D14）
                 if now - ctx.lastTouchAt > tuning.stickyIdleMs / 1000 { return exit(ctx, now: now, end: .idleTimeout) }
@@ -577,6 +595,11 @@ public struct SessionStateMachine: Sendable {
         case .physicalPress:
             return press(&ctx)
         case .physicalRelease:
+            if ctx.repeatSlot != nil {
+                ctx.repeatSlot = nil
+                ctx.repeatAt = nil
+                state = .active(ctx)
+            }
             guard ctx.holdStartedAt != nil else { return [] }
             return exit(ctx, now: clock, end: .cancelSlot)  // 未满时长松开：关闭（D23）
         case .escapeKey:
@@ -898,6 +921,10 @@ public struct SessionStateMachine: Sendable {
         } else {
             effects.append(.action(ActionRequest(action: slot.action, title: slot.title, frontmostBundleID: ctx.frontmostBundleID,
                                                  notBefore: ctx.lastFrameAt + tuning.actionDelayMs / 1000)))
+            if slot.action.repeatsWhileHeld {
+                ctx.repeatSlot = id  // 按住不放：延迟后开始连续触发（D33）
+                ctx.repeatAt = clock + tuning.repeatDelayMs / 1000
+            }
         }
         ctx.pressConsumed = true
         state = .active(ctx)

@@ -398,6 +398,33 @@ private func activeLayout(_ h: Harness) -> String? {
         #expect(runSticky(fresh, until: 1.6).actions.isEmpty)
     }
 
+    @Test func holdingPressRepeatsUntilRelease() {
+        // D33：按住 0.5 秒后每 83 ms 触发一次（tick 16 ms 一次：1.504、1.584、1.68、1.76），松开即停；之后在同一按钮抬起只关闭
+        let g = anchorThenLift().touch(id: 2, at: Spot.vol, t: 0.8).hold(id: 2, until: 2.2).lift(id: 2, t: 2.2)
+        let h = runSticky(g, events: [(1.0, .physicalPress), (1.8, .physicalRelease)], until: 2.4)
+        #expect(h.actions.count == 5 && h.actions.allSatisfy { $0.action == .system(.volumeUp) })
+        #expect(h.ends == [.liftAfterPress])
+    }
+
+    @Test func repeatStopsWhenLeavingAndSkipsCommandShortcuts() {
+        // 移出按钮即停止，移回来也不恢复
+        let away = anchorThenLift().touch(id: 2, at: Spot.vol, t: 0.8).hold(id: 2, until: 1.6)
+            .move(id: 2, to: Spot.gap, over: 0.05).move(id: 2, to: Spot.vol, over: 0.05).hold(id: 2, until: 2.4)
+        #expect(runSticky(away, events: [(1.0, .physicalPress)], until: 2.4).actions.count == 3)
+        // 带 ⌘ 的快捷键只触发一次
+        let command = anchorThenLift().touch(id: 2, at: Spot.close, t: 0.8).hold(id: 2, until: 2.4)
+        #expect(runSticky(command, events: [(1.0, .physicalPress)], until: 2.4).actions.count == 1)
+    }
+
+    @Test func repeatableActions() {
+        #expect(Action.textSnippet("1").repeatsWhileHeld)
+        #expect(Action.keyboardShortcut(KeyCombo(keyCode: 51, modifiers: [], displayLabel: "⌫")).repeatsWhileHeld)
+        #expect(Action.keyboardShortcut(KeyCombo(keyCode: 123, modifiers: [.shift], displayLabel: "⇧←")).repeatsWhileHeld)
+        #expect(!Action.keyboardShortcut(KeyCombo(keyCode: 13, modifiers: [.command], displayLabel: "⌘W")).repeatsWhileHeld)
+        #expect(Action.system(.brightnessDown).repeatsWhileHeld && !Action.system(.lockScreen).repeatsWhileHeld)
+        #expect(!Action.openApp(bundleID: "com.apple.finder").repeatsWhileHeld)
+    }
+
     @Test func idleTimeoutClosesOnlyWithoutFingers() {
         let idle = runSticky(anchorThenLift(), until: 6.0)
         #expect(idle.ends == [.idleTimeout])
