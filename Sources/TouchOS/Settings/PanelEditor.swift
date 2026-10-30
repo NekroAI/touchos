@@ -156,7 +156,7 @@ private struct PanelHeader: View {
     var body: some View {
         HStack(alignment: .center, spacing: 16) {
             VStack(alignment: .leading, spacing: 3) {
-                TextField("面板名称", text: Binding(get: { panel.name }, set: { n in updatePanel(configs, panel.id) { $0.name = n } }))
+                TextField("面板名称", text: makeBinding(get: { panel.name }, set: { n in updatePanel(configs, panel.id) { $0.name = n } }))
                     .textFieldStyle(.plain)
                     .font(.title2.weight(.semibold))
                     .focused($editingName)
@@ -175,7 +175,7 @@ private struct PanelHeader: View {
                 }
             }
             // 启用开关放在标题栏，一眼可见（D37、D38）：停用的面板保留配置，不参与唤起与切换
-            Toggle("启用", isOn: Binding(get: { panel.isEnabled },
+            Toggle("启用", isOn: makeBinding(get: { panel.isEnabled },
                                          set: { PanelCommands.setEnabled(panel.id, $0, configs: configs) }))
                 .toggleStyle(.switch)
                 .controlSize(.small)

@@ -131,7 +131,7 @@ private struct SlotForm: View {
                 SymbolField(symbol: field(\.symbol))
             }
             Section("功能") {
-                Picker("按钮", selection: Binding(get: { SlotKind(slot) }, set: setKind)) {
+                Picker("按钮", selection: makeBinding(get: { SlotKind(slot) }, set: setKind)) {
                     ForEach(SlotKind.allCases) { Text($0.title).tag($0) }
                 }
                 if SlotKind(slot) == .action { actionEditor }
@@ -180,14 +180,14 @@ private struct SlotForm: View {
 
     @ViewBuilder private var actionEditor: some View {
         let kind = ActionKind(slot.action) ?? .shortcut
-        Picker("类型", selection: Binding(get: { kind }, set: { k in if k != kind { setAction(k.placeholder) } })) {
+        Picker("类型", selection: makeBinding(get: { kind }, set: { k in if k != kind { setAction(k.placeholder) } })) {
             ForEach(ActionKind.allCases) { Text($0.title).tag($0) }
         }
         switch slot.action {
         case .keyboardShortcut(let combo):
             LabeledContent("组合键") { ShortcutRecorder(combo: combo) { setAction(.keyboardShortcut($0)) } }
         case .system(let command):
-            Picker("功能", selection: Binding(get: { command }, set: { setAction(.system($0)) })) {
+            Picker("功能", selection: makeBinding(get: { command }, set: { setAction(.system($0)) })) {
                 ForEach(SystemCommand.allCases, id: \.self) { Text($0.title).tag($0) }
             }
         case .openApp(let id):
@@ -198,7 +198,7 @@ private struct SlotForm: View {
                 }
             }
         case .openURL(let url, let browser):
-            TextField("链接", text: Binding(get: { url.absoluteString }, set: { s in
+            TextField("链接", text: makeBinding(get: { url.absoluteString }, set: { s in
                 if let u = URL(string: s), u.scheme != nil { setAction(.openURL(url: u, browserBundleID: browser)) }
             }))
         case .openFile(let path):
@@ -209,22 +209,22 @@ private struct SlotForm: View {
                 }
             }
         case .shortcut(let name):
-            TextField("快捷指令名称", text: Binding(get: { name }, set: { setAction(.shortcut(name: $0)) }))
+            TextField("快捷指令名称", text: makeBinding(get: { name }, set: { setAction(.shortcut(name: $0)) }))
         case .shell(let command, let timeout, let notify):
             riskNote
-            TextEditor(text: Binding(get: { command }, set: { setAction(.shell(command: $0, timeoutSec: timeout, notifyOutput: notify)) }))
+            TextEditor(text: makeBinding(get: { command }, set: { setAction(.shell(command: $0, timeoutSec: timeout, notifyOutput: notify)) }))
                 .font(.system(.body, design: .monospaced)).frame(minHeight: 70)
-            Toggle("把输出显示为通知", isOn: Binding(get: { notify }, set: { setAction(.shell(command: command, timeoutSec: timeout, notifyOutput: $0)) }))
+            Toggle("把输出显示为通知", isOn: makeBinding(get: { notify }, set: { setAction(.shell(command: command, timeoutSec: timeout, notifyOutput: $0)) }))
         case .appleScript(let source, let language):
             riskNote
-            Picker("语言", selection: Binding(get: { language }, set: { setAction(.appleScript(source: source, language: $0)) })) {
+            Picker("语言", selection: makeBinding(get: { language }, set: { setAction(.appleScript(source: source, language: $0)) })) {
                 Text("AppleScript").tag(ScriptLanguage.appleScript)
                 Text("JavaScript").tag(ScriptLanguage.javaScript)
             }
-            TextEditor(text: Binding(get: { source }, set: { setAction(.appleScript(source: $0, language: language)) }))
+            TextEditor(text: makeBinding(get: { source }, set: { setAction(.appleScript(source: $0, language: language)) }))
                 .font(.system(.body, design: .monospaced)).frame(minHeight: 70)
         case .textSnippet(let text):
-            TextField("文字", text: Binding(get: { text }, set: { setAction(.textSnippet($0)) }), prompt: Text("例如 → 或 2026-"))
+            TextField("文字", text: makeBinding(get: { text }, set: { setAction(.textSnippet($0)) }), prompt: Text("例如 → 或 2026-"))
         case .none:
             EmptyView()
         }
@@ -238,7 +238,7 @@ private struct SlotForm: View {
     // MARK: 修改
 
     private func field(_ path: WritableKeyPath<Slot, String>) -> Binding<String> {
-        Binding(get: { slot[keyPath: path] }, set: { v in edit { $0[keyPath: path] = v } })
+        makeBinding(get: { slot[keyPath: path] }, set: { v in edit { $0[keyPath: path] = v } })
     }
 
     private func edit(_ change: (inout Slot) -> Void) {

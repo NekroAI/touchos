@@ -109,7 +109,7 @@ private struct TriggerRow: View {
             .fixedSize()
             .disabled(!on)
             .opacity(on ? 1 : 0.5)
-            Toggle(title, isOn: Binding(get: { on }, set: { v in configs.update { $0.triggers.set(trigger, v) } }))
+            Toggle(title, isOn: makeBinding(get: { on }, set: { v in configs.update { $0.triggers.set(trigger, v) } }))
                 .labelsHidden()
                 .toggleStyle(.switch)
         }
@@ -117,7 +117,7 @@ private struct TriggerRow: View {
     }
 
     private var panel: Binding<String?> {
-        Binding(get: { configs.config.binding(for: trigger) }, set: { id in configs.update { $0.bind(trigger, to: id) } })
+        makeBinding(get: { configs.config.binding(for: trigger) }, set: { id in configs.update { $0.bind(trigger, to: id) } })
     }
 }
 

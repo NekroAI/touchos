@@ -221,10 +221,17 @@ private struct ProblemBanner: View {
     }
 }
 
+/// 双向绑定一律经由这个泛型函数创建，不在具体类型上直接写 `Binding(get:set:)`：CI 所用的 Swift 6.3.3（Xcode 26.6）
+/// 为具体类型（如 Bool）的绑定闭包生成重抽象 thunk 时编译器崩溃，泛型上下文里不生成这类 thunk
+@MainActor
+func makeBinding<T>(get: @escaping @MainActor @Sendable () -> T, set: @escaping @MainActor @Sendable (T) -> Void) -> Binding<T> {
+    Binding(get: get, set: set)
+}
+
 /// 把配置中的一个字段做成双向绑定，修改即写回
 @MainActor
 func binding<T>(_ configs: ConfigController, _ path: WritableKeyPath<AppConfig, T>) -> Binding<T> {
-    Binding(get: { configs.config[keyPath: path] }, set: { v in configs.update { $0[keyPath: path] = v } })
+    makeBinding(get: { configs.config[keyPath: path] }, set: { v in configs.update { $0[keyPath: path] = v } })
 }
 
 /// 分组表单下方的说明：左对齐（macOS 默认把 footer 靠右排）
@@ -259,7 +266,7 @@ struct LabeledSlider: View {
         LabeledContent(title) {
             HStack {
                 // 不用 step：macOS 会为每一档画刻度，改为写入时取整
-                Slider(value: Binding(get: { value }, set: { value = ($0 / step).rounded() * step }), in: range)
+                Slider(value: makeBinding(get: { value }, set: { value = ($0 / step).rounded() * step }), in: range)
                 Text(format(value)).monospacedDigit().frame(width: 52, alignment: .trailing)
             }
         }
@@ -284,7 +291,7 @@ private struct AppearancePage: View {
                 .padding(.vertical, 4)
             }
             Section("面板切换动画") {
-                Picker("切换动画", selection: Binding(get: { appearance.nav }, set: { n in set { $0.nav = n } })) {
+                Picker("切换动画", selection: makeBinding(get: { appearance.nav }, set: { n in set { $0.nav = n } })) {
                     ForEach(NavStyle.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
                 .pickerStyle(.segmented)
@@ -298,7 +305,7 @@ private struct AppearancePage: View {
                                      selected: appearance.accentHex == preset.hex) { set { $0.accentHex = preset.hex } }
                     }
                     Divider().frame(height: 30)
-                    ColorPicker("自定义", selection: Binding(get: { appearance.accent }, set: { color in
+                    ColorPicker("自定义", selection: makeBinding(get: { appearance.accent }, set: { color in
                         if let hex = Appearance.hex(of: NSColor(color)) { set { $0.accentHex = hex } }
                     }), supportsOpacity: false)
                 }
@@ -398,7 +405,7 @@ private struct GeneralPage: View {
         Form {
             Section {
                 Toggle("启用 TouchOS", isOn: binding(configs, \.general.enabled))
-                Toggle("登录时启动", isOn: Binding(get: { launchAtLogin }, set: setLaunchAtLogin))
+                Toggle("登录时启动", isOn: makeBinding(get: { launchAtLogin }, set: setLaunchAtLogin))
             }
             Section {
                 Toggle(isOn: binding(configs, \.general.focusPointerWindow)) {
@@ -430,7 +437,7 @@ private struct GeneralPage: View {
                 FormFooter("这些应用在前台时不唤起面板（例如游戏、远程桌面）。")
             }
             Section {
-                Toggle(isOn: Binding(get: { configs.config.sync.iCloud }, set: { cloud.setEnabled($0) })) {
+                Toggle(isOn: makeBinding(get: { configs.config.sync.iCloud }, set: { cloud.setEnabled($0) })) {
                     Text("通过 iCloud 同步配置")
                     Text(cloudStatus).foregroundStyle(cloudStatusIsProblem ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
                 }
@@ -465,7 +472,7 @@ private struct GeneralPage: View {
             }
         }
         .formStyle(.grouped)
-        .sheet(isPresented: Binding(get: { pendingImport != nil }, set: { if !$0 { pendingImport = nil } })) {
+        .sheet(isPresented: makeBinding(get: { pendingImport != nil }, set: { if !$0 { pendingImport = nil } })) {
             if let pending = pendingImport {
                 ImportConfirmation(risky: pending.risky) { accept in
                     if accept {
