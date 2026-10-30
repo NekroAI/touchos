@@ -24,48 +24,46 @@
   <img src="docs/assets/demo.gif" width="720" alt="Tap, then hold to summon a panel, point at a button by finger position, lift to run it. A ring panel snaps a window to the right half, two fingers switch panels, and a pinch shows them all.">
 </p>
 
-> **Status: early release.** Usable day to day, but so far tested only on a Magic Trackpad with macOS 27. Built-in trackpads, Intel Macs and older macOS versions are untested — reports welcome.
+> **Status: early release.** So far tested only on a Magic Trackpad with macOS 27. Built-in trackpads, Intel Macs and macOS 14–26 are unverified — reports welcome.
 
-## Why
+Trackpad gesture tools make you memorize a set of swipes. TouchOS shows your actions as a panel on screen and maps the trackpad onto it by position, so you look and pick rather than recall.
 
-Trackpad gesture tools make you memorize dozens of swipes. TouchOS shows you the buttons instead: the trackpad becomes an absolute map of the panel on screen, so you look and pick rather than recall.
+## Usage
 
-## How it works
+1. **Tap, then hold.** Tap once with one finger and hold right after; the panel appears.
+2. **Move your finger.** Its position on the trackpad selects a button.
+3. **Lift to run.** Or press the trackpad to run and keep the panel open, or press and hold to repeat. Lifting away from any button just closes the panel.
 
-1. **Tap once, then touch and hold.** After a brief hold, a panel of floating buttons appears in the middle of the screen and the cursor stays put.
-2. **Keep the finger down and move it.** Its position on the trackpad maps directly onto the panel and highlights a button. With practice, a spot on the trackpad simply *is* the button.
-3. **Lift to run it.** Or click (press the trackpad) to run it and keep the panel open for another. Lifting in the narrow gap between buttons, on an empty cell, or outside the panel closes it without running anything.
-
-Inside an open panel:
-
-- **Two fingers up / down** switch between your panels, following your fingers one to one with springy, interruptible motion.
-- **Pinch** shows every panel at once; point at one and lift to open it.
-- **Press and hold the close button** in the middle until the ring fills to open the editor.
-
-Outside that gesture TouchOS only listens: it never changes how your trackpad, mouse or keyboard behave.
+While a panel is open, swipe two fingers up or down to switch panels, pinch to see them all, and hold the center close button to edit.
 
 ## Features
 
-- **Panels you design** — any number of panels, laid out as a grid with 1×1, 2×1, 1×2 and 2×2 buttons, or as a ring. Edit them visually in Settings: click an empty cell to add, drag to move or swap, drag the corner to resize. Cells keep their size, so a smaller grid makes a smaller panel on screen and a smaller area on the trackpad. A panel you don't need for now can be switched off; its setup is kept. Each panel can sit in the center, left or right of the screen.
-- **Ready to use** — four panels out of the box: Common (copy, paste, reload, quit, screenshot, volume…), a Window ring (half screens in four directions, fullscreen, center, minimize, close; opened by a four-finger tap), Media (now playing, tracks, volume, brightness) and a Numpad on the right of the screen. Shortcut buttons show the keys they press. Brightness acts on the screen you summoned the panel on, and is greyed out on screens that don't support it.
-- **Actions** — keyboard shortcuts, open an app / URL / file, shell commands, AppleScript, Shortcuts, typing any text or symbol, media and system controls (volume, brightness, lock, Mission Control, screenshots), window placement, and horizontal or vertical sliders that take effect as you slide (lift on the slider to keep the change, move away to undo it).
-- **Triggers** — tap-then-hold (default), four-finger tap (default), three-finger tap, or tap-then-hold starting in one of eight edge zones (four corners and four edge midpoints). Enable as many as you like; each opens the panel you bind to it. Settings draw the trackpad zones to scale and update live. Turning off the system's "Tap to click" is recommended, otherwise the first tap of tap-then-hold also clicks.
-- **Themes** — Glass orbs (default), Liquid lens or Holo wireframe, with your own accent color and a drum (default) or depth-stack transition — mix freely.
-- **Plain JSON config** — `~/Library/Application Support/TouchOS/config.json`, with automatic backups, validation and import / export. Imported scripts are shown to you before anything runs.
-- **Press and hold to repeat** — hold a physical press on a button to keep firing it, handy for delete or volume.
-- **iCloud sync** — optional; your panels and appearance follow you across Macs.
-- **English and Simplified Chinese** — chosen on first launch, changeable in Settings.
-- **Exclude apps** — pause TouchOS while specific apps are in front.
+- **Panels** — any number, as grids (buttons can span cells) or rings, edited visually in Settings. Common, Window, Media and Numpad panels are included.
+- **Actions** — keyboard shortcuts, typing text, opening apps / URLs / files, shell commands, AppleScript, Shortcuts, media and system controls, window placement, and volume and brightness sliders.
+- **Triggers** — tap-then-hold, three- or four-finger tap, or tap-then-hold from a corner or edge of the trackpad. Enable several and bind each to its own panel.
+- **Appearance** — three themes, with your choice of accent color and panel transition.
+- **Configuration** — a JSON file at `~/Library/Application Support/TouchOS/config.json` with automatic backups, import / export and optional iCloud sync. Scripts in an imported configuration must be confirmed one by one.
+- **Also** — per-app exclusions; English and Simplified Chinese.
 
 ## Install
 
-Download the DMG from [Releases](https://github.com/NekroAI/touchos/releases/latest) — `macOS-arm64` for Apple silicon, `macOS-x64` for Intel — open it and drag **TouchOS** into Applications. Requires macOS 14 or later and a Force Touch trackpad (built-in, or Magic Trackpad 2 or later).
+Download the DMG from [Releases](https://github.com/NekroAI/touchos/releases/latest) (`macOS-arm64` for Apple silicon, `macOS-x64` for Intel) and drag **TouchOS** into Applications.
 
-TouchOS isn't notarized by Apple, so macOS blocks the first launch: open **System Settings → Privacy & Security** and click **Open Anyway**. The welcome guide then walks you through allowing Accessibility. Details in the [install guide](docs/install.md).
+**Requirements:** macOS 14 or later and a Force Touch trackpad (built-in, or Magic Trackpad 2 or later).
 
-## Privacy
+TouchOS is self-signed and not notarized by Apple, so macOS blocks the first launch: open **System Settings → Privacy & Security** and click **Open Anyway**. Details in the [install guide](docs/install.md).
 
-TouchOS reads raw trackpad contacts through a private macOS framework. Contacts are processed in memory only — never logged, stored or uploaded. The only network request is a once-a-day version check against the GitHub Releases API, which carries no contact or configuration data and can be turned off in Settings → General.
+Turning off the system's "Tap to Click" is recommended; otherwise the first tap of tap-then-hold also clicks.
+
+## Permissions and privacy
+
+- **Accessibility** — used to hold the cursor still while a panel is open, send keyboard shortcuts and place windows.
+- **Touch data** — processed in memory only; never logged, stored or uploaded.
+- **Network** — the only request is a daily version check against GitHub Releases, carrying no touch or configuration data. It can be turned off in Settings.
+
+## Compatibility
+
+Trackpad contacts are read through MultitouchSupport, a private framework built into macOS (not a third-party component), because public APIs don't expose absolute finger positions. As a result, TouchOS can't be distributed on the Mac App Store, and a major macOS update may stop it working until it's adapted; the trackpad itself keeps behaving normally in that case.
 
 ## Build from source
 
