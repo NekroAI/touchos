@@ -17,7 +17,10 @@ DMG="$OUT/TouchOS-$VERSION-macOS-$LABEL.dmg"
 rm -f "$DMG"
 cp -R "$STAGE/build/TouchOS.app" "$STAGE/dmg/"
 ln -s /Applications "$STAGE/dmg/Applications"
-hdiutil create -volname "Nekro TouchOS $VERSION" -srcfolder "$STAGE/dmg" -fs HFS+ -format UDZO -ov "$DMG" >/dev/null
+# 安装窗口：背景图与布局（生成方式见 tools/dmg/README.md）。.DS_Store 按卷名引用背景图，卷名不能带版本号
+cp -R "$ROOT/Resources/dmg/.background" "$ROOT/Resources/dmg/DS_Store" "$STAGE/dmg/"
+mv "$STAGE/dmg/DS_Store" "$STAGE/dmg/.DS_Store"
+hdiutil create -volname "Nekro TouchOS" -srcfolder "$STAGE/dmg" -fs HFS+ -format UDZO -ov "$DMG" >/dev/null
 # DMG 本身不签名：没有 Developer ID 时 Gatekeeper 仍会拦截一次；应用本体已用发布证书签名
 shasum -a 256 "$DMG"
 echo "完成：$DMG"
