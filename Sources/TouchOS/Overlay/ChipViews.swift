@@ -136,6 +136,14 @@ private struct Face: View {
 // MARK: 公用小件
 
 
+/// 竖向滑杆的上下端与同几行里的按钮对齐，不凸出到格子边缘（负责人反馈）：
+/// 按每行的高度与按钮实际画出的高度算出两端各收进多少。不是网格槽位时只留默认边距
+private func verticalSliderInset(_ slot: Slot, height: CGFloat, tile: CGFloat, minimum: CGFloat) -> CGFloat {
+    guard case .cell(let c) = slot.shape, c.rowSpan > 0 else { return minimum }
+    let row = (height + 2 * PanelMetrics.chipInset) / CGFloat(c.rowSpan)
+    return max((row - tile) / 2 - PanelMetrics.chipInset, minimum)
+}
+
 /// 滑杆的读数：当前值与调整前的值（D29）
 struct SliderReading: Equatable {
     let value: Double
@@ -168,36 +176,43 @@ private struct SliderReadout: View {
     }
 }
 
-/// 滑杆的填充：横向从左、纵向从下。调整中在原位置留一道刻度；调小时减掉的部分留淡影（D29）
+/// 滑杆的填充：横向从左、纵向从下。调整中在原位置留一道参考线；调小时减掉的部分留淡影（D29）。
+/// 调整生效（基准换成新值）时参考线滑到新位置再淡出，让人看到确实变了
 private struct FillBar: View {
     let value: Double
     var base: Double?
     let color: Color
 
     static let tick: CGFloat = 2
+    /// 参考线移到新位置的弹簧；到位后淡出的延迟与时长
+    static let settle = Animation.spring(response: 0.38, dampingFraction: 0.78)
+    static let fadeDelay = 0.35
+    static let fadeDuration = 0.3
 
     var body: some View {
         GeometryReader { g in
             let vertical = g.size.height > g.size.width
             let length = vertical ? g.size.height : g.size.width
             let moved = base.map { abs($0 - value) >= 0.005 } ?? false
+            let mark = base ?? value
             ZStack(alignment: vertical ? .bottom : .leading) {
-                if moved, let base, base > value { bar(base, length, vertical, g.size).fill(color.opacity(0.32)) }
-                bar(value, length, vertical, g.size).fill(color)
-                if moved, let base {
-                    Rectangle().fill(Color.white.opacity(0.9))
-                        .frame(width: vertical ? g.size.width : Self.tick, height: vertical ? Self.tick : g.size.height)
-                        .offset(x: vertical ? 0 : base * length - Self.tick / 2, y: vertical ? -(base * length - Self.tick / 2) : 0)
-                }
+                bar(max(mark, value), length, vertical, g.size, color.opacity(0.32))
+                    .opacity(moved && mark > value ? 1 : 0)
+                bar(value, length, vertical, g.size, color)
+                    .animation(.easeOut(duration: 0.06), value: value)
+                Rectangle().fill(Color.white.opacity(0.9))
+                    .frame(width: vertical ? g.size.width : Self.tick, height: vertical ? Self.tick : g.size.height)
+                    .offset(x: vertical ? 0 : mark * length - Self.tick / 2, y: vertical ? -(mark * length - Self.tick / 2) : 0)
+                    .animation(Self.settle, value: mark)
+                    .opacity(moved ? 1 : 0)
+                    .animation(moved ? .easeOut(duration: 0.1) : .easeOut(duration: Self.fadeDuration).delay(Self.fadeDelay), value: moved)
             }
             .frame(width: g.size.width, height: g.size.height, alignment: vertical ? .bottom : .leading)
         }
-        .animation(.easeOut(duration: 0.06), value: value)
     }
 
-    private func bar(_ v: Double, _ length: CGFloat, _ vertical: Bool, _ size: CGSize) -> some Shape {
-        Rectangle().size(width: vertical ? size.width : v * length, height: vertical ? v * length : size.height)
-            .offset(y: vertical ? size.height - v * length : 0)
+    private func bar(_ v: Double, _ length: CGFloat, _ vertical: Bool, _ size: CGSize, _ color: Color) -> some View {
+        Rectangle().fill(color).frame(width: vertical ? size.width : v * length, height: vertical ? v * length : size.height)
     }
 }
 
@@ -311,6 +326,8 @@ private struct OrbFace: View {
     static let labelSpacing: CGFloat = 8
     static let labelRoom: CGFloat = 30
     static let sliderHeight: CGFloat = 60
+    /// 卡片里圆钮加名称实际画出的高度（竖向滑杆按它对齐）
+    static let tileHeight: CGFloat = orb + labelSpacing + 14
 
     var body: some View {
         switch kind {
@@ -341,7 +358,9 @@ private struct OrbFace: View {
         case .slider:
             let shape = Capsule()
             let vertical = size.height > size.width
-            let long = max((vertical ? size.height : size.width) - 16, 0)
+            let long = vertical
+                ? max(size.height - 2 * verticalSliderInset(slot, height: size.height, tile: Self.tileHeight, minimum: 8), 0)
+                : max(size.width - 16, 0)
             let thick = min(Self.sliderHeight, max((vertical ? size.width : size.height) - 16, 0))
             ZStack {
                 FillBar(value: slider.value, base: slider.base, color: lit ? accent.opacity(0.6) : Color.white.opacity(0.16)).clipShape(shape)
@@ -409,6 +428,8 @@ private struct LensFace: View {
 
     /// 液态光斑只画图标，波纹与连按计数围着图标这么大的圆
     static let glyphRing: CGFloat = 54
+    /// 图标加名称实际画出的高度（竖向滑杆按它对齐）
+    static let tileHeight: CGFloat = 62
 
     var body: some View {
         switch kind {
@@ -449,7 +470,8 @@ private struct LensFace: View {
                         Text(slot.title).font(.system(size: 12, weight: .medium)).opacity(lit ? 0.96 : 0.6).lineLimit(1)
                     }
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 14).padding(.vertical, 22)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, verticalSliderInset(slot, height: size.height, tile: Self.tileHeight, minimum: 22))
                 } else {
                     VStack(alignment: .leading, spacing: 0) {
                         HStack(spacing: 10) {

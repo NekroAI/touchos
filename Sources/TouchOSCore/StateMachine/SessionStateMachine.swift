@@ -827,7 +827,9 @@ public struct SessionStateMachine: Sendable {
         if let id = ctx.hovered, let slot = ctx.layout.slot(id), let target = slot.slider {
             // 滑杆：在滑杆上抬起即接受，按提交坐标确定最终数值（抬起去抖同 FR-6.10）
             if let raw = tester.sliderValue(of: slot, at: panelPoint) { accept(&ctx, target, Self.quantize(raw)) }
-            return exit(ctx, now: liftAt, end: .committed(id))
+            // 先送一次新基准：提交动效里参考线滑到生效的位置（D29）
+            let accepted: [SessionEffect] = ctx.panelVisible ? [.updatePanel(panelState(ctx))] : []
+            return accepted + exit(ctx, now: liftAt, end: .committed(id))
         }
         // FR-6.11：按提交坐标做一次不带滞回的命中
         let hit = tester.hit(panelPoint)

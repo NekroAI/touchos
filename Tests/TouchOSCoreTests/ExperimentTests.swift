@@ -298,6 +298,9 @@ private func activeLayout(_ h: Harness) -> String? {
         let k = run(keep, environment: env, until: 1.0)
         let kept = k.effects.compactMap { if case .slider(.volume, let v) = $0 { v } else { nil } }
         #expect(abs(kept.last! - 0.84) < 0.011 && k.ends == [.committed("slider")])
+        // 收起前送出新基准，参考线滑到生效的位置
+        let accepted = k.effects.compactMap { if case .updatePanel(let s) = $0 { s.sliderBase["slider"] } else { nil } }.last
+        #expect(accepted == kept.last)
     }
 
     @Test func unknownValueOnlyPreviews() {
