@@ -7,7 +7,7 @@ NAME="Nekro TouchOS Release"
 DIR="$HOME/.touchos-release"
 P12="$DIR/release.p12"
 REPO="${REPO:-NekroAI/touchos}"
-if [ -f "$P12" ]; then echo "已存在 $P12，不重新创建"; exit 0; fi
+if [ -f "$P12" ]; then echo "已存在 ${P12}，不重新创建"; exit 0; fi
 mkdir -p "$DIR"; chmod 700 "$DIR"
 PASS="$(openssl rand -hex 16)"
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
@@ -32,4 +32,4 @@ printf '%s' "$PASS" > "$DIR/password.txt"
 chmod 600 "$P12" "$DIR/password.txt"
 base64 -i "$P12" | gh secret set MACOS_SIGNING_P12 --repo "$REPO"
 printf '%s' "$PASS" | gh secret set MACOS_SIGNING_PASSWORD --repo "$REPO"
-echo "已创建 $P12 并写入 $REPO 的 Actions Secrets"
+echo "已创建 ${P12} 并写入 ${REPO} 的 Actions Secrets"
