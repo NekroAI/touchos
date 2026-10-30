@@ -85,7 +85,7 @@ struct PointerLayer: View {
         ctx.draw(hint, at: at)
     }
 
-    /// 最近 `P.trailMs` 的路径：越旧越细、越透明
+    /// 最近 `P.trailMs`、最长 `trailMaxLength` 的路径：越旧、越远越细越透明
     private func drawTrail(_ ctx: inout GraphicsContext, now: TimeInterval, color: Color) {
         var points = model.samples.filter { now - $0.t <= model.trailDuration }.map { ($0.t, $0.p) }
         if let head = model.displayedPointer(at: now) {
@@ -93,14 +93,24 @@ struct PointerLayer: View {
             points.append((now, head))
         }
         guard points.count >= 2 else { return }
-        for i in 1..<points.count {
+        let maxLength = PanelMetrics.trailMaxLength
+        var length: CGFloat = 0
+        // 从指示点往回画，超出长度上限的部分截掉
+        for i in stride(from: points.count - 1, to: 0, by: -1) {
+            let a = points[i].1, b = points[i - 1].1
+            let step = hypot(b.x - a.x, b.y - a.y)
+            guard step > 0 else { continue }
+            let kept = min(step, maxLength - length)
+            let end = CGPoint(x: a.x + (b.x - a.x) * kept / step, y: a.y + (b.y - a.y) * kept / step)
             let age = (now - points[i].0) / model.trailDuration
-            let k = max(0, 1 - age)
+            let k = max(0, 1 - max(age, length / maxLength))
             var seg = Path()
-            seg.move(to: points[i - 1].1)
-            seg.addLine(to: points[i].1)
+            seg.move(to: a)
+            seg.addLine(to: end)
             ctx.stroke(seg, with: .color(color.opacity(PanelMetrics.trailMaxOpacity * k)),
                        style: StrokeStyle(lineWidth: max(1, PanelMetrics.trailMaxWidth * k), lineCap: .round))
+            length += kept
+            if length >= maxLength { break }
         }
     }
 }

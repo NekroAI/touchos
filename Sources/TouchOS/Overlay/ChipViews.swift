@@ -22,6 +22,7 @@ struct ChipView: View {
         let face = FaceKind(slot: slot, geometry: g)
         Face(kind: face, slot: slot, size: g.frame.size, lit: hovered || chosen, value: value)
             .frame(width: g.frame.width, height: g.frame.height)
+            .background { FocusHalo(kind: face, size: g.frame.size) }
             .overlay { Ripple(trigger: pulse, size: g.frame.size, wide: face == .slider || face == .widget) }
             .overlay(alignment: .topTrailing) {
                 if presses >= 2 { PressBadge(count: presses).offset(x: face == .tile ? -6 : 6, y: face == .tile ? 4 : -6) }
@@ -119,6 +120,48 @@ private struct Face: View {
 }
 
 // MARK: 公用小件
+
+/// 按钮身后的柔焦（见 `PanelMetrics.haloPad`）：范围按按钮种类估算可见部分，材质用羽化的形状做遮罩，没有硬边
+private struct FocusHalo: View {
+    let kind: FaceKind
+    let size: CGSize
+
+    var body: some View {
+        let (w, h, dy, corner) = extent
+        let pad = PanelMetrics.haloPad, feather = PanelMetrics.haloFeather
+        ZStack {
+            Rectangle().fill(.ultraThinMaterial)
+            Rectangle().fill(Color.black.opacity(PanelMetrics.haloTint))
+        }
+        .environment(\.colorScheme, .dark)
+        .mask {
+            RoundedRectangle(cornerRadius: corner + pad, style: .continuous)
+                .frame(width: w + pad * 2, height: h + pad * 2)
+                .blur(radius: feather / 2)
+        }
+        .frame(width: w + (pad + feather) * 2, height: h + (pad + feather) * 2)
+        .offset(y: dy)
+        .allowsHitTesting(false)
+    }
+
+    /// 可见部分的宽、高、相对按钮中心的竖直偏移、圆角
+    private var extent: (CGFloat, CGFloat, CGFloat, CGFloat) {
+        switch kind {
+        case .tile:
+            let w = min(size.width, PanelMetrics.haloTile), h = min(size.height, PanelMetrics.haloTile)
+            return (w, h, 0, min(w, h) * 0.35)
+        case .round:
+            // 圆钮加下方的名称
+            let d = min(size.width, size.height), label = PanelMetrics.haloLabelHeight
+            return (max(d, PanelMetrics.haloLabelWidth), d + label, label / 2, d / 2)
+        case .close:
+            let d = PanelMetrics.cancelChipSize
+            return (d, d, 0, d / 2)
+        case .slider, .widget:
+            return (size.width, size.height, 0, min(size.width, size.height) * 0.45)
+        }
+    }
+}
 
 private func percent(_ v: Double) -> Int { Int((v * 100).rounded()) }
 

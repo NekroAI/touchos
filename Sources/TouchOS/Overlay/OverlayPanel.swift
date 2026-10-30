@@ -183,13 +183,18 @@ enum PanelMetrics {
     static let cancelHintSize: CGFloat = 11
     static let cancelHintOffset: CGFloat = 26
     static let dimOpacity = 0.14
-    /// 柔焦区：按钮组身后一层压暗的毛玻璃，向外渐隐、看不出边界，让桌面内容退成色块，不和按钮上的字抢（负责人反馈：被桌面干扰）。
-    /// 范围为按钮组每边外扩 `focusMargin`，边缘羽化 `focusFeather`
-    static let focusMargin: CGFloat = 64
-    static let focusFeather: CGFloat = 44
-    static let focusTint = 0.3
-    static let focusHoloTint = 0.08
-    static let focusFade: TimeInterval = 0.22
+    /// 柔焦：只在每个按钮和它的名称身后垫一圈很轻的压暗毛玻璃，边缘羽化，让后面的内容退成色块（负责人反馈：被桌面干扰，
+    /// 但不要大背景）。范围为按钮可见部分每边外扩 `haloPad`，羽化 `haloFeather`
+    static let haloPad: CGFloat = 6
+    static let haloFeather: CGFloat = 10
+    static let haloTint = 0.12
+    /// 卡片式按钮（图标在上、名称在下）可见部分的最大边长
+    static let haloTile: CGFloat = 104
+    /// 圆形按钮下方名称的最小宽度与高度
+    static let haloLabelWidth: CGFloat = 72
+    static let haloLabelHeight: CGFloat = 26
+    /// 轨迹最长这么多 pt：手指移得快时只留一段彗尾，不画出绕回来的大弧
+    static let trailMaxLength: CGFloat = 90
 
     /// 面板名：唤起后显示这么久再淡出，切换面板时重新出现
     static let titleDuration: TimeInterval = 1.4
@@ -266,10 +271,7 @@ private struct OverlayRoot: View {
                     Color.black.opacity(model.phase.appeared && !model.phase.leaving ? PanelMetrics.dimOpacity : 0)
                         .animation(.easeOut(duration: 0.2), value: model.phase)
                 }
-                FocusField(rect: groupRect, ring: state.layout.isRing)
-                    .opacity(model.phase.appeared && !model.phase.leaving ? 1 : 0)
-                    .animation(.easeOut(duration: PanelMetrics.focusFade), value: model.phase)
-                                TimelineView(.animation) { timeline in
+                TimelineView(.animation) { timeline in
                     let _ = timeline.date
                     PanelStack(model: model, state: state, now: ProcessInfo.processInfo.systemUptime, reduceMotion: reduceMotion)
                 }
@@ -284,35 +286,6 @@ private struct OverlayRoot: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .environment(\.overlayStyle, OverlayStyle(model.appearance))
-    }
-}
-
-/// 柔焦区（见 `PanelMetrics.focusMargin`）：材质用羽化的形状做遮罩，没有硬边
-private struct FocusField: View {
-    let rect: CGRect
-    let ring: Bool
-    @Environment(\.overlayStyle) private var style
-
-    var body: some View {
-        let field = rect.insetBy(dx: -PanelMetrics.focusMargin, dy: -PanelMetrics.focusMargin)
-        let feather = PanelMetrics.focusFeather
-        let core = field.insetBy(dx: feather, dy: feather)
-        // 环形面板用圆，网格用大圆角矩形
-        let radius = ring ? min(core.width, core.height) / 2 : feather * 2
-        ZStack {
-            Rectangle().fill(.ultraThinMaterial)
-            Rectangle().fill(Color.black.opacity(PanelMetrics.focusTint))
-            if style.theme == .holo { Rectangle().fill(style.accent.opacity(PanelMetrics.focusHoloTint)) }
-        }
-        .environment(\.colorScheme, .dark)
-        .mask {
-            RoundedRectangle(cornerRadius: radius, style: .continuous)
-                .frame(width: core.width, height: core.height)
-                .blur(radius: feather / 2)
-        }
-        .frame(width: field.width, height: field.height)
-        .offset(x: field.minX, y: field.minY)
-        .allowsHitTesting(false)
     }
 }
 
