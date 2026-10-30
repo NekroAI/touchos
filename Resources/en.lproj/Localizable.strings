@@ -345,9 +345,9 @@
 "默认" = "Default";
 "默认面板" = "Default Panel";
 "默认面板（%@）" = "Default Panel (%@)";
-"调试工具" = "Debug Tools";
-"在菜单栏显示调试叠层，用于排查问题。数据只显示在屏幕上，不会写入文件或上传。" = "Shows a debug overlay in the menu bar for troubleshooting. Its data stays on screen and is never written to a file or uploaded.";
-"光标冻结方式" = "Cursor Freeze Method";
-"断开光标关联（默认）" = "Disassociate Cursor (Default)";
-"隐藏光标" = "Hide Cursor";
-"只靠拦截" = "Event Tap Only";
+"隐藏（推荐）" = "Hide (Recommended)";
+"保持显示" = "Keep Visible";
+"面板打开时的光标" = "Cursor While a Panel Is Open";
+"隐藏时由面板上的指示点代替光标，关闭面板后光标回到原处。保持显示时，部分 Mac 上光标可能跟着手指移动。" = "When hidden, the panel’s pointer dot stands in for the cursor, which returns to its place when the panel closes. When kept visible, the cursor may follow your finger on some Macs.";
+"调试模式" = "Debug Mode";
+"显示调试叠层，用于排查问题。其中的诊断日志只留在内存里，不会写入文件或上传，是否复制给别人由你决定。" = "Shows the debug overlay for troubleshooting. Its diagnostic log stays in memory and is never written to a file or uploaded; you decide whether to copy it for anyone.";

@@ -41,8 +41,8 @@ public struct Tuning: Equatable, Sendable {
     public var momentumSuppressMs = 1200.0
     /// `P.frameTimeoutMs`
     public var frameTimeoutMs = 500.0
-    /// 帧时间比实际收到时间落后超过该值时重新对齐设备时钟，须小于 `frameTimeoutMs`（D49）
-    public var clockResyncMs = 200.0
+    /// 一段触摸中帧时间比实际收到时间落后超过该值时重新对齐设备时钟（D49、D52）；手指落下时总是重新对齐
+    public var clockResyncMs = 50.0
     /// 面板打开时 input.queue 超过该时长没有响应就恢复光标（D50）
     public var cursorStallLimitMs = 2000.0
     /// `P.maxSessionSec`

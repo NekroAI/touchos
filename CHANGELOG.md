@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format is based on 
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-10-31
+
+### Changed
+- The cursor is now hidden while a panel is open, with the panel's pointer dot standing in for it. A new General setting can keep it visible instead, though it may then follow your finger on some Macs.
+- Debug tools now have a single switch, Debug Mode, at the bottom of General. It takes effect immediately and shows the debug overlay, which holds all debug actions; the menu bar no longer has debug items.
+
+### Fixed
+- The on-screen cursor could follow the finger while a panel was open. The fix in 0.1.3 only worked while TouchOS was the frontmost app.
+- Lift timing could be off on built-in trackpads, a side effect of the clock fix in 0.1.3.
+
 ## [0.1.4] - 2026-10-30
 
 ### Added

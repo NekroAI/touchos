@@ -66,13 +66,6 @@ final class InputPipeline: @unchecked Sendable {
 
     private func process(device: TrackpadDeviceID, timestamp deviceTime: TimeInterval, received: TimeInterval, raw: [RawContact]) {
         guard !layoutMismatch, activeDevices.contains(device) else { return }
-        let (timestamp, resynced) = clocks[device, default: DeviceClockAligner(resyncThreshold: clockResyncThreshold)]
-            .align(deviceTime: deviceTime, received: received)
-        if resynced {
-            TOAtomicIncrement(clockResyncCount)
-            log.info("device clock resynced: device \(device.raw, privacy: .public)")
-            DiagnosticLog.shared.record("时钟重对齐：设备 \(device.raw)")  // l10n-ignore
-        }
         if selfChecks[device, default: LayoutSelfCheck()].observe(raw) {
             layoutMismatch = true
             log.error("contact layout self-check failed; input disabled")
@@ -81,10 +74,18 @@ final class InputPipeline: @unchecked Sendable {
         }
         let contacts = trackers[device, default: ContactTracker()].process(raw)
         guard !contacts.isEmpty else { return }
+        let began = contacts.contains { $0.phase == .began }
+        let (timestamp, resynced, lag) = clocks[device, default: DeviceClockAligner(resyncThreshold: clockResyncThreshold)]
+            .align(deviceTime: deviceTime, received: received, touchBegan: began)
+        if resynced {
+            TOAtomicIncrement(clockResyncCount)
+            log.info("device clock resynced: device \(device.raw, privacy: .public)")
+            DiagnosticLog.shared.record("时钟重对齐：设备 \(device.raw)")  // l10n-ignore
+        }
         let frame = TouchFrame(device: device, timestamp: timestamp, contacts: contacts)
-        if contacts.contains(where: { $0.phase == .began }) {
-            // 手指落下时帧时间比实际收到时间落后多少（D49）；只记时间，不记触点
-            DiagnosticLog.shared.record(String(format: "手指落下：设备 %llu · 接触 %d · 帧时间落后 %.1f ms", device.raw, contacts.count, (received - timestamp) * 1000))  // l10n-ignore
+        if began {
+            // 手指落下时设备时钟比上一次对齐落后多少（D49）；只记时间，不记触点
+            DiagnosticLog.shared.record(String(format: "手指落下：设备 %llu · 接触 %d · 时钟落后 %.1f ms", device.raw, contacts.count, lag * 1000))  // l10n-ignore
         }
 
         // 一段持续触摸以所有接触 ended / cancelled 的那一帧结束

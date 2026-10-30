@@ -69,20 +69,26 @@ final class DebugOverlayModel {
     }
 }
 
+/// 调试模式（D52）：通用设置最底下的开关，所有调试功能的唯一入口；开启时显示调试叠层。不随 iCloud 同步
+enum DebugMode {
+    static let defaultsKey = "showDebugOverlayMenu"
+    static let didChange = Notification.Name("ai.nekro.touchos.debugModeChanged")
+
+    static var isOn: Bool {
+        get { UserDefaults.standard.bool(forKey: defaultsKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: defaultsKey)
+            NotificationCenter.default.post(name: didChange, object: nil)
+        }
+    }
+}
+
 @MainActor
 final class DebugOverlayController {
-    /// 隐藏开关：发布构建中 `defaults write ai.nekro.touchos showDebugOverlayMenu -bool true` 后菜单出现该项
-    static let hiddenSwitchKey = "showDebugOverlayMenu"
     /// 叠层可见时刷新拦截耗时统计的间隔
     static let timingRefreshInterval: TimeInterval = 1
-
-    static var isAvailable: Bool {
-        #if DEBUG
-        true
-        #else
-        UserDefaults.standard.bool(forKey: hiddenSwitchKey)
-        #endif
-    }
+    /// AC-17：点按钮后留给用户唤起面板的时间
+    static let stallDelay: TimeInterval = 5
 
     let model = DebugOverlayModel()
     private let pipeline: InputPipeline
@@ -99,11 +105,8 @@ final class DebugOverlayController {
         self.cursor = cursor
     }
 
-    func toggle() {
-        isVisible ? hide() : show()
-    }
-
-    private func show() {
+    func show() {
+        guard !isVisible else { return }
         let panel = self.panel ?? makePanel()
         self.panel = panel
         let model = self.model
@@ -125,7 +128,7 @@ final class DebugOverlayController {
         panel.orderFrontRegardless()
     }
 
-    private func hide() {
+    func hide() {
         pipeline.setDebugSink(nil)
         timer?.invalidate()
         timer = nil
@@ -133,15 +136,30 @@ final class DebugOverlayController {
     }
 
     private func makePanel() -> NSPanel {
-        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 380, height: 720),
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 380, height: 800),
                             styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: false)
         panel.level = .statusBar
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
-        panel.ignoresMouseEvents = true
+        // 不激活的面板：点按钮不改变前台应用，否则排查时条件就变了（D52）。透明区域的点击会穿透到下面的窗口
+        panel.becomesKeyOnlyIfNeeded = true
+        panel.isMovableByWindowBackground = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-        panel.contentView = NSHostingView(rootView: DebugOverlayView(model: model))
+        let tap = self.tap, cursor = self.cursor, model = self.model
+        panel.contentView = DebugHostingView(rootView: DebugOverlayView(model: model, actions: [
+            ("清除日志", { DiagnosticLog.shared.clear() }),
+            ("标记：在动", { DiagnosticLog.shared.record("★ 用户标记：光标在动") }),
+            ("标记：不动", { DiagnosticLog.shared.record("★ 用户标记：光标不动") }),
+            ("复制日志", {
+                DiagnosticLog.shared.copyToPasteboard(cursorMode: cursor.mode.rawValue)
+                model.log("诊断日志已复制")
+            }),
+            ("阻塞拦截", {
+                tap.scheduleDebugStall(after: Self.stallDelay)
+                model.log("已预约：\(Int(Self.stallDelay)) 秒后阻塞拦截（AC-17）")
+            }),
+        ]))
         if let screen = NSScreen.main {
             let v = screen.visibleFrame
             panel.setFrameTopLeftPoint(NSPoint(x: v.maxX - 400, y: v.maxY - 20))
@@ -150,12 +168,24 @@ final class DebugOverlayController {
     }
 }
 
+/// 叠层不是主窗口，按钮要第一下点击就响应；拖动空白处移动叠层
+private final class DebugHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override var mouseDownCanMoveWindow: Bool { true }
+}
+
 private struct DebugOverlayView: View {
     let model: DebugOverlayModel
+    let actions: [(title: String, run: () -> Void)]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("TouchOS 调试叠层").font(.headline)
+            HStack(spacing: 4) {
+                ForEach(Array(actions.enumerated()), id: \.offset) { _, action in
+                    Button(action.title, action: action.run).controlSize(.small)
+                }
+            }
             if !model.status.isEmpty {
                 Text(model.status).foregroundStyle(.orange)
             }
@@ -177,6 +207,7 @@ private struct DebugOverlayView: View {
         .padding(12)
         .frame(width: 380, alignment: .leading)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 }
 

@@ -6,30 +6,12 @@ import TouchOSCore
 final class MenuBarController: NSObject {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let statusLine = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-    private var debugItem: NSMenuItem?
     /// 有新版本时菜单中显示下载入口（D44）
     var availableUpdate: ReleaseInfo? {
         didSet { rebuildMenu() }
     }
     private let warningDot = NSView()
     private static let warningDotSize: CGFloat = 7
-
-    /// 设置后菜单中出现"调试叠层"（FR-14.4）
-    var onToggleDebugOverlay: (() -> Void)? {
-        didSet { rebuildMenu() }
-    }
-
-    /// 设置后调试区出现"5 秒后阻塞拦截"（AC-17）
-    var onDebugStall: (() -> Void)? {
-        didSet { rebuildMenu() }
-    }
-
-    /// 设置后调试区出现诊断日志的清除、标记与复制（D51）
-    var onCopyDiagnostics: (() -> Void)? {
-        didSet { rebuildMenu() }
-    }
-    var onClearDiagnostics: (() -> Void)?
-    var onMarkDiagnostics: ((String) -> Void)?
 
     /// FR-11.1：启用 / 暂停、打开设置
     var onToggleEnabled: (() -> Void)? {
@@ -49,10 +31,6 @@ final class MenuBarController: NSObject {
     /// "外观"子菜单（主题、切换动画、强调色），放在状态行下方
     var appearanceItem: NSMenuItem? {
         didSet { rebuildMenu() }
-    }
-
-    var debugOverlayVisible = false {
-        didSet { debugItem?.state = debugOverlayVisible ? .on : .off }
     }
 
     override init() {
@@ -115,30 +93,6 @@ final class MenuBarController: NSObject {
             menu.addItem(appearanceItem)
             menu.addItem(.separator())
         }
-        if onToggleDebugOverlay != nil {
-            let item = NSMenuItem(title: "调试叠层", action: #selector(toggleDebugOverlay), keyEquivalent: "d")  // l10n-ignore
-            item.target = self
-            item.state = debugOverlayVisible ? .on : .off
-            debugItem = item
-            menu.addItem(item)
-            if onDebugStall != nil {
-                let stall = NSMenuItem(title: "5 秒后阻塞拦截（AC-17）", action: #selector(debugStall), keyEquivalent: "")  // l10n-ignore
-                stall.target = self
-                menu.addItem(stall)
-            }
-            if onCopyDiagnostics != nil {
-                // 调试菜单不翻译
-                for (title, action) in [("清除诊断日志", #selector(clearDiagnostics)),  // l10n-ignore
-                                        ("标记：刚才光标在动", #selector(markMoving)),  // l10n-ignore
-                                        ("标记：刚才光标不动", #selector(markStill)),  // l10n-ignore
-                                        ("复制诊断日志", #selector(copyDiagnostics))] {  // l10n-ignore
-                    let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-                    item.target = self
-                    menu.addItem(item)
-                }
-            }
-            menu.addItem(.separator())
-        }
         menu.addItem(NSMenuItem(title: String(localized: "退出 TouchOS"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         statusItem.menu = menu
     }
@@ -153,29 +107,5 @@ final class MenuBarController: NSObject {
 
     @objc private func openSettings() {
         onOpenSettings?()
-    }
-
-    @objc private func clearDiagnostics() {
-        onClearDiagnostics?()
-    }
-
-    @objc private func markMoving() {
-        onMarkDiagnostics?("光标在动")  // l10n-ignore
-    }
-
-    @objc private func markStill() {
-        onMarkDiagnostics?("光标不动")  // l10n-ignore
-    }
-
-    @objc private func copyDiagnostics() {
-        onCopyDiagnostics?()
-    }
-
-    @objc private func debugStall() {
-        onDebugStall?()
-    }
-
-    @objc private func toggleDebugOverlay() {
-        onToggleDebugOverlay?()
     }
 }

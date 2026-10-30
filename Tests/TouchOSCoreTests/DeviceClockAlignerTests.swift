@@ -1,5 +1,24 @@
+import Foundation
 import Testing
 @testable import TouchOSCore
+
+@Suite struct CursorFreezeConfigTests {
+    private func decode(_ json: String) throws -> AppConfig.General {
+        try JSONDecoder().decode(AppConfig.General.self, from: Data(json.utf8))
+    }
+
+    @Test func defaultsToHideAndRoundTrips() throws {
+        #expect(try decode("{}").cursorFreeze == .hide)
+        var general = AppConfig.General()
+        general.cursorFreeze = .keep
+        let data = try JSONEncoder().encode(general)
+        #expect(try JSONDecoder().decode(AppConfig.General.self, from: data).cursorFreeze == .keep)
+    }
+
+    @Test func unknownValueFallsBackWithoutFailing() throws {
+        #expect(try decode(#"{"cursorFreeze":"future","haptics":false}"#).cursorFreeze == .hide)
+    }
+}
 
 @Suite struct DeviceClockAlignerTests {
     @Test func keepsDeviceIntervalsAcrossDeliveryJitter() {
@@ -23,6 +42,18 @@ import Testing
         let next = c.align(deviceTime: 10.02, received: 124.82)
         #expect(!next.resynced)
         #expect(abs(next.timestamp - 124.82) < 1e-9)
+    }
+
+    /// 内置触控板：时钟每段触摸之间都落后一点，不到阈值也不能累积
+    @Test func reanchorsWhenFingerComesDown() {
+        var c = DeviceClockAligner(resyncThreshold: 0.2)
+        _ = c.align(deviceTime: 10, received: 100)
+        let touch = c.align(deviceTime: 20, received: 110.03, touchBegan: true)
+        #expect(!touch.resynced)
+        #expect(abs(touch.lag - 0.03) < 1e-9)
+        #expect(abs(touch.timestamp - 110.03) < 1e-9)
+        // 这段触摸接下来的帧不再偏早
+        #expect(abs(c.align(deviceTime: 20.01, received: 110.04).timestamp - 110.04) < 1e-9)
     }
 
     @Test func resyncsAfterDeviceClockResets() {

@@ -3,7 +3,7 @@ import OSLog
 import notify
 import TouchOSCore
 
-/// 调试用的浮层预演（只在调试叠层可用时注册）：收到 Darwin 通知后，用一份独立的状态机跑一段合成触点帧，
+/// 调试用的浮层预演（只在调试模式开启时注册）：收到 Darwin 通知后，用一份独立的状态机跑一段合成触点帧，
 /// 只把面板的显示、更新、退场交给浮层，用来在没有手指操作时录屏检查视觉与动效。
 /// 不经过真实会话：不冻结光标、不改拦截策略、不执行任何动作，也不受同时发生的真实触摸干扰。
 /// 用法：`notifyutil -p ai.nekro.touchos.simulate.cancel`（另有 `.taphold`、`.idle`、`.commit`、`.press`、`.outside`、`.toggle`、`.navigate`、`.overview`、`.hold`、`.demo`）。
@@ -56,6 +56,12 @@ final class TouchSimulator {
             Self.log.info("simulator registered \(name, privacy: .public): \(status)")
             tokens.append(token)
         }
+    }
+
+    /// 关闭调试模式时注销通知
+    func stop() {
+        tokens.forEach { notify_cancel($0) }
+        tokens = []
     }
 
     /// 关键帧：时刻（秒）与此刻板上各手指的位置（触控板归一化坐标，原点左下）。相邻关键帧之间线性插值

@@ -8,8 +8,6 @@ import TouchOSCore
 final class AppCoordinator {
     /// FR-12.2：等待辅助功能授权时的检查间隔
     static let permissionPollInterval: TimeInterval = 2
-    /// AC-17 调试：点菜单后留给用户唤起面板的时间
-    static let debugStallDelay: TimeInterval = 5
 
     private let log = Logger(subsystem: TouchOSCore.logSubsystem, category: "app")
     private let tuning = Tuning()  // K8 起从配置读取
@@ -27,8 +25,9 @@ final class AppCoordinator {
     private var tap: EventTapController!
     private var watchdog: TapWatchdog!
     private var deviceManager: DeviceManager?
-    private var debugOverlay: DebugOverlayController?
+    private var debugOverlay: DebugOverlayController!
     private var simulator: TouchSimulator?
+    private var simulatorFactory: (() -> TouchSimulator)?
     private var permissionTimer: Timer?
 
     // 降级原因（任一存在即不接受唤起）
@@ -38,7 +37,7 @@ final class AppCoordinator {
     func start() {
         // 拦截回调与输入回调都只异步投递到 input.queue（SRS 2.3）
         let ref = DriverRef()
-        tap = EventTapController(measure: DebugOverlayController.isAvailable, onPhysicalPress: { ref.driver?.send(.physicalPress) },
+        tap = EventTapController(onPhysicalPress: { ref.driver?.send(.physicalPress) },
                                  onEscape: { ref.driver?.send(.escapeKey) },
                                  onDisabled: { ref.driver?.send(.tapDisabled) })
         tap.onPhysicalRelease = { ref.driver?.send(.physicalRelease) }
@@ -79,32 +78,21 @@ final class AppCoordinator {
                 DispatchQueue.main.async { self?.setInputUnavailable(String(localized: "触点数据格式与本机系统不符")) }
             })
 
-        if DebugOverlayController.isAvailable {
-            let debug = DebugOverlayController(pipeline: pipeline, tap: tap, cursor: cursor)
-            debugOverlay = debug
-            simulator = TouchSimulator(driver: driver, overlay: overlay)
-            menuBar.onToggleDebugOverlay = { [weak self] in
-                debug.toggle()
-                self?.menuBar.debugOverlayVisible = debug.isVisible
-            }
-            DiagnosticLog.shared.enable()
-            menuBar.onCopyDiagnostics = { DiagnosticLog.shared.copyToPasteboard() }
-            menuBar.onClearDiagnostics = { DiagnosticLog.shared.clear() }
-            menuBar.onMarkDiagnostics = { note in DiagnosticLog.shared.record("★ 用户标记：\(note)") }  // l10n-ignore
-            driver.onDebug = { line in
-                DiagnosticLog.shared.record(line)
-                DispatchQueue.main.async { debug.model.log(line) }
-            }
-            driver.onLatency = { sample in debug.model.record(sample) }
-            let tap = self.tap!
-            tap.onPressureDebug = { stage, pressure in
-                DispatchQueue.main.async { debug.model.pressure = (stage, pressure) }
-            }
-            menuBar.onDebugStall = {
-                tap.scheduleDebugStall(after: Self.debugStallDelay)
-                debug.model.log("已预约：\(Int(Self.debugStallDelay)) 秒后阻塞拦截")  // l10n-ignore
-            }
+        let debug = DebugOverlayController(pipeline: pipeline, tap: tap, cursor: cursor)
+        debugOverlay = debug
+        driver.onDebug = { line in
+            DiagnosticLog.shared.record(line)
+            DispatchQueue.main.async { debug.model.log(line) }
         }
+        driver.onLatency = { sample in if debug.isVisible { debug.model.record(sample) } }
+        tap.onPressureDebug = { stage, pressure in
+            DispatchQueue.main.async { if debug.isVisible { debug.model.pressure = (stage, pressure) } }
+        }
+        simulatorFactory = { TouchSimulator(driver: driver, overlay: overlay) }
+        NotificationCenter.default.addObserver(forName: DebugMode.didChange, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.applyDebugMode() }
+        }
+        applyDebugMode()
 
         watchdog = TapWatchdog(tap: tap)
         watchdog.onStatusChange = { [weak self] status in
@@ -127,6 +115,21 @@ final class AppCoordinator {
 
     func openSettings() {
         settings.show()
+    }
+
+    /// 调试模式（D52）：所有调试功能跟着这一个开关，开启时显示调试叠层
+    private func applyDebugMode() {
+        let on = DebugMode.isOn
+        DiagnosticLog.shared.setEnabled(on)
+        tap.setMeasuring(on)
+        if on {
+            if simulator == nil { simulator = simulatorFactory?() }
+            debugOverlay.show()
+        } else {
+            simulator?.stop()
+            simulator = nil
+            debugOverlay.hide()
+        }
     }
 
     func shutdown() {
@@ -167,7 +170,7 @@ final class AppCoordinator {
             }
             let manager = DeviceManager(bridge: bridge, pipeline: pipeline)
             manager.onChange = { [weak self] devices, removed in
-                self?.debugOverlay?.model.setDevices(devices)
+                self?.debugOverlay.model.setDevices(devices)
                 DiagnosticLog.shared.record("触控设备：\(devices.map { "\($0.displayName) \($0.id.raw)" }.joined(separator: ", ")) · 移除 \(removed.count)")  // l10n-ignore
                 let map = Dictionary(uniqueKeysWithValues: devices.map { ($0.id, $0) })
                 self?.driver.updateEnvironment { $0.devices = map }
@@ -220,7 +223,7 @@ final class AppCoordinator {
         log.error("input unavailable: \(reason, privacy: .public)")
         inputUnavailable = reason
         pipeline.setActiveDevices([])
-        debugOverlay?.model.status = "输入不可用：\(reason)"  // l10n-ignore
+        debugOverlay.model.status = "输入不可用：\(reason)"  // l10n-ignore
         refreshStatus()
     }
 

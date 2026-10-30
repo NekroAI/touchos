@@ -18,11 +18,13 @@ public struct AppConfig: Codable, Equatable, Sendable {
         public var checkUpdates = true
         /// 快捷键与窗口动作执行前，先把焦点切到指针下的窗口（D27）
         public var focusPointerWindow = true
+        /// 面板打开时的光标（D52）
+        public var cursorFreeze = CursorFreeze.hide
 
         public init() {}
 
         private enum Keys: String, CodingKey {
-            case enabled, haptics, showTrail, dimBackground, blacklist, focusPointerWindow, checkUpdates
+            case enabled, haptics, showTrail, dimBackground, blacklist, focusPointerWindow, checkUpdates, cursorFreeze
         }
 
         /// 缺省的字段取默认值：旧版本写出的文件没有后来新增的字段
@@ -36,6 +38,8 @@ public struct AppConfig: Codable, Equatable, Sendable {
             blacklist = try c.decodeIfPresent([String].self, forKey: .blacklist) ?? d.blacklist
             focusPointerWindow = try c.decodeIfPresent(Bool.self, forKey: .focusPointerWindow) ?? d.focusPointerWindow
             checkUpdates = try c.decodeIfPresent(Bool.self, forKey: .checkUpdates) ?? d.checkUpdates
+            // 新版本可能增加取值：不认识的按默认处理，不让整份配置读取失败
+            cursorFreeze = (try c.decodeIfPresent(String.self, forKey: .cursorFreeze)).flatMap(CursorFreeze.init) ?? d.cursorFreeze
         }
 
         public func encode(to encoder: Encoder) throws {
@@ -47,6 +51,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
             try c.encode(blacklist, forKey: .blacklist)
             try c.encode(focusPointerWindow, forKey: .focusPointerWindow)
             try c.encode(checkUpdates, forKey: .checkUpdates)
+            try c.encode(cursorFreeze, forKey: .cursorFreeze)
         }
     }
 

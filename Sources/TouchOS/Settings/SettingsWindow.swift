@@ -401,6 +401,7 @@ private struct GeneralPage: View {
     @State private var language = AppLanguage.selected
     /// 这个进程启动时的选择，变了才需要重启
     private let launchLanguage = AppLanguage.selected
+    @State private var debugMode = DebugMode.isOn
     @State private var message: String?
     @State private var pendingImport: (config: AppConfig, risky: [(panel: String, slot: String, action: Action)])?
 
@@ -425,6 +426,13 @@ private struct GeneralPage: View {
                 Toggle(isOn: binding(configs, \.general.focusPointerWindow)) {
                     Text("动作发往指针下的窗口")
                     Text("快捷键与窗口摆放执行前，先把指针所在的窗口切到前台（相当于点了它一下）。关闭后发往唤起时的前台应用。")
+                }
+                Picker(selection: binding(configs, \.general.cursorFreeze)) {
+                    Text("隐藏（推荐）").tag(CursorFreeze.hide)
+                    Text("保持显示").tag(CursorFreeze.keep)
+                } label: {
+                    Text("面板打开时的光标")
+                    Text("隐藏时由面板上的指示点代替光标，关闭面板后光标回到原处。保持显示时，部分 Mac 上光标可能跟着手指移动。")
                 }
                 Toggle(isOn: binding(configs, \.general.checkUpdates)) {
                     Text("检查更新")
@@ -486,6 +494,15 @@ private struct GeneralPage: View {
                     .fixedSize()
                 }
                 if let message { Text(message).font(.callout).foregroundStyle(.secondary) }
+            }
+            Section {
+                Toggle(isOn: makeBinding(get: { debugMode }, set: { on in
+                    debugMode = on
+                    DebugMode.isOn = on
+                })) {
+                    Text("调试模式")
+                    Text("显示调试叠层，用于排查问题。其中的诊断日志只留在内存里，不会写入文件或上传，是否复制给别人由你决定。")
+                }
             }
         }
         .formStyle(.grouped)
@@ -633,11 +650,6 @@ struct AppLabel: View {
 // MARK: 关于
 
 private struct AboutPage: View {
-    @State private var debugTools = UserDefaults.standard.bool(forKey: DebugOverlayController.hiddenSwitchKey)
-    /// 这个进程启动时的状态，变了才需要重启
-    private let launchDebugTools = DebugOverlayController.isAvailable
-    @State private var freezeMethod = CursorLock.FreezeMethod.current
-
     var body: some View {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
         VStack(spacing: 14) {
@@ -649,28 +661,6 @@ private struct AboutPage: View {
             Text("开源许可：GPL-3.0-or-later").font(.callout).foregroundStyle(.secondary)
             Text("TouchOS 读取触控板原始触点，仅在内存中处理，从不记录或上传。")
                 .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
-            Toggle(isOn: makeBinding(get: { debugTools }, set: { on in
-                debugTools = on
-                UserDefaults.standard.set(on, forKey: DebugOverlayController.hiddenSwitchKey)
-            })) {
-                Text("调试工具")
-                Text("在菜单栏显示调试叠层，用于排查问题。数据只显示在屏幕上，不会写入文件或上传。")
-            }
-            .frame(maxWidth: 420)
-            if debugTools != launchDebugTools {
-                Button("重启以应用") { AppLanguage.relaunch() }
-            }
-            if debugTools {
-                Picker("光标冻结方式", selection: makeBinding(get: { freezeMethod }, set: { m in
-                    freezeMethod = m
-                    UserDefaults.standard.set(m.rawValue, forKey: CursorLock.FreezeMethod.defaultsKey)
-                })) {
-                    Text("断开光标关联（默认）").tag(CursorLock.FreezeMethod.detach)
-                    Text("隐藏光标").tag(CursorLock.FreezeMethod.hide)
-                    Text("只靠拦截").tag(CursorLock.FreezeMethod.tap)
-                }
-                .frame(maxWidth: 420)
-            }
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

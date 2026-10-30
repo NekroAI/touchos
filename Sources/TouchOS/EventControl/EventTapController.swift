@@ -40,9 +40,9 @@ final class EventTapController: @unchecked Sendable {
     // 确认期被丢弃的指针位移，由 CursorLock 取走（FR-7.6）
     private let deltaX = TOAtomicCreate()!
     private let deltaY = TOAtomicCreate()!
-    // NFR-2 回调耗时（调试叠层可用时才统计）：每桶一个计数器，最大值以纳秒记
-    private let measure: Bool
-    private let timing: [OpaquePointer]
+    // NFR-2 回调耗时（调试模式开启时才统计）：每桶一个计数器，最大值以纳秒记
+    private let measuring = TOAtomicCreate()!
+    private let timing: [OpaquePointer] = (0...EventTapController.timingBuckets).map { _ in TOAtomicCreate()! }
     private let timingMaxNs = TOAtomicCreate()!
     // 调试叠层的指针诊断：激活态收到（并丢弃）的指针移动事件数
     private let activeMoves = TOAtomicCreate()!
@@ -74,11 +74,8 @@ final class EventTapController: @unchecked Sendable {
     private var pendingDownAt: TimeInterval = 0
 
     /// 三个回调在拦截线程上调用，实现方只能异步投递（FR-7.2）。
-    /// `measure` 为真时统计回调耗时（NFR-2），供调试叠层显示。
-    init(measure: Bool, onPhysicalPress: @escaping @Sendable () -> Void, onEscape: @escaping @Sendable () -> Void,
+    init(onPhysicalPress: @escaping @Sendable () -> Void, onEscape: @escaping @Sendable () -> Void,
          onDisabled: @escaping @Sendable () -> Void) {
-        self.measure = measure
-        timing = measure ? (0...Self.timingBuckets).map { _ in TOAtomicCreate()! } : []
         self.onPhysicalPress = onPhysicalPress
         self.onEscape = onEscape
         self.onDisabled = onDisabled
@@ -103,9 +100,14 @@ final class EventTapController: @unchecked Sendable {
         CGVector(dx: TOAtomicExchangeDouble(deltaX, 0), dy: TOAtomicExchangeDouble(deltaY, 0))
     }
 
+    /// 开关回调耗时统计（调试模式）
+    func setMeasuring(_ on: Bool) {
+        TOAtomicStore(measuring, on ? 1 : 0)
+    }
+
     /// 回调耗时快照（NFR-2）；未开启统计时为 nil
     func timingSnapshot() -> LatencyHistogram? {
-        guard measure else { return nil }
+        guard TOAtomicLoad(measuring) != 0 else { return nil }
         return LatencyHistogram(bucketWidth: Self.timingBucketWidth, counts: timing.map { TOAtomicLoad($0) },
                                 max: Double(TOAtomicLoad(timingMaxNs)) / 1e9)
     }
@@ -131,7 +133,7 @@ final class EventTapController: @unchecked Sendable {
             log.info("debug stall in tap callback (AC-17)")
             Thread.sleep(forTimeInterval: Self.debugStallDuration)
         }
-        guard measure else { return handle(type, event) }
+        guard TOAtomicLoad(measuring) != 0 else { return handle(type, event) }
         let start = mach_absolute_time()
         let result = handle(type, event)
         let ns = Double(mach_absolute_time() - start) * ticksToNs
