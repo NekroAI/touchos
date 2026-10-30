@@ -166,7 +166,11 @@ extension OverlayModel {
             case .right: reach
             }
         }
-        let nav = min(max(reduceMotion ? state.nav.target : state.nav.value(at: now), 0), Double(state.panels.count - 1))
+        // 只在出发面板与目标面板之间过渡：弹簧冲过目标时不偏向再下一个面板的位置（负责人反馈：窗口切到媒体后，
+        // 面板会朝右侧的数字面板偏一下再回来）
+        let m = state.nav
+        let raw = min(max(reduceMotion ? m.target : m.value(at: now), min(m.from, m.target)), max(m.from, m.target))
+        let nav = min(max(raw, 0), Double(state.panels.count - 1))
         let lower = Int(nav.rounded(.down)), upper = Int(nav.rounded(.up)), f = CGFloat(nav - Double(lower))
         let x = shift(lower) * (1 - f) + shift(upper) * f
         let overview = min(max(reduceMotion ? state.overview.target : state.overview.value(at: now), 0), 1)
