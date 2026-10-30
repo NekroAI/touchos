@@ -102,6 +102,8 @@ struct OverlayStyle {
 
 extension EnvironmentValues {
     @Entry var overlayStyle = OverlayStyle()
+    /// 按钮底用真毛玻璃；为假时用近似的平涂（堆栈后面的面板，D28）
+    @Entry var backdropGlass = true
 }
 
 /// 菜单栏"外观"子菜单：主题、切换动画、强调色（含系统取色器）

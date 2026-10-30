@@ -18,7 +18,14 @@ final class OverlayPanel: NSPanel {
         isReleasedWhenClosed = false
         // 出现在所有桌面并能叠加在全屏应用上；不进入窗口循环与 Mission Control（FR-8.2、8.3）
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle, .transient]
-        contentView = NSHostingView(rootView: OverlayRoot(model: model))
+        // 指示点逐帧刷新，放在单独的宿主视图里：否则每帧都会连带整个面板重新布局、遍历全部按钮（性能实测，D28）
+        let container = NSView()
+        for view in [NSHostingView(rootView: OverlayRoot(model: model)), NSHostingView(rootView: PointerRoot(model: model))] as [NSView] {
+            view.frame = container.bounds
+            view.autoresizingMask = [.width, .height]
+            container.addSubview(view)
+        }
+        contentView = container
     }
 
     override var canBecomeKey: Bool { false }
@@ -92,6 +99,19 @@ final class OverlayModel {
     /// 最近的指示点样本；指点指抬起后保留到轨迹淡出
     private(set) var samples: [PointerSample] = []
     private(set) var pointerDown = false
+    /// 计时器停下的时刻到了时加一，让浮层根视图重新求值并暂停逐帧刷新
+    var wake = 0
+
+    /// 面板堆栈里随时间变化的东西（切换与总览的弹簧、退场与唤起后的淡入淡出、按住关闭的圆环）全部停下的时刻。
+    /// 此后不再逐帧重算整个堆栈（性能实测，D28）
+    var animatingUntil: TimeInterval {
+        guard let s = state else { return 0 }
+        var end = shownAt + max(PanelMetrics.titleDuration, PanelStack.neighborDelay + PanelStack.neighborFadeIn)
+        if phase.leaving { end = max(end, phaseAt + OverlayController.leaveDuration) }
+        end = max(end, s.nav.settledAt, s.overview.settledAt)
+        if let hold = s.holdStartedAt { end = max(end, hold + s.holdDuration) }
+        return end
+    }
 
     func pulse(_ id: SlotID) { pulses[id, default: 0] += 1 }
 
@@ -169,6 +189,8 @@ enum PanelMetrics {
 
     /// 玻璃：毛玻璃只保留一部分强度（负责人反馈：不要实心），文字加阴影保证可读
     static let materialOpacity = 0.6
+    /// 不用毛玻璃时代替它的平涂（深色桌面上毛玻璃按 `materialOpacity` 叠加后的大致颜色）
+    static let flatGlass = Color(white: 0.55, opacity: 0.16)
     static let labelShadowOpacity = 0.55
     /// 文字身后深色字形的模糊半径与不透明度
     static let labelGlowRadius: CGFloat = 4
@@ -192,6 +214,8 @@ enum PanelMetrics {
 
     /// 面板名：唤起后显示这么久再淡出，切换面板时重新出现
     static let titleDuration: TimeInterval = 1.4
+    /// 动画停下后再多刷新这么久才暂停，保证最后一帧落在终点
+    static let settleMargin: TimeInterval = 0.05
     static let titleOffset: CGFloat = 44
     /// 圆形按钮名称在按钮下方的距离
     static let roundTitleOffset: CGFloat = 24
@@ -265,17 +289,38 @@ private struct OverlayRoot: View {
                     Color.black.opacity(model.phase.appeared && !model.phase.leaving ? PanelMetrics.dimOpacity : 0)
                         .animation(.easeOut(duration: 0.2), value: model.phase)
                 }
-                TimelineView(.animation) { timeline in
+                let _ = model.wake
+                let until = model.animatingUntil
+                TimelineView(.animation(minimumInterval: nil, paused: ProcessInfo.processInfo.systemUptime > until)) { timeline in
                     let _ = timeline.date
                     PanelStack(model: model, state: state, now: ProcessInfo.processInfo.systemUptime, reduceMotion: reduceMotion)
                 }
                 .frame(width: state.size.width, height: state.size.height, alignment: .topLeading)
-                .offset(x: groupRect.minX, y: groupRect.minY)
-                if !model.phase.leaving {
-                    PointerLayer(model: model, groupRect: groupRect,
-                                 overCancel: state.hovered.flatMap { state.layout.slot($0) }?.isCancel ?? false,
-                                 showTrail: model.showTrail && !reduceMotion)
+                .task(id: until) {
+                    let wait = until - ProcessInfo.processInfo.systemUptime
+                    guard wait > 0 else { return }
+                    try? await Task.sleep(for: .seconds(wait + PanelMetrics.settleMargin))
+                    if !Task.isCancelled { model.wake &+= 1 }
                 }
+                .offset(x: groupRect.minX, y: groupRect.minY)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .environment(\.overlayStyle, OverlayStyle(model.appearance))
+    }
+}
+
+/// 指示点与轨迹的根视图（单独的宿主视图，叠在面板之上）
+private struct PointerRoot: View {
+    let model: OverlayModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            if let state = model.state, !model.phase.leaving {
+                PointerLayer(model: model, groupRect: CGRect(origin: model.groupOrigin, size: state.size),
+                             overCancel: state.hovered.flatMap { state.layout.slot($0) }?.isCancel ?? false,
+                             showTrail: model.showTrail && !reduceMotion)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

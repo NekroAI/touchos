@@ -155,12 +155,17 @@ private struct Glass<S: InsettableShape>: ViewModifier {
     let tint: Color
     let edge: Double
     let glow: Color?
+    @Environment(\.backdropGlass) private var backdrop
 
     func body(content: Content) -> some View {
         content
             .background {
                 ZStack {
-                    shape.fill(.ultraThinMaterial).opacity(PanelMetrics.materialOpacity)
+                    if backdrop {
+                        shape.fill(.ultraThinMaterial).opacity(PanelMetrics.materialOpacity)
+                    } else {
+                        shape.fill(PanelMetrics.flatGlass)
+                    }
                     shape.fill(tint)
                 }
             }
@@ -182,6 +187,10 @@ private extension View {
                 .opacity(PanelMetrics.labelGlowOpacity)
         }
         .shadow(color: .black.opacity(PanelMetrics.labelShadowOpacity), radius: 1.5, y: 0.5)
+        // 模糊与阴影一次栅格化成位图：面板缩放、移动、淡入淡出时只变换位图，不再逐帧重做模糊（性能实测，D28）
+        .padding(PanelMetrics.labelGlowRadius * 2)
+        .drawingGroup()
+        .padding(-PanelMetrics.labelGlowRadius * 2)
     }
 }
 

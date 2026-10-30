@@ -53,6 +53,9 @@ struct PanelStack: View {
                               sliderValues: state.sliderValues,
                               pulses: current ? model.pulses : [:], presses: current ? model.presses : [:],
                               origin: nil, outside: current && f.outside)
+                        .equatable()
+                        // 后面的面板本来就模糊、半透明：不用毛玻璃（每块毛玻璃都要系统逐帧模糊背后的内容）
+                        .environment(\.backdropGlass, current)
                         .scaleEffect(t.scale)
                         .rotation3DEffect(.degrees(t.tilt), axis: (x: 1, y: 0, z: 0), perspective: 0.6)
                         .blur(radius: t.blur)
@@ -186,8 +189,8 @@ struct StackFrame {
     }
 }
 
-/// 一个面板的全部按钮与主题装饰
-struct PanelView: View {
+/// 一个面板的全部按钮与主题装饰。可比较：堆栈逐帧只改外层的摆放，输入没变时不重算面板内部（性能实测，D28）
+struct PanelView: View, Equatable {
     let layout: PanelLayout
     let size: CGSize
     let slotGap: Double
@@ -200,6 +203,12 @@ struct PanelView: View {
     let origin: CGPoint?
     let outside: Bool
     @Environment(\.overlayStyle) private var style
+
+    nonisolated static func == (a: PanelView, b: PanelView) -> Bool {
+        a.layout == b.layout && a.size == b.size && a.slotGap == b.slotGap && a.current == b.current && a.hovered == b.hovered
+            && a.phase == b.phase && a.sliderValues == b.sliderValues && a.pulses == b.pulses && a.presses == b.presses
+            && a.origin == b.origin && a.outside == b.outside
+    }
 
     var body: some View {
         let tester = HitTester(layout: layout, panelSize: size, slotGap: slotGap, hysteresis: 0)
@@ -439,5 +448,17 @@ private struct PanelTitle: View {
         .shadow(color: .black.opacity(PanelMetrics.labelShadowOpacity), radius: 6)
         .fixedSize()
         .allowsHitTesting(false)
+    }
+}
+
+extension Motion {
+    /// 停稳的时刻：从起点按显示帧往后找；周期很长的弹簧最多找 `settleSearch` 秒
+    static let settleStep: TimeInterval = 1.0 / 120
+    static let settleSearch: TimeInterval = 4
+
+    var settledAt: TimeInterval {
+        var t = start
+        while !isSettled(at: t) && t - start < Self.settleSearch { t += Self.settleStep }
+        return t
     }
 }

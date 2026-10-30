@@ -10,39 +10,70 @@ struct PointerLayer: View {
     let showTrail: Bool
     @Environment(\.overlayStyle) private var style
 
+    /// 画布只覆盖指示点周围这么大的方块（轨迹、光晕、全息读数、"松手取消"都在其内），跟着指示点移动。
+    /// 不铺满整个窗口：画布每帧由 CPU 重新栅格化，面积决定开销（性能实测，D28）
+    static let canvasSize: CGFloat = 320
+
     var body: some View {
-        TimelineView(.animation) { timeline in
-            Canvas { ctx, _ in
-                let now = ProcessInfo.processInfo.systemUptime
-                let _ = timeline.date
-                let color = overCancel ? Color.gray : style.accent
-                ctx.translateBy(x: groupRect.minX, y: groupRect.minY)
-                if showTrail { drawTrail(&ctx, now: now, color: color) }
-                guard let p = model.displayedPointer(at: now) else { return }
-                // 指示点在映射区之外：抬起即取消。显示按钮组范围的轮廓（提示要移回多远，D15），指示点换成取消样式
-                let local = CGRect(origin: .zero, size: groupRect.size)
-                if !local.contains(p) {
-                    ctx.stroke(Path(roundedRect: local.insetBy(dx: -10, dy: -10), cornerRadius: style.theme == .holo ? 6 : 26),
-                               with: .color(.white.opacity(PanelMetrics.boundsOpacity)), style: StrokeStyle(lineWidth: 1.5, dash: [6, 6]))
-                    drawCancelPointer(&ctx, at: p)
-                    return
+        // 手指不在板上、轨迹也淡完时停下逐帧刷新
+        let _ = model.wake
+        let until = model.pointerDown ? .infinity : (model.samples.last?.t ?? 0) + model.trailDuration
+        TimelineView(.animation(minimumInterval: nil, paused: ProcessInfo.processInfo.systemUptime > until)) { timeline in
+            let _ = timeline.date
+            let now = ProcessInfo.processInfo.systemUptime
+            let p = model.displayedPointer(at: now)
+            let local = CGRect(origin: .zero, size: groupRect.size)
+            ZStack(alignment: .topLeading) {
+                // 指示点在映射区之外：抬起即取消。显示按钮组范围的轮廓（提示要移回多远，D15）
+                if let p, !local.contains(p) {
+                    RoundedRectangle(cornerRadius: style.theme == .holo ? 6 : 26)
+                        .stroke(.white.opacity(PanelMetrics.boundsOpacity), style: StrokeStyle(lineWidth: 1.5, dash: [6, 6]))
+                        .frame(width: local.width + 20, height: local.height + 20)
+                        .offset(x: groupRect.minX - 10, y: groupRect.minY - 10)
                 }
-                if style.theme == .holo {
-                    drawCrosshair(&ctx, at: p, color: color, size: groupRect.size)
-                } else {
-                    let halo = PanelMetrics.pointerHalo, core = PanelMetrics.pointerCore
-                    ctx.fill(Path(ellipseIn: CGRect(x: p.x - halo / 2, y: p.y - halo / 2, width: halo, height: halo)),
-                             with: .radialGradient(Gradient(colors: [color.opacity(0.5), color.opacity(0)]),
-                                                   center: p, startRadius: core / 2, endRadius: halo / 2))
-                    let coreRect = CGRect(x: p.x - core / 2, y: p.y - core / 2, width: core, height: core)
-                    var shadow = ctx
-                    shadow.addFilter(.shadow(color: .black.opacity(0.5), radius: 2, y: 1))
-                    shadow.fill(Path(ellipseIn: coreRect), with: .color(.white))
-                    ctx.stroke(Path(ellipseIn: coreRect.insetBy(dx: 1, dy: 1)), with: .color(color), lineWidth: 2)
+                if let anchor = p ?? model.samples.last?.p {
+                    let half = Self.canvasSize / 2
+                    Canvas { ctx, _ in
+                        ctx.translateBy(x: half - anchor.x, y: half - anchor.y)
+                        draw(&ctx, pointer: p, now: now, inside: p.map { local.contains($0) } ?? true)
+                    }
+                    .frame(width: Self.canvasSize, height: Self.canvasSize)
+                    .offset(x: groupRect.minX + anchor.x - half, y: groupRect.minY + anchor.y - half)
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .allowsHitTesting(false)
+        .task(id: until) {
+            let wait = until - ProcessInfo.processInfo.systemUptime
+            guard wait > 0, wait.isFinite else { return }
+            try? await Task.sleep(for: .seconds(wait + PanelMetrics.settleMargin))
+            if !Task.isCancelled { model.wake &+= 1 }
+        }
+    }
+
+    /// 坐标为按钮组 pt
+    private func draw(_ ctx: inout GraphicsContext, pointer: CGPoint?, now: TimeInterval, inside: Bool) {
+        let color = overCancel ? Color.gray : style.accent
+        if showTrail { drawTrail(&ctx, now: now, color: color) }
+        guard let p = pointer else { return }
+        guard inside else {
+            drawCancelPointer(&ctx, at: p)
+            return
+        }
+        if style.theme == .holo {
+            drawCrosshair(&ctx, at: p, color: color, size: groupRect.size)
+        } else {
+            let halo = PanelMetrics.pointerHalo, core = PanelMetrics.pointerCore
+            ctx.fill(Path(ellipseIn: CGRect(x: p.x - halo / 2, y: p.y - halo / 2, width: halo, height: halo)),
+                     with: .radialGradient(Gradient(colors: [color.opacity(0.5), color.opacity(0)]),
+                                           center: p, startRadius: core / 2, endRadius: halo / 2))
+            let coreRect = CGRect(x: p.x - core / 2, y: p.y - core / 2, width: core, height: core)
+            var shadow = ctx
+            shadow.addFilter(.shadow(color: .black.opacity(0.5), radius: 2, y: 1))
+            shadow.fill(Path(ellipseIn: coreRect), with: .color(.white))
+            ctx.stroke(Path(ellipseIn: coreRect.insetBy(dx: 1, dy: 1)), with: .color(color), lineWidth: 2)
+        }
     }
 
     /// 全息主题：圆圈加十字准星，右下角显示面板内的归一化坐标
