@@ -6,7 +6,7 @@ import TouchOSCore
 /// 调试用的浮层预演（只在调试叠层可用时注册）：收到 Darwin 通知后，用一份独立的状态机跑一段合成触点帧，
 /// 只把面板的显示、更新、退场交给浮层，用来在没有手指操作时录屏检查视觉与动效。
 /// 不经过真实会话：不冻结光标、不改拦截策略、不执行任何动作，也不受同时发生的真实触摸干扰。
-/// 用法：`notifyutil -p ai.nekro.touchos.simulate.cancel`（另有 `.taphold`、`.idle`、`.commit`、`.press`、`.outside`、`.toggle`、`.navigate`、`.overview`、`.hold`）。
+/// 用法：`notifyutil -p ai.nekro.touchos.simulate.cancel`（另有 `.taphold`、`.idle`、`.commit`、`.press`、`.outside`、`.toggle`、`.navigate`、`.overview`、`.hold`、`.demo`）。
 @MainActor
 final class TouchSimulator {
     /// 合成帧间隔：与妙控板实测帧率相同（m0-report.md）
@@ -15,6 +15,8 @@ final class TouchSimulator {
     /// 脚本编写时假定的映射区大小与指点指编号
     private static let scriptMappingScale = 0.6
     private static let pointerID = 9
+    /// 演示脚本结束后，场景再停留多久
+    private static let demoTail: TimeInterval = 1
     nonisolated static let log = Logger(subsystem: TouchOSCore.logSubsystem, category: "simulator")
 
     /// 虚拟设备：与真实设备的 ID 不冲突
@@ -26,6 +28,7 @@ final class TouchSimulator {
     private var tokens: [Int32] = []
     private var timer: Timer?
     private var playback: Playback?
+    private let backdrop = DemoBackdrop()
 
     /// 一次预演的进度
     private struct Playback {
@@ -35,6 +38,8 @@ final class TouchSimulator {
         let start: TimeInterval
         let end: TimeInterval
         var index = 0
+        /// 演示场景（`demo`）撤下的时刻
+        var backdropUntil: TimeInterval?
     }
 
     init(driver: SessionDriver, overlay: OverlayController) {
@@ -45,7 +50,7 @@ final class TouchSimulator {
             let status = notify_register_dispatch(Self.prefix + name, &token, .main) { [weak self] _ in
                 MainActor.assumeIsolated {
                     Self.log.info("simulate \(name, privacy: .public)")
-                    self?.run(script, presses: Self.presses[name] ?? [])
+                    self?.run(script, presses: Self.presses[name] ?? [], demo: name == "demo" ? .en : name == "demo.zh" ? .zh : nil)
                 }
             }
             Self.log.info("simulator registered \(name, privacy: .public): \(status)")
@@ -76,6 +81,30 @@ final class TouchSimulator {
         ]
     }
 
+    /// README 演示动图（配合 DemoBackdrop，时间与其时间表对应）：轻点后按住选「拷贝」；四指轻点打开环形「窗口」选右半屏；
+    /// 再打开一次，双指切到媒体与靠右的数字面板，捏合总览，四指轻点关闭
+    private static let demoScript: Script = [
+        (0, [1: CGPoint(x: 0.5, y: 0.5)]),
+        (0.08, [1: CGPoint(x: 0.5, y: 0.5)]),
+        (0.09, [:]),
+        (0.2, [9: CGPoint(x: 0.5, y: 0.5)]),
+        (0.9, [9: CGPoint(x: 0.5, y: 0.5)]),
+        (1.7, [9: CGPoint(x: 0.38, y: 0.5)]),
+        (2.9, [9: CGPoint(x: 0.38, y: 0.5)]),
+        (2.91, [:]),
+    ] + tap.map { (4.2 + $0.t, $0.fingers) } + [
+        (5.1, [:]),
+        (5.11, [9: CGPoint(x: 0.5, y: 0.5)]),
+        (5.8, [9: CGPoint(x: 0.68, y: 0.5)]),
+        (6.8, [9: CGPoint(x: 0.68, y: 0.5)]),
+        (6.81, [:]),
+    ] + tap.map { (8.2 + $0.t, $0.fingers) } + swipe(at: 9.3, up: true) + swipe(at: 10.6, up: true) + [
+        (12.0, [:]),
+        (12.01, [5: CGPoint(x: 0.3, y: 0.5), 6: CGPoint(x: 0.7, y: 0.5)]),
+        (12.26, [5: CGPoint(x: 0.45, y: 0.5), 6: CGPoint(x: 0.55, y: 0.5)]),
+        (12.27, [:]),
+    ] + tap.map { (13.8 + $0.t, $0.fingers) }
+
     private static let scripts: [String: Script] = [
         // 轻点后按住（D25）：中心轻点一下，紧接着按住，第二次落下即出面板，滑到左上按钮后抬起
         "taphold": [
@@ -87,6 +116,8 @@ final class TouchSimulator {
             (1.4, [9: CGPoint(x: 0.36, y: 0.62)]),
             (1.41, [:]),
         ],
+        "demo": demoScript,
+        "demo.zh": demoScript,
         // 唤起后单指绕一圈经过各按钮，回到中心的取消上抬起：弹开、悬停、收拢
         "cancel": tap + [
             (0.8, [:]),
@@ -155,7 +186,7 @@ final class TouchSimulator {
     ]
 
     /// 用当前的布局与参数（打开轻点唤起与轻点后按住、关闭方位分区）跑一段脚本
-    private func run(_ script: Script, presses: [TimeInterval]) {
+    private func run(_ script: Script, presses: [TimeInterval], demo: DemoBackdrop.Language? = nil) {
         timer?.invalidate()
         var environment = driver.environmentSnapshot
         environment.devices = [Self.device.id: Self.device]
@@ -191,7 +222,9 @@ final class TouchSimulator {
             previous = fingers
             t += Self.frameInterval
         }
-        playback = Playback(machine: machine, frames: frames, presses: presses, start: start, end: end)
+        playback = Playback(machine: machine, frames: frames, presses: presses, start: start, end: end,
+                            backdropUntil: demo == nil ? nil : start + (script.last?.t ?? 0) + Self.demoTail)
+        if let demo { backdrop.show(language: demo) }
         let timer = Timer(timeInterval: Self.frameInterval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.step() }
         }
@@ -205,7 +238,11 @@ final class TouchSimulator {
         let now = ProcessInfo.processInfo.systemUptime
         var effects: [SessionEffect] = []
         while p.index < p.frames.count, p.start + p.frames[p.index].t <= now {
-            effects += p.machine.handle(.frame(p.frames[p.index].frame))
+            let frame = p.frames[p.index].frame
+            effects += p.machine.handle(.frame(frame))
+            if p.backdropUntil != nil {
+                backdrop.update(fingers: Dictionary(uniqueKeysWithValues: frame.contacts.filter(\.isTouching).map { ($0.id, $0.position) }))
+            }
             p.index += 1
         }
         while let press = p.presses.first, p.start + press <= now {
@@ -213,6 +250,11 @@ final class TouchSimulator {
             p.presses.removeFirst()
         }
         if p.machine.needsTicks { effects += p.machine.handle(.tick(now)) }
+        if p.backdropUntil != nil { backdrop.advance(to: now - p.start) }
+        if let until = p.backdropUntil, now > until {
+            backdrop.hide()
+            p.backdropUntil = nil
+        }
         playback = p
         apply(effects)
         if now - p.start > p.end {

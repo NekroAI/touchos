@@ -10,7 +10,7 @@ Requires macOS 14 or later and a Force Touch trackpad (built-in, or Magic Trackp
 
 To update, download the new version and replace the app; your panels and permissions are kept. Settings live in `~/Library/Application Support/TouchOS/`.
 
-**0.0.1 preview:** tested only on a Magic Trackpad with macOS 27. Built-in trackpads, Intel Macs and macOS 14–26 have not been tested yet; please report problems in [Issues](https://github.com/NekroAI/touchos/issues).
+**Early release:** tested only on a Magic Trackpad with macOS 27. Built-in trackpads, Intel Macs and macOS 14–26 have not been tested yet; please report problems in [Issues](https://github.com/NekroAI/touchos/issues).
 
 ---
 
@@ -26,4 +26,4 @@ To update, download the new version and replace the app; your panels and permiss
 
 更新时下载新版本替换应用即可，面板与权限都会保留。配置位于 `~/Library/Application Support/TouchOS/`。
 
-**0.0.1 预览版：** 只在妙控板 + macOS 27 上测试过；内置触控板、Intel Mac、macOS 14–26 尚未测试，遇到问题请在 [Issues](https://github.com/NekroAI/touchos/issues) 反馈。
+**早期版本：** 只在妙控板 + macOS 27 上测试过；内置触控板、Intel Mac、macOS 14–26 尚未测试，遇到问题请在 [Issues](https://github.com/NekroAI/touchos/issues) 反馈。

@@ -20,7 +20,11 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue" alt="License: GPL-3.0-or-later"></a>
 </p>
 
-> **Status: 0.0.1 preview.** Usable day to day, but so far tested only on a Magic Trackpad with macOS 27. Built-in trackpads, Intel Macs and older macOS versions are untested — reports welcome.
+<p align="center">
+  <img src="docs/assets/demo.gif" width="720" alt="Tap, then hold to summon a panel, point at a button by finger position, lift to run it. A ring panel snaps a window to the right half, two fingers switch panels, and a pinch shows them all.">
+</p>
+
+> **Status: early release.** Usable day to day, but so far tested only on a Magic Trackpad with macOS 27. Built-in trackpads, Intel Macs and older macOS versions are untested — reports welcome.
 
 ## Why
 
@@ -48,6 +52,9 @@ Outside that gesture TouchOS only listens: it never changes how your trackpad, m
 - **Triggers** — tap-then-hold (default), four-finger tap (default), three-finger tap, or tap-then-hold starting in one of eight edge zones (four corners and four edge midpoints). Enable as many as you like; each opens the panel you bind to it. Settings draw the trackpad zones to scale and update live. Turning off the system's "Tap to click" is recommended, otherwise the first tap of tap-then-hold also clicks.
 - **Themes** — Glass orbs (default), Liquid lens or Holo wireframe, with your own accent color and a drum (default) or depth-stack transition — mix freely.
 - **Plain JSON config** — `~/Library/Application Support/TouchOS/config.json`, with automatic backups, validation and import / export. Imported scripts are shown to you before anything runs.
+- **Press and hold to repeat** — hold a physical press on a button to keep firing it, handy for delete or volume.
+- **iCloud sync** — optional; your panels and appearance follow you across Macs.
+- **English and Simplified Chinese** — chosen on first launch, changeable in Settings.
 - **Exclude apps** — pause TouchOS while specific apps are in front.
 
 ## Install
@@ -58,7 +65,7 @@ TouchOS isn't notarized by Apple, so macOS blocks the first launch: open **Syste
 
 ## Privacy
 
-TouchOS reads raw trackpad contacts through a private macOS framework. Contacts are processed in memory only — never logged, stored or uploaded. TouchOS makes no network requests.
+TouchOS reads raw trackpad contacts through a private macOS framework. Contacts are processed in memory only — never logged, stored or uploaded. The only network request is a once-a-day version check against the GitHub Releases API, which carries no contact or configuration data and can be turned off in Settings → General.
 
 ## Build from source
 
