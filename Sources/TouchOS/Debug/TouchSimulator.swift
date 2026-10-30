@@ -6,7 +6,7 @@ import TouchOSCore
 /// 调试用的浮层预演（只在调试叠层可用时注册）：收到 Darwin 通知后，用一份独立的状态机跑一段合成触点帧，
 /// 只把面板的显示、更新、退场交给浮层，用来在没有手指操作时录屏检查视觉与动效。
 /// 不经过真实会话：不冻结光标、不改拦截策略、不执行任何动作，也不受同时发生的真实触摸干扰。
-/// 用法：`notifyutil -p ai.nekro.touchos.simulate.cancel`（另有 `.idle`、`.commit`、`.press`、`.outside`、`.toggle`、`.navigate`、`.overview`、`.hold`）。
+/// 用法：`notifyutil -p ai.nekro.touchos.simulate.cancel`（另有 `.taphold`、`.idle`、`.commit`、`.press`、`.outside`、`.toggle`、`.navigate`、`.overview`、`.hold`）。
 @MainActor
 final class TouchSimulator {
     /// 合成帧间隔：与妙控板实测帧率相同（m0-report.md）
@@ -77,6 +77,16 @@ final class TouchSimulator {
     }
 
     private static let scripts: [String: Script] = [
+        // 轻点后按住（D25）：中心轻点一下，紧接着按住，第二次落下即出面板，滑到左上按钮后抬起
+        "taphold": [
+            (0, [1: CGPoint(x: 0.5, y: 0.5)]),
+            (0.08, [1: CGPoint(x: 0.5, y: 0.5)]),
+            (0.09, [:]),
+            (0.2, [9: CGPoint(x: 0.5, y: 0.5)]),
+            (0.7, [9: CGPoint(x: 0.36, y: 0.62)]),
+            (1.4, [9: CGPoint(x: 0.36, y: 0.62)]),
+            (1.41, [:]),
+        ],
         // 唤起后单指绕一圈经过各按钮，回到中心的取消上抬起：弹开、悬停、收拢
         "cancel": tap + [
             (0.8, [:]),
@@ -152,7 +162,8 @@ final class TouchSimulator {
         environment.suspended = false
         var tuning = driver.tuningSnapshot
         tuning.fourFingerTap = true
-        tuning.holdTrigger = false
+        tuning.tapHold = true
+        tuning.holdCorners = []
         let machine = SessionStateMachine(tuning: tuning, environment: environment)
         var previous: [Int: CGPoint] = [:]
         let start = ProcessInfo.processInfo.systemUptime

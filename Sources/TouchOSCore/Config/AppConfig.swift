@@ -31,15 +31,48 @@ public struct AppConfig: Codable, Equatable, Sendable {
         public init() {}
     }
 
-    /// 唤起方式开关（D19、D20：默认只开四指轻点）
+    /// 启用的唤起方式（D26）：可以多选，角落类每个角单独开关。默认开轻点后按住与四指轻点（D25）
     public struct Triggers: Codable, Equatable, Sendable {
-        public var hold = false
-        public var anchorCorner = AnchorCorner.bottomLeft
-        public var threeFingerTap = false
-        public var fourFingerTap = true
-        public var cornerDoubleTap = false
+        /// `PanelTrigger.key`，按 `PanelTrigger.all` 的顺序
+        public var enabled: [String] = [PanelTrigger.tapHold.key, PanelTrigger.fourFingerTap.key]
 
         public init() {}
+
+        /// 启用的唤起方式；写错的忽略
+        public var list: [PanelTrigger] { PanelTrigger.all.filter { enabled.contains($0.key) } }
+
+        public func isOn(_ trigger: PanelTrigger) -> Bool { enabled.contains(trigger.key) }
+
+        public mutating func set(_ trigger: PanelTrigger, _ on: Bool) {
+            var keys = Set(enabled)
+            if on { keys.insert(trigger.key) } else { keys.remove(trigger.key) }
+            // 认识的按固定顺序排列，不认识的保留在后面，不丢用户手写的内容
+            enabled = PanelTrigger.all.map(\.key).filter(keys.contains) + enabled.filter { PanelTrigger(key: $0) == nil }
+        }
+
+        enum Keys: String, CodingKey { case enabled, hold, anchorCorner, threeFingerTap, fourFingerTap, cornerDoubleTap }
+
+        /// D26 之前是几个开关加一个角落：按旧的含义换算，并加上新的默认方式轻点后按住（D25）。
+        /// 旧版本里绑定了面板的其他角也能唤起，这部分由 `AppConfig` 在读完绑定后补上
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: Keys.self)
+            if let enabled = try c.decodeIfPresent([String].self, forKey: .enabled) {
+                self.enabled = enabled
+                return
+            }
+            let corner = try c.decodeIfPresent(String.self, forKey: .anchorCorner).flatMap(AnchorCorner.init) ?? .bottomLeft
+            var list: [PanelTrigger] = [.tapHold]
+            if try c.decodeIfPresent(Bool.self, forKey: .hold) ?? false { list.append(.hold(corner)) }
+            if try c.decodeIfPresent(Bool.self, forKey: .cornerDoubleTap) ?? false { list.append(.cornerDoubleTap(corner)) }
+            if try c.decodeIfPresent(Bool.self, forKey: .threeFingerTap) ?? false { list.append(.threeFingerTap) }
+            if try c.decodeIfPresent(Bool.self, forKey: .fourFingerTap) ?? true { list.append(.fourFingerTap) }
+            enabled = PanelTrigger.all.filter(list.contains).map(\.key)
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: Keys.self)
+            try c.encode(enabled, forKey: .enabled)
+        }
     }
 
     /// 尺寸（D21）
@@ -72,7 +105,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
 
     public init() {}
 
-    /// 内置默认配置：预置四个面板，四指轻点打开第一个
+    /// 内置默认配置：预置四个面板，轻点后按住与四指轻点打开第一个
     public static let `default` = AppConfig()
 
     private enum Keys: String, CodingKey { case schemaVersion, general, appearance, triggers, sizes, panels, bindings }
@@ -87,6 +120,18 @@ public struct AppConfig: Codable, Equatable, Sendable {
         sizes = try c.decodeIfPresent(Sizes.self, forKey: .sizes) ?? Sizes()
         panels = try c.decodeIfPresent([Layout].self, forKey: .panels) ?? PresetPanels.all
         bindings = try c.decodeIfPresent([Binding].self, forKey: .bindings) ?? []
+        if let old = try? c.nestedContainer(keyedBy: Triggers.Keys.self, forKey: .triggers), !old.contains(.enabled) {
+            // D26 之前：开着按住 / 轻点两下时，绑定了面板的其他角也能唤起
+            for trigger in bindingMap.keys {
+                switch trigger {
+                case .hold where triggers.list.contains { if case .hold = $0 { true } else { false } },
+                     .cornerDoubleTap where triggers.list.contains { if case .cornerDoubleTap = $0 { true } else { false } }:
+                    triggers.set(trigger, true)
+                default:
+                    break
+                }
+            }
+        }
     }
 
     /// 绑定表；写错的唤起方式忽略
@@ -98,11 +143,12 @@ public struct AppConfig: Codable, Equatable, Sendable {
 
     /// 把配置中的参数写入 `Tuning`，其余参数保留
     public func apply(to t: inout Tuning) {
-        t.holdTrigger = triggers.hold
-        t.anchorCorner = triggers.anchorCorner
-        t.threeFingerTap = triggers.threeFingerTap
-        t.fourFingerTap = triggers.fourFingerTap
-        t.cornerDoubleTap = triggers.cornerDoubleTap
+        let list = triggers.list
+        t.holdCorners = list.compactMap { if case .hold(let c) = $0 { c } else { nil } }
+        t.doubleTapCorners = list.compactMap { if case .cornerDoubleTap(let c) = $0 { c } else { nil } }
+        t.threeFingerTap = list.contains(.threeFingerTap)
+        t.fourFingerTap = list.contains(.fourFingerTap)
+        t.tapHold = list.contains(.tapHold)
         t.stickyPanel = general.stickyPanel
         t.panelScale = min(max(sizes.panelScale, Tuning.panelScaleRange.lowerBound), Tuning.panelScaleRange.upperBound)
         t.mappingScale = min(max(sizes.mappingScale, Tuning.mappingScaleRange.lowerBound), Tuning.mappingScaleRange.upperBound)
@@ -214,6 +260,9 @@ extension AppConfig {
                 issues.append(.init(kind: .duplicateSlot(slot.id.raw)))
             }
             issues += Self.gridIssues(panel)
+        }
+        for key in triggers.enabled where PanelTrigger(key: key) == nil {
+            issues.append(.init(kind: .unknownBinding(key)))
         }
         for b in bindings {
             if PanelTrigger(key: b.trigger) == nil {

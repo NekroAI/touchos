@@ -8,7 +8,6 @@ public enum AnchorCorner: String, Sendable, CaseIterable {
 /// 可调参数（SRS 附录参数总表）。默认值为原型前的估计值，M0 闸门时按实测修正。
 /// 代码中所有阈值都从这里读取（SRS 0.3）；K8 起由配置文件 `anchor` / `tuning` 段提供。
 public struct Tuning: Equatable, Sendable {
-    public var anchorCorner = AnchorCorner.bottomLeft
     /// `P.anchorZoneW` / `P.anchorZoneH`：锚定区宽高（触控板比例）
     public var anchorZoneW = 0.12
     public var anchorZoneH = 0.15
@@ -43,17 +42,25 @@ public struct Tuning: Equatable, Sendable {
     public var stickyPanel = false
     /// `P.stickyIdleMs`：常驻模式下板上没有手指超过该时长自动关闭
     public var stickyIdleMs = 5000.0
-    /// 唤起方式（交互实验，decisions.md D19）：锚指按住、三指 / 四指轻点、单指在角落轻点两下，可同时开启。
+    /// 唤起方式（D19、D25、D26）：可以同时开启多种，每种可以绑定不同的面板。
     /// 轻点唤起时板上没有锚指，面板直接进入常驻状态（D14）
-    public var holdTrigger = true
+    /// 锚指按住：启用的角（SRS 默认只有左下角）
+    public var holdCorners: [AnchorCorner] = [.bottomLeft]
+    /// 单指在角落轻点两下：启用的角
+    public var doubleTapCorners: [AnchorCorner] = []
     public var threeFingerTap = false
     public var fourFingerTap = false
-    public var cornerDoubleTap = false
+    /// 轻点后按住（D25）
+    public var tapHold = false
+    /// `P.tapHoldReachMM`：轻点后按住的第二次落点与第一次轻点的最大距离
+    public var tapHoldReachMM = 10.0
+    /// `P.tapHoldMinMs`：轻点后按住时第二根手指至少停留多久，抬起才执行；0 为不限制（D25，默认不启用）
+    public var tapHoldMinMs = 0.0
     /// `P.tapMaxMs`：一次轻点从第一根手指落下到全部抬起的最长时长
     public var tapMaxMs = 250.0
     /// `P.tapMaxMoveMM`：轻点期间每根手指的最大位移
     public var tapMaxMoveMM = 3.0
-    /// `P.doubleTapGapMs`：角落双击两次轻点之间（前一次抬起到后一次落下）的最长间隔
+    /// `P.doubleTapGapMs`：角落双击、轻点后按住两次触摸之间（前一次抬起到后一次落下）的最长间隔
     public var doubleTapGapMs = 300.0
     /// `P.navDistanceMM`：双指上下移动这么远切换一个面板（D23）
     public var navDistanceMM = 30.0

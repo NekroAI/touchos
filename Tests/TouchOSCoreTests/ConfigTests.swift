@@ -72,7 +72,7 @@ private func temporaryStore() -> ConfigStore {
     }
 
     @Test func triggerKeysRoundTrip() {
-        let all: [PanelTrigger] = AnchorCorner.allCases.flatMap { [.hold($0), .cornerDoubleTap($0)] } + [.threeFingerTap, .fourFingerTap]
+        let all: [PanelTrigger] = AnchorCorner.allCases.flatMap { [.hold($0), .cornerDoubleTap($0)] } + [.threeFingerTap, .fourFingerTap, .tapHold]
         for t in all { #expect(PanelTrigger(key: t.key) == t) }
         for bad in ["hold", "hold.middle", "fourFingerTap.x", "swipe", ""] { #expect(PanelTrigger(key: bad) == nil) }
     }
@@ -85,8 +85,9 @@ private func temporaryStore() -> ConfigStore {
 
     @Test func appliesToTuningWithClamping() {
         var config = AppConfig()
-        config.triggers.hold = true
-        config.triggers.anchorCorner = .topRight
+        config.triggers.set(.hold(.topRight), true)
+        config.triggers.set(.cornerDoubleTap(.bottomLeft), true)
+        config.triggers.set(.fourFingerTap, false)
         config.general.stickyPanel = true
         config.sizes.panelScale = 5
         config.sizes.mappingScale = 0
@@ -94,9 +95,38 @@ private func temporaryStore() -> ConfigStore {
         config.bindings.append(AppConfig.Binding(trigger: .hold(.topLeft), panel: "window"))
         var t = Tuning()
         config.apply(to: &t)
-        #expect(t.holdTrigger && t.anchorCorner == .topRight && t.stickyPanel && t.fourFingerTap)
+        #expect(t.holdCorners == [.topRight] && t.doubleTapCorners == [.bottomLeft] && t.tapHold && !t.fourFingerTap)
+        #expect(t.stickyPanel && !t.threeFingerTap)
         #expect(t.panelScale == Tuning.panelScaleRange.upperBound && t.mappingScale == Tuning.mappingScaleRange.lowerBound)
         #expect(config.bindingMap == [.threeFingerTap: "media", .fourFingerTap: "edit", .hold(.topLeft): "window"])
+    }
+
+    @Test func defaultTriggersAreTapHoldAndFourFingerTap() {
+        #expect(AppConfig().triggers.list == [.tapHold, .fourFingerTap])
+    }
+
+    @Test func triggerListKeepsOrderAndUnknownEntries() throws {
+        var triggers = AppConfig.Triggers()
+        triggers.enabled = ["swipe", "fourFingerTap"]
+        triggers.set(.hold(.bottomLeft), true)
+        triggers.set(.tapHold, true)
+        #expect(triggers.enabled == ["tapHold", "fourFingerTap", "hold.bottomLeft", "swipe"])
+        triggers.set(.tapHold, false)
+        #expect(!triggers.isOn(.tapHold) && triggers.list == [.fourFingerTap, .hold(.bottomLeft)])
+        var config = AppConfig()
+        config.triggers = triggers
+        #expect(config.validate().map(\.kind) == [.unknownBinding("swipe")])
+        let decoded = try AppConfig.decode(try config.encoded())
+        #expect(decoded.triggers == triggers)
+    }
+
+    @Test func legacyTriggerSwitchesMigrate() throws {
+        // D26 之前：开关加一个角落；开着按住时，绑定了面板的其他角也能唤起。迁移后加上轻点后按住（D25）
+        let json = #"{"schemaVersion":1,"triggers":{"hold":true,"anchorCorner":"topRight","fourFingerTap":false,"threeFingerTap":true},"bindings":[{"trigger":"hold.topLeft","panel":"media"},{"trigger":"doubleTap.bottomRight","panel":"media"}]}"#
+        let config = try AppConfig.decode(Data(json.utf8))
+        #expect(config.triggers.list == [.tapHold, .threeFingerTap, .hold(.topLeft), .hold(.topRight)])
+        let defaults = try AppConfig.decode(Data(#"{"schemaVersion":1,"triggers":{}}"#.utf8))
+        #expect(defaults.triggers.list == [.tapHold, .fourFingerTap])
     }
 }
 

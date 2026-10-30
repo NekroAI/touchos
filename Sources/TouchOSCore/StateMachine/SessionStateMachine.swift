@@ -19,6 +19,8 @@ public enum SessionEnd: Equatable, Sendable {
     case liftAfterPress
     /// 在映射区之外抬起：关闭，不执行（D21）
     case liftOutside
+    /// 轻点后按住唤起、未满 `P.tapHoldMinMs` 就抬起：关闭，不执行（D25）
+    case earlyLift
     /// 面板开着时再做一次已启用的多指轻点唤起手势：关闭（D22）
     case tapToggle
     /// 在关闭上按住进入编辑（D23），值为当前面板 ID
@@ -26,8 +28,10 @@ public enum SessionEnd: Equatable, Sendable {
     case deviceRemoved, tapDisabled, forced(String)
 }
 
-/// 唤起方式（D19、D23）：每种可以绑定一个面板
+/// 唤起方式（D19、D23、D25）：每种可以绑定一个面板
 public enum PanelTrigger: Hashable, Sendable {
+    /// 单指轻点一下，紧接着在附近再按住：第二次落下即打开，这根手指就是指点指（D25）
+    case tapHold
     case hold(AnchorCorner)
     case cornerDoubleTap(AnchorCorner)
     case threeFingerTap
@@ -57,15 +61,6 @@ public struct SessionEnvironment: Equatable, Sendable {
         guard !panels.isEmpty else { return nil }
         guard let id = bindings[trigger] else { return 0 }
         return panels.firstIndex { $0.id == id } ?? 0
-    }
-
-    /// 可以按住唤起的角：默认锚定角与单独绑定了面板的角
-    func holdCorners(default corner: AnchorCorner) -> [AnchorCorner] {
-        AnchorCorner.allCases.filter { $0 == corner || bindings[.hold($0)] != nil }
-    }
-
-    func doubleTapCorners(default corner: AnchorCorner) -> [AnchorCorner] {
-        AnchorCorner.allCases.filter { $0 == corner || bindings[.cornerDoubleTap($0)] != nil }
     }
 }
 
@@ -254,6 +249,8 @@ public struct ActiveContext: Equatable, Sendable {
     public var sliderValues: [SlotID: Double] = [:]
     /// 常驻模式：锚指已抬起，面板保留，单指操作
     public var anchorLifted = false
+    /// 轻点后按住唤起时，早于该时刻抬起只关闭（D25，`P.tapHoldMinMs`）
+    public var releaseAfter: TimeInterval?
     /// 最近一次板上有手指的时刻（常驻模式的无触摸超时）
     public var lastTouchAt: TimeInterval = 0
     /// 常驻模式下板上出现多指，到全部抬起为止
@@ -279,6 +276,10 @@ public struct SessionStateMachine: Sendable {
     private var taps = TapDetector()
     /// 角落双击的第一下：设备、角落、抬起时刻
     private var pendingCornerTap: (device: TrackpadDeviceID, corner: AnchorCorner, endedAt: TimeInterval)?
+    /// 轻点后按住的第一下：设备、位置、抬起时刻（D25）
+    private var pendingTapHold: (device: TrackpadDeviceID, position: CGPoint, endedAt: TimeInterval)?
+    /// 最近一次物理按压的时刻：触摸期间按下过的不算轻点（触控板上的物理单击、双击）
+    private var lastPressAt: TimeInterval?
     /// 最近一次帧或 tick 的时刻：按压等不带时间的事件用它
     private var clock: TimeInterval = 0
 
@@ -305,6 +306,7 @@ public struct SessionStateMachine: Sendable {
         }
         if case .frame(let f) = event { clock = max(clock, f.timestamp) }
         if case .tick(let t) = event { clock = max(clock, t) }
+        if case .physicalPress = event { lastPressAt = clock }
         let observing = state == .idle || { if case .armed = state { true } else { false } }()
         var effects: [SessionEffect]
         switch state {
@@ -319,6 +321,7 @@ public struct SessionStateMachine: Sendable {
             } else {
                 taps.reset()
                 pendingCornerTap = nil
+                pendingTapHold = nil
             }
         }
         return effects
@@ -327,7 +330,7 @@ public struct SessionStateMachine: Sendable {
     // MARK: 轻点唤起（D19）
 
     private mutating func tapTrigger(_ frame: TouchFrame) -> [SessionEffect] {
-        guard tuning.threeFingerTap || tuning.fourFingerTap || tuning.cornerDoubleTap,
+        guard tuning.threeFingerTap || tuning.fourFingerTap || tuning.tapHold || !tuning.doubleTapCorners.isEmpty,
               let device = environment.devices[frame.device],
               let tap = taps.feed(frame, surfaceMM: device.surfaceSizeMM, maxDuration: tuning.tapMaxMs / 1000,
                                   maxMoveMM: tuning.tapMaxMoveMM),
@@ -336,40 +339,75 @@ public struct SessionStateMachine: Sendable {
         switch tap.fingers {
         case 3 where tuning.threeFingerTap, 4 where tuning.fourFingerTap:
             pendingCornerTap = nil
+            pendingTapHold = nil
             guard let index = environment.panelIndex(for: tap.fingers == 3 ? .threeFingerTap : .fourFingerTap) else { return [] }
-            return enterActive(device: tap.device, corner: tuning.anchorCorner, anchorID: nil, entry: tap.centroid, panel: index,
+            return enterActive(device: tap.device, corner: Self.tapCorner, anchorID: nil, entry: tap.centroid, panel: index,
                                now: frame.timestamp)
-        case 1 where tuning.cornerDoubleTap:
-            guard let corner = environment.doubleTapCorners(default: tuning.anchorCorner).first(where: {
-                closedContains(anchorZone($0, width: tuning.anchorZoneW, height: tuning.anchorZoneH), tap.centroid)
-            }) else {
+        case 1:
+            pendingTapHold = nil
+            // 触摸期间有物理按压：这是一次单击，不是轻点
+            if let pressed = lastPressAt, pressed >= tap.startedAt && pressed < tap.endedAt {
                 pendingCornerTap = nil
                 return []
             }
-            if let first = pendingCornerTap, first.device == tap.device, first.corner == corner,
-               tap.startedAt - first.endedAt <= tuning.doubleTapGapMs / 1000 {
-                pendingCornerTap = nil
-                guard let index = environment.panelIndex(for: .cornerDoubleTap(corner)) else { return [] }
-                return enterActive(device: tap.device, corner: corner, anchorID: nil, entry: tap.centroid, panel: index,
-                                   now: frame.timestamp)
+            // 第一下落在启用了"轻点两下"的角落：让给角落轻点两下（D26）
+            if let corner = tuning.doubleTapCorners.first(where: {
+                closedContains(anchorZone($0, width: tuning.anchorZoneW, height: tuning.anchorZoneH), tap.centroid)
+            }) {
+                if let first = pendingCornerTap, first.device == tap.device, first.corner == corner,
+                   tap.startedAt - first.endedAt <= tuning.doubleTapGapMs / 1000 {
+                    pendingCornerTap = nil
+                    guard let index = environment.panelIndex(for: .cornerDoubleTap(corner)) else { return [] }
+                    return enterActive(device: tap.device, corner: corner, anchorID: nil, entry: tap.centroid, panel: index,
+                                       now: frame.timestamp)
+                }
+                pendingCornerTap = (tap.device, corner, tap.endedAt)
+                return []
             }
-            pendingCornerTap = (tap.device, corner, tap.endedAt)
+            pendingCornerTap = nil
+            if tuning.tapHold { pendingTapHold = (tap.device, tap.centroid, tap.endedAt) }
             return []
         default:
             pendingCornerTap = nil
+            pendingTapHold = nil
             return []
         }
     }
 
+    /// 轻点后按住（D25）：第一下轻点之后 `P.doubleTapGapMs` 内、`P.tapHoldReachMM` 以内落下一根新手指，
+    /// 落下即打开面板，这根手指成为指点指。不满足时返回 nil
+    private mutating func tapHold(_ frame: TouchFrame, _ touching: [Contact]) -> [SessionEffect]? {
+        guard let first = pendingTapHold, first.device == frame.device, let device = environment.devices[frame.device] else {
+            return nil
+        }
+        if frame.timestamp - first.endedAt > tuning.doubleTapGapMs / 1000 {
+            pendingTapHold = nil
+            return nil
+        }
+        guard let c = touching.first(where: { $0.phase == .began }) else { return nil }
+        pendingTapHold = nil
+        let mm = device.surfaceSizeMM
+        let reach = hypot((c.position.x - first.position.x) * mm.width, (c.position.y - first.position.y) * mm.height)
+        guard touching.count == 1, reach <= tuning.tapHoldReachMM, let index = environment.panelIndex(for: .tapHold) else {
+            return nil
+        }
+        return enterActive(device: frame.device, corner: Self.tapCorner, anchorID: nil, entry: first.position, panel: index,
+                           now: frame.timestamp, pointer: c)
+    }
+
+    /// 轻点唤起没有锚指，会话的锚定角只是占位，不参与判定（`anchorLifted` 为 true）
+    private static let tapCorner = AnchorCorner.bottomLeft
+
     // MARK: 空闲
 
     private mutating func idle(_ event: SessionEvent) -> [SessionEffect] {
-        // T1
-        guard case .frame(let frame) = event, tuning.holdTrigger, !environment.suspended, !environment.panels.isEmpty,
+        guard case .frame(let frame) = event, !environment.suspended, !environment.panels.isEmpty,
               environment.devices[frame.device] != nil else { return [] }
         let touching = frame.contacts.filter(\.isTouching)
+        if let effects = tapHold(frame, touching) { return effects }
+        // T1
         guard touching.count == 1, let c = touching.first, c.phase == .began,
-              let corner = environment.holdCorners(default: tuning.anchorCorner).first(where: {
+              let corner = tuning.holdCorners.first(where: {
                   closedContains(anchorZone($0, width: tuning.anchorZoneW, height: tuning.anchorZoneH), c.position)
               })
         else { return [] }
@@ -434,9 +472,9 @@ public struct SessionStateMachine: Sendable {
     }
 
     /// 进入激活。`anchorID` 为 nil 表示轻点唤起（D19）：没有锚指，直接进入常驻状态，面板立即显示，
-    /// 光标在此刻冻结（不经过候选期）。条件不满足时返回空
+    /// 光标在此刻冻结（不经过候选期）。`pointer` 为轻点后按住的第二根手指，直接作为指点指（D25）。条件不满足时返回空
     private mutating func enterActive(device id: TrackpadDeviceID, corner: AnchorCorner, anchorID: Int?, entry: CGPoint,
-                                      panel: Int, now: TimeInterval) -> [SessionEffect] {
+                                      panel: Int, now: TimeInterval, pointer: Contact? = nil) -> [SessionEffect] {
         let panels = environment.panels
         guard panels.indices.contains(panel), let device = environment.devices[id] else { return [] }
         let size = panelSize(screen: environment.screenSize, deviceMM: device.surfaceSizeMM, scale: tuning.panelScale)
@@ -458,6 +496,14 @@ public struct SessionStateMachine: Sendable {
             effects.append(.cursor(.arm))
         }
         effects.append(.cursor(.lock))
+        if let c = pointer {
+            active.pointer = PointerTrack(id: c.id, t: now, p: c.position)
+            active.releaseAfter = now + tuning.tapHoldMinMs / 1000
+            let h = hover(active, c.position, now: now)
+            active.hovered = h.slot
+            active.overviewHover = h.overview
+            updateSliderPreview(&active, point: mapper().panelPoint(c.position, panelSize: size))
+        }
         if tuning.panelDelayMs <= 0 || anchorID == nil {
             active.panelVisible = true
             effects.append(.showPanel(panelState(active)))
@@ -739,6 +785,9 @@ public struct SessionStateMachine: Sendable {
         if ctx.pressConsumed {
             return exit(ctx, now: liftAt, end: .liftAfterPress)  // D18：按压已执行过，抬起只关闭
         }
+        if let after = ctx.releaseAfter, liftAt < after {
+            return exit(ctx, now: liftAt, end: .earlyLift)  // D25：停留不足
+        }
         let mapper = mapper()
         let point = pointer.commitPoint(liftAt: liftAt, lookback: tuning.liftLookbackMs / 1000)
         guard mapper.contains(point) else { return exit(ctx, now: liftAt, end: .liftOutside) }  // D21
@@ -792,6 +841,7 @@ public struct SessionStateMachine: Sendable {
 
     private func clearPointer(_ ctx: inout ActiveContext) {
         ctx.pointer = nil
+        ctx.releaseAfter = nil
         ctx.hovered = nil
         ctx.overviewHover = nil
         ctx.pressConsumed = false

@@ -51,9 +51,9 @@ private func environment(_ panels: [Layout], bindings: [PanelTrigger: String] = 
     return env
 }
 
-private func run(_ g: Gesture, environment: SessionEnvironment = environment([experiment]),
+private func run(_ g: Gesture, environment: SessionEnvironment = environment([experiment]), tuning: Tuning = .test,
                  events: [(TimeInterval, SessionEvent)] = [], until: TimeInterval) -> Harness {
-    var h = Harness(tuning: .test, environment: environment)
+    var h = Harness(tuning: tuning, environment: environment)
     h.run(g.frames(rate: rate), events: events, until: until)
     return h
 }
@@ -168,20 +168,31 @@ private func activeLayout(_ h: Harness) -> String? {
 }
 
 @Suite struct CornerPanelTests {
+    /// 左下与右下两个角都开着（D26：每个角单独开关）
+    private static let twoCorners: Tuning = {
+        var t = Tuning.test
+        t.holdCorners = [.bottomLeft, .bottomRight]
+        return t
+    }()
+
     @Test func cornerOpensItsBoundPanel() {
         let env = environment([experiment, radial], bindings: [.hold(.bottomRight): "radial"])
-        let left = run(anchored(until: 0.5), environment: env, until: 0.5)
+        let left = run(anchored(until: 0.5), environment: env, tuning: Self.twoCorners, until: 0.5)
         #expect(activeLayout(left) == "exp")
         let right = run(Gesture(device: .builtIn).touch(id: 1, at: ExpSpot.bottomRightAnchor, t: 0).hold(id: 1, until: 0.5),
-                        environment: env, until: 0.5)
+                        environment: env, tuning: Self.twoCorners, until: 0.5)
         #expect(activeLayout(right) == "radial")
+        // 没开的角不唤起，即使绑定了面板
+        let off = run(Gesture(device: .builtIn).touch(id: 1, at: ExpSpot.bottomRightAnchor, t: 0).hold(id: 1, until: 0.5),
+                      environment: env, until: 0.5)
+        #expect(activeLayout(off) == nil)
     }
 
     @Test func pointerCannotStartInTheActiveCornersZone() {
         let env = environment([experiment], bindings: [.hold(.bottomRight): "exp"])
         let g = Gesture(device: .builtIn).touch(id: 1, at: ExpSpot.bottomRightAnchor, t: 0).hold(id: 1, until: 1.0)
             .touch(id: 2, at: (0.94, 0.08), t: 0.5).hold(id: 2, until: 0.9)
-        let h = run(g, environment: env, until: 0.9)
+        let h = run(g, environment: env, tuning: Self.twoCorners, until: 0.9)
         guard case .active(let ctx) = h.machine.state else { Issue.record("not active"); return }
         #expect(ctx.pointer == nil)
     }

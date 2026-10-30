@@ -22,7 +22,7 @@ To update, download the new version and replace the app; your panels and permiss
 2. 打开 DMG，把 **TouchOS** 拖进「应用程序」。
 3. TouchOS 未经 Apple 公证，首次打开会被拦截：到 **系统设置 → 隐私与安全性**，在页面底部点 **仍要打开**。
 4. 跟随引导授予「辅助功能」权限：面板打开时需要它让光标保持不动、发送快捷键。
-5. 四指轻点触控板打开面板。设置在菜单栏图标中。
+5. 单指轻点一下、紧接着按住，面板出现；不松手滑到按钮上抬起即执行（四指轻点也可以）。设置在菜单栏图标中。建议在系统设置 › 触控板中关闭「轻点来点按」。
 
 更新时下载新版本替换应用即可，面板与权限都会保留。配置位于 `~/Library/Application Support/TouchOS/`。
 

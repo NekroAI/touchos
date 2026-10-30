@@ -24,8 +24,8 @@ Trackpad gesture tools make you memorize dozens of swipes. TouchOS shows you the
 
 ## How it works
 
-1. **Tap the trackpad with four fingers.** A panel of floating buttons appears in the middle of the screen and the cursor stays put.
-2. **Move one finger.** Its position on the trackpad maps directly onto the panel and highlights a button.
+1. **Tap once, then touch and hold.** As the second touch lands, a panel of floating buttons appears in the middle of the screen and the cursor stays put.
+2. **Keep the finger down and move it.** Its position on the trackpad maps directly onto the panel and highlights a button. With practice, a spot on the trackpad simply *is* the button.
 3. **Lift to run it.** Or click (press the trackpad) to run it and keep the panel open for another. Lift outside the panel to cancel.
 
 Inside an open panel:
@@ -40,7 +40,7 @@ Outside that gesture TouchOS only listens: it never changes how your trackpad, m
 
 - **Panels you design** — any number of panels, laid out as a grid with 1×1, 2×1, 1×2 and 2×2 buttons, or as a ring. Edit them visually in Settings: click an empty cell to add, drag to move, drag the corner to resize.
 - **Actions** — keyboard shortcuts, open an app / URL / file, shell commands, AppleScript, Shortcuts, media and system controls (volume, brightness, lock, Mission Control, screenshots), window placement, and live sliders.
-- **Triggers** — four-finger tap (default), three-finger tap, or holding / double-tapping a trackpad corner. Each trigger opens the panel you bind to it.
+- **Triggers** — tap-then-hold (default), four-finger tap (default), three-finger tap, or holding / double-tapping any trackpad corner. Enable as many as you like; each opens the panel you bind to it. Settings draw the trackpad zones to scale and update live. Turning off the system's "Tap to click" is recommended, otherwise the first tap of tap-then-hold also clicks.
 - **Themes** — Glass orbs (default), Liquid lens or Holo wireframe, with your own accent color and a depth-stack or drum transition — mix freely.
 - **Plain JSON config** — `~/Library/Application Support/TouchOS/config.json`, with automatic backups, validation and import / export. Imported scripts are shown to you before anything runs.
 - **Exclude apps** — pause TouchOS while specific apps are in front.

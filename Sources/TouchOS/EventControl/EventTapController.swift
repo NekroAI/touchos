@@ -211,10 +211,12 @@ final class EventTapController: @unchecked Sendable {
                     onPhysicalRelease?()
                 }
                 return nil
-            case .cooldown:
+            case .cooldown where inCooldown:
                 // SPEC-QUESTION: 策略表冷却列只丢弃"触控板来源"的按键，但拦截层无法可靠区分来源；目前冷却期内一律丢弃
-                return inCooldown ? nil : pass
-            case .idle:
+                return nil
+            case .idle, .cooldown:
+                // 上报后放行：状态机据此把触摸期间按下过的单指触摸排除在轻点之外（D25，物理双击不会被当成轻点后按住）
+                if type == .leftMouseDown { onPhysicalPress() }
                 return pass
             }
         }

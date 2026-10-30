@@ -3,7 +3,7 @@ import Foundation
 import Testing
 @testable import TouchOSCore
 
-// 唤起方式实验（decisions.md D19）：三指 / 四指轻点、单指在角落轻点两下、关闭锚指按住
+// 唤起方式（decisions.md D19、D25、D26）：三指 / 四指轻点、单指在角落轻点两下、轻点后按住、关闭锚指按住
 
 private let rate = 90.0
 
@@ -119,7 +119,7 @@ private func activeCorner(_ h: Harness) -> AnchorCorner? {
     @Test func cornerDoubleTapOpensThatCorner() {
         let g = Gesture(device: .builtIn).touch(id: 1, at: Spot.anchor, t: 0).lift(id: 1, t: 0.08)
             .touch(id: 2, at: Spot.anchor, t: 0.25).lift(id: 2, t: 0.33)
-        let h = run(g, tuning: tuning { $0.cornerDoubleTap = true }, until: 0.5)
+        let h = run(g, tuning: tuning { $0.doubleTapCorners = [.bottomLeft] }, until: 0.5)
         #expect(activeCorner(h) == .bottomLeft)
         #expect(shownSticky(h))
         // 锚指按住同时开着：两下轻点各自是一次失败的候选，不影响双击判定
@@ -127,7 +127,7 @@ private func activeCorner(_ h: Harness) -> AnchorCorner? {
     }
 
     @Test func cornerDoubleTapNeedsTwoQuickTapsInTheSameCorner() {
-        let t = tuning { $0.cornerDoubleTap = true }
+        let t = tuning { $0.doubleTapCorners = [.bottomLeft] }
         let slow = Gesture(device: .builtIn).touch(id: 1, at: Spot.anchor, t: 0).lift(id: 1, t: 0.08)
             .touch(id: 2, at: Spot.anchor, t: 0.6).lift(id: 2, t: 0.68)
         #expect(!run(slow, tuning: t, until: 0.9).isActive)
@@ -140,7 +140,7 @@ private func activeCorner(_ h: Harness) -> AnchorCorner? {
 
     @Test func holdTriggerCanBeTurnedOff() {
         let g = Gesture(device: .builtIn).touch(id: 1, at: Spot.anchor, t: 0).hold(id: 1, until: 0.6)
-        let h = run(g, tuning: tuning { $0.holdTrigger = false }, until: 0.6)
+        let h = run(g, tuning: tuning { $0.holdCorners = [] }, until: 0.6)
         #expect(!h.isActive && h.failures.isEmpty && h.policies.isEmpty)
     }
 
@@ -172,5 +172,87 @@ private func activeCorner(_ h: Harness) -> AnchorCorner? {
         #expect(h.ends == [.committed("close")])
         let idle = run(fingers(4, lift: 0.12), tuning: t, until: 6)
         #expect(idle.ends == [.idleTimeout])
+    }
+}
+
+@Suite struct TapHoldTests {
+    private let t = tuning { $0.tapHold = true }
+
+    private func opened(_ h: Harness) -> Bool {
+        h.effects.contains { if case .showPanel = $0 { true } else { false } }
+    }
+
+    /// 在 `p` 轻点一下（0–0.08），`second` 时刻在 `q` 再落下、按住到 `lift`
+    private func tapThenHold(_ p: (Double, Double), _ q: (Double, Double), second: TimeInterval = 0.2,
+                             lift: TimeInterval = 0.4, firstLift: TimeInterval = 0.08) -> Gesture {
+        Gesture(device: .builtIn).touch(id: 1, at: p, t: 0).lift(id: 1, t: firstLift)
+            .touch(id: 2, at: q, t: second).hold(id: 2, until: lift).lift(id: 2, t: lift)
+    }
+
+    @Test func secondTouchDownOpensThePanelAndLiftCommits() {
+        let h = run(tapThenHold(Spot.a, (0.21, 0.85)), tuning: t, until: 0.6)
+        // 第二下落下的那一帧就出面板，且已悬停在手指下的按钮上
+        let shown = h.effects.compactMap { if case .showPanel(let s) = $0 { s } else { nil } }.first
+        #expect(shown?.hovered == "a" && shown?.sticky == true)
+        #expect(h.firstTime { if case .showPanel = $0 { true } else { false } }.map { abs($0 - 0.2) < 0.02 } == true)
+        #expect(h.ends == [.committed("a")])
+        #expect(h.actions.map(\.title) == ["全选"])
+    }
+
+    @Test func secondTouchMustBeQuickNearAndAlone() {
+        #expect(!opened(run(tapThenHold(Spot.a, Spot.a, second: 0.6, lift: 0.8), tuning: t, until: 1)))
+        #expect(!opened(run(tapThenHold(Spot.a, Spot.close, lift: 0.6), tuning: t, until: 0.6)))
+        // 第一下太久不算轻点
+        #expect(!opened(run(tapThenHold(Spot.a, Spot.a, second: 0.5, lift: 0.8, firstLift: 0.4), tuning: t, until: 0.8)))
+        // 两指同时落下
+        let two = Gesture(device: .builtIn).touch(id: 1, at: Spot.a, t: 0).lift(id: 1, t: 0.08)
+            .touch(id: 2, at: Spot.a, t: 0.2).touch(id: 3, at: Spot.gap, t: 0.2).hold(id: 2, until: 0.5).hold(id: 3, until: 0.5)
+        #expect(!opened(run(two, tuning: t, until: 0.5)))
+        // 关闭时不唤起
+        #expect(!opened(run(tapThenHold(Spot.a, Spot.a), tuning: .test, until: 0.6)))
+    }
+
+    @Test func physicalClickIsNotATap() {
+        // 触摸期间按下过（物理单击 / 双击）：不算轻点
+        var pressed = Harness(tuning: t, environment: .test)
+        pressed.run(tapThenHold(Spot.a, Spot.a).frames(rate: rate), events: [(0.04, .physicalPress)], until: 0.3)
+        #expect(!opened(pressed))
+        // 抬起之后才到的按下（系统"轻点来点按"）不影响
+        var tapToClick = Harness(tuning: t, environment: .test)
+        tapToClick.run(tapThenHold(Spot.a, Spot.a).frames(rate: rate), events: [(0.1, .physicalPress)], until: 0.3)
+        #expect(opened(tapToClick))
+    }
+
+    @Test func minimumDwellCancelsEarlyLifts() {
+        let dwell = tuning { $0.tapHold = true; $0.tapHoldMinMs = 300 }
+        let early = run(tapThenHold(Spot.a, Spot.a, lift: 0.35), tuning: dwell, until: 0.6)
+        #expect(early.ends == [.earlyLift] && early.actions.isEmpty)
+        let late = run(tapThenHold(Spot.a, Spot.a, lift: 0.6), tuning: dwell, until: 0.8)
+        #expect(late.ends == [.committed("a")])
+    }
+
+    @Test func liftOutsideTheMappingRegionCancels() {
+        let small = tuning { $0.tapHold = true; $0.mappingScale = 0.4 }
+        let h = run(tapThenHold((0.1, 0.5), (0.1, 0.5)), tuning: small, until: 0.6)
+        #expect(h.ends == [.liftOutside] && h.actions.isEmpty)
+    }
+
+    @Test func opensItsBoundPanel() {
+        var env = SessionEnvironment.test
+        env.panels = [.test, Layout(id: "other", name: "其他", slots: [])]
+        env.bindings = [.tapHold: "other"]
+        #expect(activeID(run(tapThenHold(Spot.gap, Spot.gap, lift: 1), tuning: t, environment: env, until: 0.5)) == "other")
+    }
+
+    @Test func cornerDoubleTapTakesTapsInItsCorner() {
+        // D26：第一下落在开启了"轻点两下"的角落，让给角落轻点两下：第二下落下时不出面板，抬起后才出
+        let both = tuning { $0.tapHold = true; $0.doubleTapCorners = [.bottomLeft]; $0.holdCorners = [] }
+        let g = Gesture(device: .builtIn).touch(id: 1, at: Spot.anchor, t: 0).lift(id: 1, t: 0.08)
+            .touch(id: 2, at: Spot.anchor, t: 0.2).lift(id: 2, t: 0.28)
+        let h = run(g, tuning: both, until: 0.4)
+        #expect(h.firstTime { if case .showPanel = $0 { true } else { false } }.map { $0 >= 0.28 } == true)
+        #expect(activeCorner(h) == .bottomLeft)
+        // 其他位置照常是轻点后按住
+        #expect(run(tapThenHold(Spot.a, Spot.a), tuning: both, until: 0.6).ends == [.committed("a")])
     }
 }

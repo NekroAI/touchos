@@ -221,9 +221,16 @@ extension Action: Codable {
 }
 
 extension PanelTrigger {
-    /// 配置文件中的写法：`hold.bottomLeft`、`doubleTap.topRight`、`threeFingerTap`、`fourFingerTap`
+    /// 全部唤起方式，设置页与配置文件按这个顺序排列。角落类只列四个角（左右边缘只给锚指按住的实验用）
+    public static let all: [PanelTrigger] = [.tapHold, .fourFingerTap, .threeFingerTap]
+        + corners.map(PanelTrigger.hold) + corners.map(PanelTrigger.cornerDoubleTap)
+
+    public static let corners: [AnchorCorner] = [.topLeft, .topRight, .bottomLeft, .bottomRight]
+
+    /// 配置文件中的写法：`tapHold`、`hold.bottomLeft`、`doubleTap.topRight`、`threeFingerTap`、`fourFingerTap`
     public var key: String {
         switch self {
+        case .tapHold: "tapHold"
         case .hold(let c): "hold.\(c.rawValue)"
         case .cornerDoubleTap(let c): "doubleTap.\(c.rawValue)"
         case .threeFingerTap: "threeFingerTap"
@@ -236,6 +243,7 @@ extension PanelTrigger {
         switch (parts.first, parts.count == 2 ? AnchorCorner(rawValue: parts[1]) : nil) {
         case ("hold", let c?): self = .hold(c)
         case ("doubleTap", let c?): self = .cornerDoubleTap(c)
+        case ("tapHold", nil) where parts.count == 1: self = .tapHold
         case ("threeFingerTap", nil) where parts.count == 1: self = .threeFingerTap
         case ("fourFingerTap", nil) where parts.count == 1: self = .fourFingerTap
         default: return nil

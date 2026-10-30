@@ -90,29 +90,38 @@ struct PanelThumbnail: View {
 
     static let size = CGSize(width: 26, height: 18)
 
-    var body: some View {
-        Canvas { ctx, size in
-            if panel.isRing {
-                let n = max(panel.ringItems.count, 1)
-                let c = CGPoint(x: size.width / 2, y: size.height / 2), r = size.height / 2 - 2
-                for i in 0..<n {
-                    let a = Double(i) / Double(n) * 2 * .pi
-                    let p = CGPoint(x: c.x + r * sin(a), y: c.y - r * cos(a))
-                    ctx.fill(Path(ellipseIn: CGRect(x: p.x - 1.6, y: p.y - 1.6, width: 3.2, height: 3.2)), with: .style(.secondary))
-                }
-                ctx.stroke(Path(ellipseIn: CGRect(x: c.x - 2, y: c.y - 2, width: 4, height: 4)), with: .style(.tertiary), lineWidth: 1)
-            } else {
-                for slot in panel.slots {
-                    guard let n = panel.normalizedRect(of: slot) else { continue }
-                    let r = CGRect(x: n.minX * size.width, y: n.minY * size.height, width: n.width * size.width, height: n.height * size.height)
-                        .insetBy(dx: 0.8, dy: 0.8)
-                    if slot.isCancel {
-                        ctx.stroke(Path(ellipseIn: r.insetBy(dx: (r.width - 3.5) / 2, dy: (r.height - 3.5) / 2)), with: .style(.tertiary), lineWidth: 1)
-                    } else {
-                        ctx.fill(Path(roundedRect: r, cornerRadius: 1.2), with: .style(.secondary))
-                    }
+    /// 在 `rect` 里画出按钮块（触控板预览也用）
+    static func draw(_ panel: PanelLayout, in ctx: inout GraphicsContext, rect: CGRect,
+                     fill: GraphicsContext.Shading = .style(.secondary), line: GraphicsContext.Shading = .style(.tertiary)) {
+        let unit = min(rect.width, rect.height) / 18  // 缩略图高 18 时的线宽、圆点等为 1
+        if panel.isRing {
+            let n = max(panel.ringItems.count, 1)
+            let c = CGPoint(x: rect.midX, y: rect.midY), r = rect.height / 2 - 2 * unit
+            for i in 0..<n {
+                let a = Double(i) / Double(n) * 2 * .pi
+                let p = CGPoint(x: c.x + r * sin(a), y: c.y - r * cos(a))
+                ctx.fill(Path(ellipseIn: CGRect(x: p.x - 1.6 * unit, y: p.y - 1.6 * unit, width: 3.2 * unit, height: 3.2 * unit)), with: fill)
+            }
+            ctx.stroke(Path(ellipseIn: CGRect(x: c.x - 2 * unit, y: c.y - 2 * unit, width: 4 * unit, height: 4 * unit)), with: line, lineWidth: unit)
+        } else {
+            for slot in panel.slots {
+                guard let n = panel.normalizedRect(of: slot) else { continue }
+                let r = CGRect(x: rect.minX + n.minX * rect.width, y: rect.minY + n.minY * rect.height,
+                               width: n.width * rect.width, height: n.height * rect.height)
+                    .insetBy(dx: 0.8 * unit, dy: 0.8 * unit)
+                if slot.isCancel {
+                    let d = 3.5 * unit
+                    ctx.stroke(Path(ellipseIn: r.insetBy(dx: (r.width - d) / 2, dy: (r.height - d) / 2)), with: line, lineWidth: unit)
+                } else {
+                    ctx.fill(Path(roundedRect: r, cornerRadius: 1.2 * unit), with: fill)
                 }
             }
+        }
+    }
+
+    var body: some View {
+        Canvas { ctx, size in
+            Self.draw(panel, in: &ctx, rect: CGRect(origin: .zero, size: size))
         }
         .frame(width: Self.size.width, height: Self.size.height)
         .padding(2)
@@ -543,12 +552,32 @@ private struct RingCanvas: View {
 extension AppConfig {
     /// 已开启的唤起方式及其名称
     var enabledTriggers: [(trigger: PanelTrigger, title: String)] {
-        var list: [(trigger: PanelTrigger, title: String)] = []
-        if triggers.fourFingerTap { list.append((.fourFingerTap, "四指轻点")) }
-        if triggers.threeFingerTap { list.append((.threeFingerTap, "三指轻点")) }
-        if triggers.hold { list.append((.hold(triggers.anchorCorner), "按住角落")) }
-        if triggers.cornerDoubleTap { list.append((.cornerDoubleTap(triggers.anchorCorner), "角落轻点两下")) }
-        return list
+        triggers.list.map { ($0, $0.title) }
+    }
+}
+
+extension PanelTrigger {
+    var title: String {
+        switch self {
+        case .tapHold: "轻点后按住"
+        case .fourFingerTap: "四指轻点"
+        case .threeFingerTap: "三指轻点"
+        case .hold(let c): "按住\(c.title)"
+        case .cornerDoubleTap(let c): "\(c.title)轻点两下"
+        }
+    }
+}
+
+extension AnchorCorner {
+    var title: String {
+        switch self {
+        case .topLeft: "左上角"
+        case .topRight: "右上角"
+        case .bottomLeft: "左下角"
+        case .bottomRight: "右下角"
+        case .leftEdge: "左边缘"
+        case .rightEdge: "右边缘"
+        }
     }
 }
 

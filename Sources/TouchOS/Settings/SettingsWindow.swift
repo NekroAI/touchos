@@ -222,63 +222,7 @@ func binding<T>(_ configs: ConfigController, _ path: WritableKeyPath<AppConfig, 
     Binding(get: { configs.config[keyPath: path] }, set: { v in configs.update { $0[keyPath: path] = v } })
 }
 
-// MARK: 唤起与手感
-
-private struct TriggersPage: View {
-    let configs: ConfigController
-
-    var body: some View {
-        Form {
-            Section {
-                Toggle("四指轻点", isOn: binding(configs, \.triggers.fourFingerTap))
-                Toggle("三指轻点", isOn: binding(configs, \.triggers.threeFingerTap))
-                Toggle("锚指按住角落", isOn: binding(configs, \.triggers.hold))
-                Toggle("在角落轻点两下", isOn: binding(configs, \.triggers.cornerDoubleTap))
-                Picker("角落", selection: binding(configs, \.triggers.anchorCorner)) {
-                    ForEach(Self.corners, id: \.0) { Text($0.1).tag($0.0) }
-                }
-                .disabled(!configs.config.triggers.hold && !configs.config.triggers.cornerDoubleTap)
-            } header: {
-                Text("唤起方式")
-            } footer: {
-                Text("面板开着时再做一次同样的多指轻点即可关闭。三指以上在板上移动时交还系统手势。")
-            }
-            Section {
-                ForEach(triggers, id: \.0.key) { trigger, title in
-                    Picker(title, selection: bindingFor(trigger)) {
-                        Text("默认面板（\(configs.config.panels.first?.name ?? "—")）").tag(String?.none)
-                        ForEach(configs.config.panels, id: \.id) { Text($0.name).tag(Optional($0.id)) }
-                    }
-                }
-            } header: {
-                Text("打开哪个面板")
-            } footer: {
-                Text("每种唤起方式可以打开不同的面板；面板之间用双指上下滑动切换，双指捏合查看全部。")
-            }
-            Section("手感") {
-                Toggle("常驻：锚指抬起后面板保留", isOn: binding(configs, \.general.stickyPanel))
-                LabeledSlider(title: "面板大小（占屏幕）", value: binding(configs, \.sizes.panelScale), range: Tuning.panelScaleRange)
-                LabeledSlider(title: "映射区大小（占触控板）", value: binding(configs, \.sizes.mappingScale), range: Tuning.mappingScaleRange)
-                Toggle("触觉反馈", isOn: binding(configs, \.general.haptics))
-            }
-        }
-        .formStyle(.grouped)
-    }
-
-    static let corners: [(AnchorCorner, String)] = [
-        (.bottomLeft, "左下"), (.bottomRight, "右下"), (.topLeft, "左上"), (.topRight, "右上"),
-    ]
-
-    private var triggers: [(PanelTrigger, String)] {
-        configs.config.enabledTriggers.map { ($0.trigger, $0.title) }
-    }
-
-    private func bindingFor(_ trigger: PanelTrigger) -> Binding<String?> {
-        Binding(get: { configs.config.binding(for: trigger) }, set: { id in configs.update { $0.bind(trigger, to: id) } })
-    }
-}
-
-private struct LabeledSlider: View {
+struct LabeledSlider: View {
     let title: String
     @Binding var value: Double
     let range: ClosedRange<Double>

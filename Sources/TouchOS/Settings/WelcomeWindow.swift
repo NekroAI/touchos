@@ -55,9 +55,14 @@ private struct WelcomeView: View {
                     }
                 }
             }
-            Step(number: 2, title: "四指轻点触控板", done: false) {
-                Text("面板出现在屏幕中央。手指在触控板上的位置直接对应面板上的按钮：移到想要的按钮上，抬起即执行。")
-                Text("按下（物理按压）也会执行，面板保留，可以连按。移到面板外抬起则取消。")
+            Step(number: 2, title: "轻点一下，紧接着按住", done: false) {
+                Text("第二下落下时面板就出现在屏幕中央。不松手，手指在触控板上的位置直接对应面板上的按钮：滑到想要的按钮上，抬起即执行。")
+                Text("按下（物理按压）也会执行，面板保留，可以连按。滑出映射区抬起则取消。四指轻点同样可以打开面板，唤起方式可在设置里增减。")
+                if TapToClick.isOn {
+                    Label("系统的「轻点来点按」已开启，第一下轻点会先点一次鼠标，建议关闭。", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Button("打开触控板设置") { NSWorkspace.shared.open(TapToClick.settingsURL) }
+                }
             }
             Step(number: 3, title: "切换与编辑", done: false) {
                 Text("双指上下滑动切换面板，双指捏合查看全部面板。")
