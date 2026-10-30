@@ -34,8 +34,13 @@ final class CloudSyncController {
     @ObservationIgnored private var source: DispatchSourceFileSystemObject?
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var pending: DispatchWorkItem?
-    /// 等文件从云端下载完再开启（新 Mac 上打开开关时）：true 表示采用 iCloud 中的配置
-    @ObservationIgnored private var enableWhenDownloaded: Bool?
+    /// 等文件从云端下载完再开启（新 Mac 上打开开关时）：已选好用哪一份，或下载完再问
+    @ObservationIgnored private var enableWhenDownloaded: PendingChoice?
+
+    private enum PendingChoice {
+        case ask
+        case use(cloud: Bool)
+    }
 
     init(configs: ConfigController) {
         self.configs = configs
@@ -83,7 +88,7 @@ final class CloudSyncController {
             return
         }
         if downloadIfNeeded() {
-            enableWhenDownloaded = enableWhenDownloaded ?? false
+            enableWhenDownloaded = enableWhenDownloaded ?? .ask
             watch()
             return
         }
@@ -91,30 +96,42 @@ final class CloudSyncController {
         enable(useCloud: choice)
     }
 
-    /// 首次启动时在 iCloud 云盘里找到配置：问是否接入（D35，另一台 Mac 装好后开箱即用）
+    /// 首次启动时在 iCloud 云盘里找到配置：问是否接入、用哪一份（D35，另一台 Mac 装好后开箱即用）
     func offerToJoin() {
         guard isAvailable, hasCloudConfig, !configs.config.sync.iCloud else { return }
         NSApp.activate()
         let alert = NSAlert()
         alert.messageText = "在 iCloud 云盘中找到了 TouchOS 配置"
-        alert.informativeText = "可能来自你的另一台 Mac。启用 iCloud 同步并使用这份配置吗？\n面板大小、映射区、按钮间隙只属于这台 Mac，不受影响。"
-        alert.addButton(withTitle: "启用同步")
-        alert.addButton(withTitle: "暂不")
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        var info = "可能来自你的另一台 Mac。开启 iCloud 同步后，两台 Mac 用同一份配置：要用哪一份？另一份会放进这台 Mac 的配置备份，可以随时恢复。"
+        if let date = Self.modifiedAt(Self.fileURL) {
+            info += "\niCloud 中的配置修改于 \(date.formatted(date: .abbreviated, time: .shortened))。"
+        }
+        alert.informativeText = info + "\n面板大小、映射区、按钮间隙只属于这台 Mac，不受影响。"
+        alert.addButton(withTitle: "使用 iCloud 中的配置")
+        alert.addButton(withTitle: "使用这台 Mac 的配置")
+        alert.addButton(withTitle: "暂不同步")
+        let useCloud: Bool
+        switch alert.runModal() {
+        case .alertFirstButtonReturn: useCloud = true
+        case .alertSecondButtonReturn: useCloud = false
+        default: return
+        }
         if downloadIfNeeded() {
-            enableWhenDownloaded = true
+            // 用这台 Mac 的也要等下载完：被替换的那份要先进备份
+            enableWhenDownloaded = .use(cloud: useCloud)
             watch()
             return
         }
-        enable(useCloud: true)
+        enable(useCloud: useCloud)
     }
 
     /// 打开同步：`useCloud` 为 true 时以 iCloud 中的配置为准，否则以本机为准
     private func enable(useCloud: Bool) {
         enableWhenDownloaded = nil
         if let local = try? CloudSync.payload(configs.config), let cloud = try? Data(contentsOf: Self.fileURL) {
-            // 把"上一次一致"设成将要被替换的一方，对账时就会照着另一方改
+            // 把"上一次一致"设成将要被替换的一方，对账时就会照着另一方改；被替换的一方先进本机备份
             try? (useCloud ? local : cloud).write(to: syncedURL, options: .atomic)
+            if cloud != local, let replaced = useCloud ? try? configs.config.encoded() : cloud { configs.keepBackup(replaced) }
         }
         configs.update { $0.sync.iCloud = true }
         watch()
@@ -154,9 +171,13 @@ final class CloudSyncController {
     // MARK: 对账
 
     func reconcile() {
-        if let useCloud = enableWhenDownloaded {
+        if let pending = enableWhenDownloaded {
             guard !downloadIfNeeded() else { return }
-            guard let choice = useCloud ? true : chooseSide() else {
+            let decided: Bool? = switch pending {
+            case .use(let cloud): cloud
+            case .ask: chooseSide()
+            }
+            guard let choice = decided else {
                 // 下载完后取消了：不开启
                 enableWhenDownloaded = nil
                 stopWatching()
