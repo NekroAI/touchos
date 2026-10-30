@@ -355,7 +355,7 @@ private struct LivePanel: View {
     var body: some View {
         let sliders = Dictionary(uniqueKeysWithValues: layout.slots.filter { $0.slider != nil }.map { ($0.id, Self.sliderPreview) })
         PanelView(layout: layout, size: stage.real, slotGap: Tuning().slotGap, current: true, hovered: lit, phase: .shown,
-                  sliderValues: sliders, pulses: [:], presses: [:], origin: nil, outside: false)
+                  sliderValues: sliders, sliderBase: [:], pulses: [:], presses: [:], origin: nil, outside: false)
             .environment(\.colorScheme, .dark)
             .scaleEffect(stage.scale, anchor: .topLeading)
             .frame(width: stage.display.width, height: stage.display.height, alignment: .topLeading)

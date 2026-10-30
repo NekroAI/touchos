@@ -7,6 +7,8 @@ struct ChipView: View {
     let geometry: ChipGeometry
     let hovered: Bool
     let value: Double?
+    /// 滑杆调整前的值：显示原位置与差值（D29）
+    let base: Double?
     let pulse: Int
     let presses: Int
     let phase: OverlayModel.Phase
@@ -20,7 +22,7 @@ struct ChipView: View {
     var body: some View {
         let g = geometry
         let face = FaceKind(slot: slot, geometry: g)
-        Face(kind: face, slot: slot, size: g.frame.size, lit: hovered || chosen, value: value)
+        Face(kind: face, slot: slot, size: g.frame.size, lit: hovered || chosen, value: value, base: base)
             .frame(width: g.frame.width, height: g.frame.height)
             // 波纹与连按计数贴着各主题实际画出来的按钮轮廓（`chipBody`），不按单元格估算
             .overlayPreferenceValue(ChipBodyKey.self) { body in
@@ -118,34 +120,84 @@ private struct Face: View {
     let size: CGSize
     let lit: Bool
     let value: Double?
+    let base: Double?
     @Environment(\.overlayStyle) private var style
 
     var body: some View {
+        let slider = SliderReading(value: value ?? 0, base: base)
         switch style.theme {
-        case .orb: OrbFace(kind: kind, slot: slot, size: size, lit: lit, value: value ?? 0, accent: style.accent)
-        case .lens: LensFace(kind: kind, slot: slot, size: size, lit: lit, value: value ?? 0, accent: style.accent)
-        case .holo: HoloFace(kind: kind, slot: slot, size: size, lit: lit, value: value ?? 0, accent: style.accent)
+        case .orb: OrbFace(kind: kind, slot: slot, size: size, lit: lit, slider: slider, accent: style.accent)
+        case .lens: LensFace(kind: kind, slot: slot, size: size, lit: lit, slider: slider, accent: style.accent)
+        case .holo: HoloFace(kind: kind, slot: slot, size: size, lit: lit, slider: slider, accent: style.accent)
         }
     }
 }
 
 // MARK: 公用小件
 
-private func percent(_ v: Double) -> Int { Int((v * 100).rounded()) }
 
-/// 滑杆的填充：横向从左、纵向从下
+/// 滑杆的读数：当前值与调整前的值（D29）
+struct SliderReading: Equatable {
+    let value: Double
+    let base: Double?
+
+    var percent: Int { Int((value * 100).rounded()) }
+    /// 与调整前相差的百分点；没有调整时为 nil
+    var delta: Int? {
+        guard let base else { return nil }
+        let d = percent - Int((base * 100).rounded())
+        return d == 0 ? nil : d
+    }
+    var deltaText: String { delta.map { $0 > 0 ? "+\($0)" : "\($0)" } ?? "" }
+    var key: String { "\(percent)|\(deltaText)" }
+}
+
+/// 滑杆的读数文字：百分比，调整中在旁边（竖向在下方）用强调色标出差值
+private struct SliderReadout: View {
+    let reading: SliderReading
+    let vertical: Bool
+    let accent: Color
+    var text: (String) -> Text = { Text($0).font(.system(size: 12).monospacedDigit()) }
+
+    var body: some View {
+        let layout = vertical ? AnyLayout(VStackLayout(spacing: 2)) : AnyLayout(HStackLayout(spacing: 5))
+        layout {
+            text("\(reading.percent)%")
+            if reading.delta != nil { text(reading.deltaText).foregroundStyle(accent) }
+        }
+    }
+}
+
+/// 滑杆的填充：横向从左、纵向从下。调整中在原位置留一道刻度；调小时减掉的部分留淡影（D29）
 private struct FillBar: View {
     let value: Double
+    var base: Double?
     let color: Color
+
+    static let tick: CGFloat = 2
 
     var body: some View {
         GeometryReader { g in
             let vertical = g.size.height > g.size.width
-            Rectangle().fill(color)
-                .frame(width: vertical ? g.size.width : g.size.width * value, height: vertical ? g.size.height * value : g.size.height)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: vertical ? .bottom : .leading)
+            let length = vertical ? g.size.height : g.size.width
+            let moved = base.map { abs($0 - value) >= 0.005 } ?? false
+            ZStack(alignment: vertical ? .bottom : .leading) {
+                if moved, let base, base > value { bar(base, length, vertical, g.size).fill(color.opacity(0.32)) }
+                bar(value, length, vertical, g.size).fill(color)
+                if moved, let base {
+                    Rectangle().fill(Color.white.opacity(0.9))
+                        .frame(width: vertical ? g.size.width : Self.tick, height: vertical ? Self.tick : g.size.height)
+                        .offset(x: vertical ? 0 : base * length - Self.tick / 2, y: vertical ? -(base * length - Self.tick / 2) : 0)
+                }
+            }
+            .frame(width: g.size.width, height: g.size.height, alignment: vertical ? .bottom : .leading)
         }
         .animation(.easeOut(duration: 0.06), value: value)
+    }
+
+    private func bar(_ v: Double, _ length: CGFloat, _ vertical: Bool, _ size: CGSize) -> some Shape {
+        Rectangle().size(width: vertical ? size.width : v * length, height: vertical ? v * length : size.height)
+            .offset(y: vertical ? size.height - v * length : 0)
     }
 }
 
@@ -250,7 +302,7 @@ private struct OrbFace: View {
     let slot: Slot
     let size: CGSize
     let lit: Bool
-    let value: Double
+    let slider: SliderReading
     let accent: Color
 
     static let orb: CGFloat = 58
@@ -288,19 +340,33 @@ private struct OrbFace: View {
                 }
         case .slider:
             let shape = Capsule()
+            let vertical = size.height > size.width
+            let long = max((vertical ? size.height : size.width) - 16, 0)
+            let thick = min(Self.sliderHeight, max((vertical ? size.width : size.height) - 16, 0))
             ZStack {
-                FillBar(value: value, color: lit ? accent.opacity(0.6) : Color.white.opacity(0.16)).clipShape(shape)
-                HStack(spacing: 10) {
-                    Image(systemName: slot.symbol).font(.system(size: 18, weight: .medium))
-                    Text(slot.title).font(.system(size: 13, weight: .medium))
-                    Spacer(minLength: 4)
-                    Text("\(percent(value))%").font(.system(size: 12).monospacedDigit()).opacity(0.75)
+                FillBar(value: slider.value, base: slider.base, color: lit ? accent.opacity(0.6) : Color.white.opacity(0.16)).clipShape(shape)
+                if vertical {
+                    VStack(spacing: 6) {
+                        SliderReadout(reading: slider, vertical: true, accent: .white).opacity(0.75)
+                        Spacer(minLength: 4)
+                        Image(systemName: slot.symbol).font(.system(size: 18, weight: .medium))
+                        Text(slot.title).font(.system(size: 11, weight: .medium)).lineLimit(1)
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.vertical, 20)
+                } else {
+                    HStack(spacing: 10) {
+                        Image(systemName: slot.symbol).font(.system(size: 18, weight: .medium))
+                        Text(slot.title).font(.system(size: 13, weight: .medium))
+                        Spacer(minLength: 4)
+                        SliderReadout(reading: slider, vertical: false, accent: .white).opacity(0.75)
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 20)
                 }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 20)
             }
             .glass(shape, tint: Color.white.opacity(0.09), edge: lit ? 0.45 : 0.2, glow: lit ? accent : nil)
-            .frame(width: max(size.width - 16, 0), height: min(Self.sliderHeight, max(size.height - 16, 0)))
+            .frame(width: vertical ? thick : long, height: vertical ? long : thick)
             .chipBody(.capsule)
         case .widget:
             let shape = RoundedRectangle(cornerRadius: 30, style: .continuous)
@@ -338,7 +404,7 @@ private struct LensFace: View {
     let slot: Slot
     let size: CGSize
     let lit: Bool
-    let value: Double
+    let slider: SliderReading
     let accent: Color
 
     /// 液态光斑只画图标，波纹与连按计数围着图标这么大的圆
@@ -371,22 +437,36 @@ private struct LensFace: View {
                 }
                 .floatingLabel("lens.round|\(slot.symbol)|\(slot.title)|\(lit)")
         case .slider:
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 10) {
-                    Image(systemName: slot.symbol).font(.system(size: 20))
-                    Text(slot.title).font(.system(size: 13, weight: .medium)).opacity(lit ? 0.96 : 0.6)
-                    Spacer(minLength: 4)
-                    Text("\(percent(value))%").font(.system(size: 12).monospacedDigit()).opacity(lit ? 0.9 : 0.45)
+            let vertical = size.height > size.width
+            let track = Capsule().fill(Color.white.opacity(0.14))
+                .overlay(FillBar(value: slider.value, base: slider.base, color: lit ? accent : Color.white.opacity(0.78)).clipShape(Capsule()))
+            Group {
+                if vertical {
+                    VStack(spacing: 10) {
+                        SliderReadout(reading: slider, vertical: true, accent: accent).opacity(lit ? 0.9 : 0.45)
+                        track.frame(width: lit ? 6 : 4).frame(maxHeight: .infinity)
+                        Image(systemName: slot.symbol).font(.system(size: 20))
+                        Text(slot.title).font(.system(size: 12, weight: .medium)).opacity(lit ? 0.96 : 0.6).lineLimit(1)
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14).padding(.vertical, 22)
+                } else {
+                    VStack(alignment: .leading, spacing: 0) {
+                        HStack(spacing: 10) {
+                            Image(systemName: slot.symbol).font(.system(size: 20))
+                            Text(slot.title).font(.system(size: 13, weight: .medium)).opacity(lit ? 0.96 : 0.6)
+                            Spacer(minLength: 4)
+                            SliderReadout(reading: slider, vertical: false, accent: accent).opacity(lit ? 0.9 : 0.45)
+                        }
+                        .foregroundStyle(.white)
+                        Spacer(minLength: 8)
+                        track.frame(height: lit ? 6 : 4)
+                    }
+                    .padding(.horizontal, 20).padding(.vertical, 22)
                 }
-                .foregroundStyle(.white)
-                Spacer(minLength: 8)
-                Capsule().fill(Color.white.opacity(0.14))
-                    .overlay(FillBar(value: value, color: lit ? accent : Color.white.opacity(0.78)).clipShape(Capsule()))
-                    .frame(height: lit ? 6 : 4)
             }
-            .padding(.horizontal, 20).padding(.vertical, 22)
             .chipBody(.rounded(20))
-            .floatingLabel("lens.slider|\(slot.symbol)|\(slot.title)|\(lit)|\(percent(value))")
+            .floatingLabel("lens.slider|\(slot.symbol)|\(slot.title)|\(lit)|\(vertical)|\(slider.key)")
         case .widget:
             let art = min(96, max(size.height * 0.38, 40))
             VStack(alignment: .leading, spacing: 14) {
@@ -414,7 +494,7 @@ private struct HoloFace: View {
     let slot: Slot
     let size: CGSize
     let lit: Bool
-    let value: Double
+    let slider: SliderReading
     let accent: Color
 
     /// 全息主题的文字色：偏青的白
@@ -464,20 +544,35 @@ private struct HoloFace: View {
     @ViewBuilder private var content: some View {
         switch kind {
         case .slider:
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 10) {
+            let vertical = size.height > size.width
+            let readout = SliderReadout(reading: slider, vertical: vertical, accent: Self.ink) {
+                Text($0).font(.system(size: 13, weight: .medium, design: .monospaced))
+            }
+            .foregroundStyle(accent.opacity(lit ? 1 : 0.7))
+            let bar = Rectangle().fill(accent.opacity(0.2))
+                .overlay(FillBar(value: slider.value, base: slider.base, color: accent).shadow(color: accent.opacity(0.8), radius: 4))
+            if vertical {
+                VStack(spacing: 10) {
+                    readout
+                    bar.frame(width: 2).frame(maxHeight: .infinity)
                     Image(systemName: slot.symbol).font(.system(size: 18, weight: .light)).foregroundStyle(accent.opacity(lit ? 1 : 0.85))
                     label
-                    Spacer(minLength: 4)
-                    Text(String(format: "%03d", percent(value))).font(.system(size: 13, weight: .medium, design: .monospaced))
-                        .foregroundStyle(accent.opacity(lit ? 1 : 0.7))
                 }
-                Spacer(minLength: 8)
-                Rectangle().fill(accent.opacity(0.2))
-                    .overlay(FillBar(value: value, color: accent).shadow(color: accent.opacity(0.8), radius: 4))
-                    .frame(height: 2)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 26).padding(.bottom, 24)
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 10) {
+                        Image(systemName: slot.symbol).font(.system(size: 18, weight: .light)).foregroundStyle(accent.opacity(lit ? 1 : 0.85))
+                        label
+                        Spacer(minLength: 4)
+                        readout
+                    }
+                    Spacer(minLength: 8)
+                    bar.frame(height: 2)
+                }
+                .padding(.horizontal, 20).padding(.top, 24).padding(.bottom, 26)
             }
-            .padding(.horizontal, 20).padding(.top, 24).padding(.bottom, 26)
         case .widget:
             let art = min(90, max(size.height * 0.36, 40))
             VStack(alignment: .leading, spacing: 14) {

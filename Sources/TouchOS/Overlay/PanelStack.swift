@@ -50,7 +50,7 @@ struct PanelStack: View {
                     PanelView(layout: layout, size: state.size, slotGap: model.slotGap, current: current,
                               hovered: current && f.overview < 0.5 ? state.hovered : nil,
                               phase: current ? model.phase : .shown,
-                              sliderValues: state.sliderValues,
+                              sliderValues: state.sliderValues, sliderBase: state.sliderBase,
                               pulses: current ? model.pulses : [:], presses: current ? model.presses : [:],
                               origin: nil, outside: current && f.outside)
                         .equatable()
@@ -198,6 +198,7 @@ struct PanelView: View, Equatable {
     let hovered: SlotID?
     let phase: OverlayModel.Phase
     let sliderValues: [SlotID: Double]
+    let sliderBase: [SlotID: Double]
     let pulses: [SlotID: Int]
     let presses: [SlotID: Int]
     let origin: CGPoint?
@@ -206,7 +207,7 @@ struct PanelView: View, Equatable {
 
     nonisolated static func == (a: PanelView, b: PanelView) -> Bool {
         a.layout == b.layout && a.size == b.size && a.slotGap == b.slotGap && a.current == b.current && a.hovered == b.hovered
-            && a.phase == b.phase && a.sliderValues == b.sliderValues && a.pulses == b.pulses && a.presses == b.presses
+            && a.phase == b.phase && a.sliderValues == b.sliderValues && a.sliderBase == b.sliderBase && a.pulses == b.pulses && a.presses == b.presses
             && a.origin == b.origin && a.outside == b.outside
     }
 
@@ -229,7 +230,7 @@ struct PanelView: View, Equatable {
             }
             ForEach(chips, id: \.slot.id) { chip in
                 ChipView(slot: chip.slot, geometry: chip.geometry, hovered: hovered == chip.slot.id,
-                         value: sliderValues[chip.slot.id], pulse: pulses[chip.slot.id] ?? 0,
+                         value: sliderValues[chip.slot.id], base: sliderBase[chip.slot.id], pulse: pulses[chip.slot.id] ?? 0,
                          presses: presses[chip.slot.id] ?? 0, phase: phase, origin: origin, groupCenter: tester.center,
                          delay: PanelMetrics.enterStagger * hypot(chip.geometry.frame.midX - origin.x,
                                                                   chip.geometry.frame.midY - origin.y) / max(farthest, 1))

@@ -126,9 +126,9 @@ final class TouchSimulator {
         // 在"常用"面板右侧的竖向音量滑杆上移动后抬起，看提交动效（预演不执行动作，音量不变）
         "commit": tap + [
             (0.8, [:]),
-            (0.81, [9: CGPoint(x: 0.9, y: 0.3)]),
-            (1.6, [9: CGPoint(x: 0.9, y: 0.65)]),
-            (2.0, [9: CGPoint(x: 0.9, y: 0.65)]),
+            (0.81, [9: CGPoint(x: 0.74, y: 0.3)]),
+            (1.6, [9: CGPoint(x: 0.74, y: 0.65)]),
+            (2.0, [9: CGPoint(x: 0.74, y: 0.65)]),
             (2.01, [:]),
         ],
         // 双指上推两次再下拉一次：面板 1 → 2 → 3 → 2（D23）
@@ -160,6 +160,9 @@ final class TouchSimulator {
         var environment = driver.environmentSnapshot
         environment.devices = [Self.device.id: Self.device]
         environment.suspended = false
+        // 真实会话在手指落下时读取滑杆的实际值，预演没有真实触摸，这里补读（只读，预演不改系统音量与亮度）
+        environment.sliderValues[.volume] = SystemVolume.get()
+        environment.sliderValues[.brightness] = DisplayBrightness.get()
         var tuning = driver.tuningSnapshot
         tuning.fourFingerTap = true
         tuning.tapHold = true

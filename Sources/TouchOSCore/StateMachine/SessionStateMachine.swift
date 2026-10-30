@@ -120,8 +120,10 @@ public struct PanelState: Equatable, Sendable {
     public var sticky = false
     /// 唤起位置（面板 pt，不钳制）：轻点的中心或锚指落点。按钮从这里弹开（D20）
     public var origin: CGPoint?
-    /// 滑杆槽位当前显示的值：指点指在滑杆上时为预览值，否则为进入激活时的实际值
+    /// 滑杆槽位当前显示的值：指点指在滑杆上时为预览值，否则为基准值
     public var sliderValues: [SlotID: Double] = [:]
+    /// 滑杆的基准值：显示调整前的位置与差值（D29）
+    public var sliderBase: [SlotID: Double] = [:]
 }
 
 public struct ActionRequest: Equatable, Sendable {
@@ -244,9 +246,11 @@ public struct ActiveContext: Equatable, Sendable {
     public var pressConsumed = false
     /// 在关闭上按住的开始时刻（D23）
     public var holdStartedAt: TimeInterval?
-    /// 进入激活时各滑杆的实际值；离开滑杆时预览恢复为该值
+    /// 各滑杆的基准值：进入激活时的实际值，接受调整后换成新值；离开滑杆时恢复为该值（D29）
     public var sliderBase: [SlotID: Double] = [:]
     public var sliderValues: [SlotID: Double] = [:]
+    /// 已经送给系统的值：滑杆随手指实时生效（D29）
+    public var sliderApplied: [SliderTarget: Double] = [:]
     /// 常驻模式：锚指已抬起，面板保留，单指操作
     public var anchorLifted = false
     /// 轻点后按住唤起时，早于该时刻抬起只关闭（D25，`P.tapHoldMinMs`）
@@ -488,6 +492,7 @@ public struct SessionStateMachine: Sendable {
             }
         }
         active.sliderValues = active.sliderBase
+        active.sliderApplied = environment.sliderValues
         active.entryPoint = entry
         var effects: [SessionEffect] = [setPolicy(TapPolicy(mode: .active, momentumUntil: policy.momentumUntil))]
         if anchorID == nil {
@@ -503,6 +508,7 @@ public struct SessionStateMachine: Sendable {
             active.hovered = h.slot
             active.overviewHover = h.overview
             updateSliderPreview(&active, point: mapper().panelPoint(c.position, panelSize: size))
+            effects += syncSliders(&active)
         }
         if tuning.panelDelayMs <= 0 || anchorID == nil {
             active.panelVisible = true
@@ -568,11 +574,11 @@ public struct SessionStateMachine: Sendable {
         case .escapeKey:
             return exit(ctx, now: ctx.lastFrameAt, end: .escape)  // T16：拦截按激活策略吞掉该按键
         case .deviceRemoved(let id) where id == ctx.device:
-            return abortActive(.deviceRemoved)
+            return abortActive(.deviceRemoved, ctx)
         case .tapDisabled:
-            return abortActive(.tapDisabled)
+            return abortActive(.tapDisabled, ctx)
         case .forceCancel(let reason):
-            return abortActive(.forced(reason))
+            return abortActive(.forced(reason), ctx)
         default:
             return []
         }
@@ -736,7 +742,7 @@ public struct SessionStateMachine: Sendable {
         ctx.overviewHover = h.overview
         ctx.pressConsumed = false
         updateSliderPreview(&ctx, point: mapper().panelPoint(pointer.latest, panelSize: ctx.panelSize))
-        return [.haptic] + (ctx.panelVisible ? [.updatePanel(panelState(ctx))] : [])
+        return [.haptic] + syncSliders(&ctx) + (ctx.panelVisible ? [.updatePanel(panelState(ctx))] : [])
     }
 
     private mutating func pointerFrame(_ ctx: inout ActiveContext, _ frame: TouchFrame) -> [SessionEffect] {
@@ -746,8 +752,9 @@ public struct SessionStateMachine: Sendable {
         if var pointer = ctx.pointer {
             guard let c = frame.contacts.first(where: { $0.id == pointer.id }), c.phase != .cancelled else {
                 clearPointer(&ctx)  // 指点指异常消失：不提交，允许重新选择
+                let reverted = syncSliders(&ctx)
                 state = .active(ctx)
-                return ctx.panelVisible ? [.updatePanel(panelState(ctx))] : []
+                return reverted + (ctx.panelVisible ? [.updatePanel(panelState(ctx))] : [])
             }
             if c.phase == .ended {
                 return commit(&ctx, pointer, liftAt: frame.timestamp)  // T11–T13
@@ -776,6 +783,7 @@ public struct SessionStateMachine: Sendable {
             effects.append(.haptic)
         }
         updateSliderPreview(&ctx, point: mapper.panelPoint(latest, panelSize: ctx.panelSize))
+        effects += syncSliders(&ctx)
         state = .active(ctx)
         if ctx.panelVisible { effects.append(.updatePanel(panelState(ctx))) }
         return effects
@@ -801,12 +809,9 @@ public struct SessionStateMachine: Sendable {
         guard settled(ctx, at: liftAt) else { return stay(&ctx) }
         let tester = tester(ctx)
         if let id = ctx.hovered, let slot = ctx.layout.slot(id), let target = slot.slider {
-            // 滑杆：移动时只预览，抬起才按提交坐标确定数值（抬起去抖同 FR-6.10）
-            var effects = exit(ctx, now: liftAt, end: .committed(id))
-            if let raw = tester.sliderValue(of: slot, at: panelPoint) {
-                effects.insert(.slider(target, Self.quantize(raw)), at: effects.count - 1)
-            }
-            return effects
+            // 滑杆：在滑杆上抬起即接受，按提交坐标确定最终数值（抬起去抖同 FR-6.10）
+            if let raw = tester.sliderValue(of: slot, at: panelPoint) { accept(&ctx, target, Self.quantize(raw)) }
+            return exit(ctx, now: liftAt, end: .committed(id))
         }
         // FR-6.11：按提交坐标做一次不带滞回的命中
         let hit = tester.hit(panelPoint)
@@ -867,11 +872,9 @@ public struct SessionStateMachine: Sendable {
         var effects: [SessionEffect] = []
         if let target = slot.slider {
             guard let value = ctx.sliderValues[id] else { return [] }
-            effects.append(.slider(target, value))
-            // 设定后的值成为新的基准：移出滑杆不再恢复旧值
-            for page in ctx.panels {
-                for s in page.slots where s.slider == target { ctx.sliderBase[s.id] = value }
-            }
+            // 按下即接受：设定后的值成为新的基准，移出滑杆不再恢复旧值
+            accept(&ctx, target, value)
+            effects += syncSliders(&ctx)
         } else {
             effects.append(.action(ActionRequest(action: slot.action, title: slot.title, frontmostBundleID: ctx.frontmostBundleID,
                                                  notBefore: ctx.lastFrameAt + tuning.actionDelayMs / 1000)))
@@ -885,7 +888,35 @@ public struct SessionStateMachine: Sendable {
     /// 滑杆数值按 1% 取整
     static func quantize(_ v: Double) -> Double { (v * 100).rounded() / 100 }
 
-    /// 更新滑杆预览：指点指所在滑杆显示预览值，其余滑杆恢复实际值。只改显示，不产生副作用
+    /// 滑杆实时生效（D29）：指点指所在滑杆的预览值立即送给系统，其余滑杆回到基准值。
+    /// 不知道实际值（读取失败）的滑杆没有可恢复的基准，只预览，接受后才送出
+    private func syncSliders(_ ctx: inout ActiveContext) -> [SessionEffect] {
+        var desired: [SliderTarget: Double] = [:]
+        for page in ctx.panels {
+            for s in page.slots { if let t = s.slider, let v = ctx.sliderBase[s.id] { desired[t] = v } }
+        }
+        if let id = ctx.hovered, let t = ctx.layout.slot(id)?.slider, desired[t] != nil, let v = ctx.sliderValues[id] {
+            desired[t] = v
+        }
+        var effects: [SessionEffect] = []
+        for (t, v) in desired.sorted(by: { $0.key.rawValue < $1.key.rawValue }) where ctx.sliderApplied[t] != v {
+            ctx.sliderApplied[t] = v
+            effects.append(.slider(t, v))
+        }
+        return effects
+    }
+
+    /// 接受滑杆的调整：成为同一目标所有滑杆的新基准
+    private func accept(_ ctx: inout ActiveContext, _ target: SliderTarget, _ value: Double) {
+        for page in ctx.panels {
+            for s in page.slots where s.slider == target {
+                ctx.sliderBase[s.id] = value
+                ctx.sliderValues[s.id] = value
+            }
+        }
+    }
+
+    /// 更新滑杆预览：指点指所在滑杆显示预览值，其余滑杆显示基准值
     private func updateSliderPreview(_ ctx: inout ActiveContext, point: CGPoint) {
         var values = ctx.sliderBase
         if let id = ctx.hovered, let slot = ctx.layout.slot(id), let raw = tester(ctx).sliderValue(of: slot, at: point) {
@@ -898,21 +929,28 @@ public struct SessionStateMachine: Sendable {
     private mutating func exit(_ ctx: ActiveContext, now: TimeInterval, end: SessionEnd,
                                thirdFinger: Bool = false, action: ActionRequest? = nil) -> [SessionEffect] {
         let until = now + tuning.cooldownMs / 1000
+        var reverted = ctx
+        reverted.hovered = nil
+        let sliders = syncSliders(&reverted)  // 没有接受的调整恢复为基准值（D29）
         state = .cooldown(until: until)
         var effects: [SessionEffect] = [
             .hidePanel, .cursor(.restore),
             setPolicy(TapPolicy(mode: .cooldown, cooldownUntil: until,
                                 momentumUntil: now + tuning.momentumSuppressMs / 1000, passGestures: thirdFinger)),
         ]
+        effects += sliders
         if let action { effects.append(.action(action)) }
         effects.append(.sessionEnded(end))
         return effects
     }
 
     /// T19（激活）：立即退出，光标校正，停止所有拦截
-    private mutating func abortActive(_ end: SessionEnd) -> [SessionEffect] {
+    private mutating func abortActive(_ end: SessionEnd, _ ctx: ActiveContext) -> [SessionEffect] {
+        var reverted = ctx
+        reverted.hovered = nil
+        let sliders = syncSliders(&reverted)
         state = .idle
-        return [.hidePanel, .cursor(.restore), setPolicy(TapPolicy(mode: .idle)), .sessionEnded(end)]
+        return [.hidePanel, .cursor(.restore), setPolicy(TapPolicy(mode: .idle))] + sliders + [.sessionEnded(end)]
     }
 
     // MARK: 冷却
@@ -946,6 +984,7 @@ public struct SessionStateMachine: Sendable {
         s.sticky = ctx.anchorLifted
         s.origin = ctx.entryPoint.map { mapper.unclampedPanelPoint($0, panelSize: ctx.panelSize) }
         s.sliderValues = ctx.sliderValues
+        s.sliderBase = ctx.sliderBase
         return s
     }
 }

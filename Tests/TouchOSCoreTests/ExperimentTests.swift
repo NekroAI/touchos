@@ -216,16 +216,52 @@ private func activeLayout(_ h: Harness) -> String? {
         #expect(sliderAt != nil && endAt != nil && sliderAt! < endAt!)
     }
 
-    @Test func leavingSliderRestoresValueAndAppliesNothing() {
+    @Test func sliderAppliesLiveAndLeavingRestores() {
         var env = environment([experiment])
         env.sliderValues[.volume] = 0.3
         let g = anchored().touch(id: 2, at: ExpSpot.sliderLeft, t: 0.5).move(id: 2, to: ExpSpot.sliderRight, over: 0.2)
             .move(id: 2, to: ExpSpot.plain, over: 0.2).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
         let h = run(g, environment: env, until: 1.2)
-        #expect(!h.effects.contains { if case .slider = $0 { true } else { false } })
+        let applied = h.effects.compactMap { if case .slider(.volume, let v) = $0 { v } else { nil } }
+        // D29：移动中逐步送出预览值，离开滑杆恢复为唤起时的值
+        #expect(applied.count > 5 && applied.dropLast() == applied.dropLast().sorted())
+        #expect(applied.last == 0.3 && applied.dropLast().max()! > 0.8)
         let last = h.effects.compactMap { if case .updatePanel(let s) = $0 { s } else { nil } }.last
-        #expect(last?.sliderValues["slider"] == 0.3)
+        #expect(last?.sliderValues["slider"] == 0.3 && last?.sliderBase["slider"] == 0.3)
         #expect(h.actions.map(\.action) == [selectAll])
+    }
+
+    @Test func liftOutsideRestoresAndLiftOnSliderKeeps() {
+        var env = environment([experiment])
+        env.sliderValues[.volume] = 0.3
+        let outside = anchored().touch(id: 2, at: ExpSpot.sliderLeft, t: 0.5).move(id: 2, to: ExpSpot.sliderRight, over: 0.2)
+            .move(id: 2, to: (0.99, 0.01), over: 0.1).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
+        let h = run(outside, environment: env, until: 1.2)
+        let applied = h.effects.compactMap { if case .slider(.volume, let v) = $0 { v } else { nil } }
+        #expect(applied.last == 0.3 && h.ends == [.liftOutside])
+        // 在滑杆上抬起：最终值送出后不再恢复
+        let keep = anchored().touch(id: 2, at: ExpSpot.sliderLeft, t: 0.5).move(id: 2, to: ExpSpot.sliderRight, over: 0.2)
+            .hold(id: 2, until: 0.8).lift(id: 2, t: 0.8)
+        let k = run(keep, environment: env, until: 1.0)
+        let kept = k.effects.compactMap { if case .slider(.volume, let v) = $0 { v } else { nil } }
+        #expect(abs(kept.last! - 0.84) < 0.011 && k.ends == [.committed("slider")])
+    }
+
+    @Test func unknownValueOnlyPreviews() {
+        // 读不到实际值：没有可恢复的基准，移动时不送出，离开也不恢复
+        let g = anchored().touch(id: 2, at: ExpSpot.sliderLeft, t: 0.5).move(id: 2, to: ExpSpot.sliderRight, over: 0.2)
+            .move(id: 2, to: ExpSpot.plain, over: 0.2).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
+        let h = run(g, until: 1.2)
+        #expect(!h.effects.contains { if case .slider = $0 { true } else { false } })
+    }
+
+    @Test func abortRestoresSlider() {
+        var env = environment([experiment])
+        env.sliderValues[.volume] = 0.3
+        let g = anchored().touch(id: 2, at: ExpSpot.sliderRight, t: 0.5).hold(id: 2, until: 0.8)
+        let h = run(g, environment: env, events: [(0.7, .tapDisabled)], until: 0.8)
+        let applied = h.effects.compactMap { if case .slider(.volume, let v) = $0 { v } else { nil } }
+        #expect(applied.count == 2 && applied.last == 0.3)
     }
 
     @Test func panelStartsWithEnvironmentSliderValue() {
