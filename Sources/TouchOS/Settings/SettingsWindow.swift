@@ -636,6 +636,7 @@ private struct AboutPage: View {
     @State private var debugTools = UserDefaults.standard.bool(forKey: DebugOverlayController.hiddenSwitchKey)
     /// 这个进程启动时的状态，变了才需要重启
     private let launchDebugTools = DebugOverlayController.isAvailable
+    @State private var freezeMethod = CursorLock.FreezeMethod.current
 
     var body: some View {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
@@ -658,6 +659,17 @@ private struct AboutPage: View {
             .frame(maxWidth: 420)
             if debugTools != launchDebugTools {
                 Button("重启以应用") { AppLanguage.relaunch() }
+            }
+            if debugTools {
+                Picker("光标冻结方式", selection: makeBinding(get: { freezeMethod }, set: { m in
+                    freezeMethod = m
+                    UserDefaults.standard.set(m.rawValue, forKey: CursorLock.FreezeMethod.defaultsKey)
+                })) {
+                    Text("只靠拦截（默认）").tag(CursorLock.FreezeMethod.tap)
+                    Text("隐藏光标").tag(CursorLock.FreezeMethod.hide)
+                    Text("断开光标关联").tag(CursorLock.FreezeMethod.detach)
+                }
+                .frame(maxWidth: 420)
             }
         }
         .padding(40)

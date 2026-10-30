@@ -4,6 +4,11 @@ All notable changes to this project are documented here. The format is based on 
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-30
+
+### Added
+- Debug Tools: choose how the cursor is frozen while a panel is open, to diagnose a report of the on-screen cursor still following the finger.
+
 ## [0.1.1] - 2026-10-30
 
 ### Added

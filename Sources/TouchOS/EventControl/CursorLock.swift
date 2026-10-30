@@ -10,7 +10,18 @@ final class CursorLock: @unchecked Sendable {
     /// FR-7.7：偏离冻结点超过该距离（pt）时移回
     static let tolerance: CGFloat = 0.5
 
+    /// 激活态怎么冻结屏幕上的光标（D48，调试工具中切换以便实测）。默认只靠拦截丢弃
+    enum FreezeMethod: String, CaseIterable {
+        case tap, hide, detach
+        static let defaultsKey = "cursorFreezeMethod"
+        static var current: FreezeMethod {
+            UserDefaults.standard.string(forKey: defaultsKey).flatMap(FreezeMethod.init) ?? .tap
+        }
+    }
+
     private let tap: EventTapController
+    /// 这次会话实际施加的方式，退出时撤销。只在 input.queue 上读写
+    private var applied: FreezeMethod?
     /// 冻结点（Quartz 全局坐标，原点为主屏左上角）
     private var freezePoint: CGPoint?
 
@@ -44,11 +55,48 @@ final class CursorLock: @unchecked Sendable {
             freezePoint = nil
         case .lock:
             _ = tap.takeCursorDelta()
+            applyFreezeMethod()
         case .restore:
             // FR-7.8：精确回到冻结点，之后才切换策略（由效果顺序保证）
             if let p = freezePoint { Self.warp(p) }
             freezePoint = nil
+            releaseFreezeMethod()
         }
+    }
+
+    private func applyFreezeMethod() {
+        guard applied == nil else { return }
+        let method = FreezeMethod.current
+        switch method {
+        case .tap: break
+        case .hide:
+            Self.allowHidingInBackground()
+            CGDisplayHideCursor(CGMainDisplayID())
+        case .detach:
+            CGAssociateMouseAndMouseCursorPosition(0)
+        }
+        applied = method
+    }
+
+    /// 撤销这次会话施加的方式。所有退出路径（含退出应用时的取消）都经过 `.restore`
+    private func releaseFreezeMethod() {
+        switch applied {
+        case .hide: CGDisplayShowCursor(CGMainDisplayID())
+        case .detach: CGAssociateMouseAndMouseCursorPosition(1)
+        case .tap, nil: break
+        }
+        applied = nil
+    }
+
+    /// 后台应用默认不能隐藏光标，要先设置连接属性 `SetsCursorInBackground`。
+    /// 符号来自 CoreGraphics 的未公开接口，运行时查找；取不到时不设置，隐藏可能不生效（调试选项，光标照常显示）
+    private static func allowHidingInBackground() {
+        typealias Connection = @convention(c) () -> Int32
+        typealias SetProperty = @convention(c) (Int32, Int32, CFString, CFTypeRef) -> Int32
+        let handle = UnsafeMutableRawPointer(bitPattern: -2)
+        guard let main = dlsym(handle, "CGSMainConnectionID"), let set = dlsym(handle, "CGSSetConnectionProperty") else { return }
+        let connection = unsafeBitCast(main, to: Connection.self)()
+        _ = unsafeBitCast(set, to: SetProperty.self)(connection, connection, "SetsCursorInBackground" as CFString, kCFBooleanTrue)
     }
 
     /// FR-7.7：激活态每个 tick 校验一次
