@@ -899,7 +899,8 @@ public struct SessionStateMachine: Sendable {
             return exit(ctx, now: liftAt, end: .cancelSlot)  // 在关闭上抬起即关闭（D17，修订 T13）
         }
         guard let id = hit, let slot = ctx.layout.slot(id), slot.action != .none else {
-            return stay(&ctx)  // T13：空隙，不退出
+            // 在空白处（按钮间隙、空格子、无动作的按钮）抬起：与取消相同，关闭不执行（D37，修订 T13 与 D17 的"空隙保留"）
+            return exit(ctx, now: liftAt, end: .cancelSlot)
         }
         let request = ActionRequest(action: slot.action, title: slot.title, frontmostBundleID: ctx.frontmostBundleID,
                                     notBefore: liftAt + tuning.actionDelayMs / 1000)

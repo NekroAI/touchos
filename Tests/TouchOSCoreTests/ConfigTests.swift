@@ -362,3 +362,19 @@ private func temporaryStore() -> ConfigStore {
         #expect(AppConfig.uniqueID("x", existing: ["x", "x-2"]) == "x-3")
     }
 }
+
+@Suite struct PanelEnableTests {
+    @Test func disabledPanelsAreLeftOutButKept() throws {
+        var c = AppConfig()
+        c.panels[1].isEnabled = false
+        #expect(c.activePanels.count == c.panels.count - 1)
+        #expect(!c.activePanels.contains { $0.id == c.panels[1].id })
+        // 只在停用时写出 disabled，读回来保持
+        let back = try AppConfig.decode(c.encoded())
+        #expect(!back.panels[1].isEnabled && back.panels[0].isEnabled)
+        #expect(!String(decoding: try JSONEncoder().encode(c.panels[0]), as: UTF8.self).contains("disabled"))
+        // 全部停用：退回第一个
+        for i in c.panels.indices { c.panels[i].isEnabled = false }
+        #expect(c.activePanels.map(\.id) == [c.panels[0].id])
+    }
+}

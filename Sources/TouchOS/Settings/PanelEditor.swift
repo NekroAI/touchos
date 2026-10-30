@@ -65,6 +65,24 @@ enum PanelCommands {
         }
     }
 
+    /// 停用 / 启用（D37）：停用的面板保留配置，不参与唤起与切换；至少保留一个启用的面板
+    static func setEnabled(_ id: String, _ on: Bool, configs: ConfigController) {
+        configs.update { c in
+            guard let i = c.panels.firstIndex(where: { $0.id == id }) else { return }
+            if !on && c.panels.filter(\.isEnabled).count <= 1 && c.panels[i].isEnabled { return }
+            c.panels[i].isEnabled = on
+        }
+    }
+
+    static func canDisable(_ panel: PanelLayout, configs: ConfigController) -> Bool {
+        !panel.isEnabled || configs.config.panels.filter(\.isEnabled).count > 1
+    }
+
+    @ViewBuilder static func enableButton(_ panel: PanelLayout, configs: ConfigController) -> some View {
+        Button(panel.isEnabled ? "停用面板" : "启用面板") { setEnabled(panel.id, !panel.isEnabled, configs: configs) }
+            .disabled(!canDisable(panel, configs: configs))
+    }
+
     static func remove(_ id: String, configs: ConfigController, navigation: SettingsNavigation) {
         guard configs.config.panels.count > 1 else { return }
         configs.update { $0.removePanel(id) }
@@ -164,7 +182,8 @@ private struct PanelHeader: View {
                 Button("重命名") { editingName = true }
                 Button("复制面板") { PanelCommands.add(panel, configs: configs, navigation: navigation) }
                 Button("设为默认面板") { PanelCommands.makeDefault(panel.id, configs: configs) }
-                    .disabled(isDefault)
+                    .disabled(isDefault || !panel.isEnabled)
+                PanelCommands.enableButton(panel, configs: configs)
                 Divider()
                 Button(resetTitle + "…") { confirmingReset = true }
                 Button("删除面板", role: .destructive) { PanelCommands.remove(panel.id, configs: configs, navigation: navigation) }
@@ -199,12 +218,16 @@ private struct PanelHeader: View {
 
     private var resetTitle: String { PresetPanels.origin(of: panel.id) == nil ? "清空面板" : "重置面板" }
 
-    private var isDefault: Bool { configs.config.panels.first?.id == panel.id }
+    private var isDefault: Bool { configs.config.defaultPanel?.id == panel.id }
 
     /// 哪些唤起方式会打开这个面板
     private var subtitle: String {
         let config = configs.config
-        let opens = config.enabledTriggers.filter { (config.binding(for: $0.trigger) ?? config.panels.first?.id) == panel.id }
+        guard panel.isEnabled else { return "已停用 · 配置保留，不参与唤起和切换" }
+        let active = Set(config.activePanels.map(\.id))
+        let opens = config.enabledTriggers.filter {
+            (config.binding(for: $0.trigger).flatMap { active.contains($0) ? $0 : nil } ?? config.defaultPanel?.id) == panel.id
+        }
         var parts: [String] = []
         if isDefault { parts.append("默认面板") }
         parts.append(opens.isEmpty ? "双指上下滑动切换到这里" : opens.map(\.title).joined(separator: "、") + "打开")

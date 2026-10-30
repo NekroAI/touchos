@@ -360,10 +360,11 @@ private func activeLayout(_ h: Harness) -> String? {
         #expect(sticky)
     }
 
-    @Test func gapKeepsPanelAndCancelCloses() {
+    @Test func gapAndCancelBothClose() {
+        // D37：空白处抬起与取消相同
         let gap = anchorThenLift().touch(id: 2, at: Spot.gap, t: 0.8).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
         let h1 = runSticky(gap, until: 1.5)
-        #expect(h1.isActive && h1.ends.isEmpty)
+        #expect(h1.ends == [.cancelSlot] && h1.actions.isEmpty)
         let cancel = anchorThenLift().touch(id: 2, at: Spot.null, t: 0.8).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
         let h2 = runSticky(cancel, until: 1.2)
         #expect(h2.ends == [.cancelSlot])
@@ -372,11 +373,11 @@ private func activeLayout(_ h: Harness) -> String? {
 
     // 测试环境 1 mm ≈ 触控板宽 0.0067：右列从 x 0.65 开始，按钮间隙 2.5 mm 每侧 1.25 mm，判定区从 0.658 开始；
     // 右外沿 0.95，判定区到 0.942 为止（D31）
-    @Test func liftInHitGapKeepsPanel() {
+    @Test func liftInHitGapClosesWithoutAction() {
         for x in [0.654, 0.946] {
             let g = anchorThenLift().touch(id: 2, at: (x, Spot.close.1), t: 0.8).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
             let h = runSticky(g, until: 1.3)
-            #expect(h.isActive && h.ends.isEmpty && h.actions.isEmpty)
+            #expect(h.ends == [.cancelSlot] && h.actions.isEmpty)
         }
         // 间隙为 0：同一点命中"关闭"
         var tight = Self.sticky
@@ -452,13 +453,24 @@ private func activeLayout(_ h: Harness) -> String? {
         #expect((h.firstTime { if case .action = $0 { true } else { false } } ?? 0) < 1.07)
     }
 
-    @Test func gapLiftStillAllowsANewPointer() {
-        // 在空隙里抬起，宽限期内落到远处：面板保留，新手指成为指点指
+    @Test func gapLiftIsForgivenWhenTheFingerReturns() {
+        // 在空白处抬起会关闭，但宽限期内在附近落回就接着选
         let g = anchorThenLift().touch(id: 2, at: Spot.gap, t: 0.8).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
-            .touch(id: 3, at: Spot.close, t: 1.05).hold(id: 3, until: 1.4)
-        let h = runSticky(g, until: 1.4)
-        #expect(h.isActive && h.actions.isEmpty)
-        if case .active(let ctx) = h.machine.state { #expect(ctx.hovered == "close") }
+            .touch(id: 3, at: (0.51, 0.5), t: 1.05).move(id: 3, to: Spot.close, over: 0.2).hold(id: 3, until: 1.5).lift(id: 3, t: 1.5)
+        let h = runSticky(g, until: 1.8)
+        #expect(h.actions.map(\.action) == [closeTab])
+    }
+
+    @Test func farTouchDuringGraceInOverviewBecomesThePointer() {
+        // 总览里在空白处抬起不关闭（只有选中缩略图才离开总览）；宽限期内落到远处的新手指接着当指点指
+        var h = Harness(tuning: Self.sticky, environment: environment([Layout.test, radial]))
+        let pinch = anchorThenLift().touch(id: 2, at: (0.3, 0.5), t: 0.8).touch(id: 3, at: (0.7, 0.5), t: 0.8)
+            .move(id: 2, to: (0.45, 0.5), over: 0.2).move(id: 3, to: (0.55, 0.5), over: 0.2).lift(id: 2, t: 1.05).lift(id: 3, t: 1.05)
+        let g = pinch.touch(id: 4, at: (0.5, 0.95), t: 1.8).hold(id: 4, until: 2.0).lift(id: 4, t: 2.0)
+            .touch(id: 5, at: (0.2, 0.2), t: 2.05).hold(id: 5, until: 2.3)
+        h.run(g.frames(rate: rate), until: 2.3)
+        #expect(h.isActive)
+        if case .active(let ctx) = h.machine.state { #expect(ctx.pointer?.id == 5) }
     }
 
     @Test func idleTimeoutClosesOnlyWithoutFingers() {

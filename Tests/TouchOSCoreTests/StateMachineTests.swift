@@ -170,14 +170,12 @@ private func run(_ g: Gesture, tuning: Tuning = .test, environment: SessionEnvir
         #expect(h.ends == [.committed("vol")])
     }
 
-    @Test func t13GapKeepsSessionForAnotherTry() {
-        // AC-5（修订：见 decisions.md D17，取消槽位改为关闭）
-        let g = anchorDown().hold(id: 1, until: 1.0)
-            .touch(id: 2, at: Spot.gap, t: 0.3).lift(id: 2, t: 0.4)
-            .touch(id: 2, at: Spot.close, t: 0.5).lift(id: 2, t: 0.6)
+    @Test func t13GapLiftCloses() {
+        // AC-5（修订：见 decisions.md D37，在空白处抬起与取消相同）
+        let g = anchorDown().hold(id: 1, until: 1.0).touch(id: 2, at: Spot.gap, t: 0.3).lift(id: 2, t: 0.4)
         let h = run(g)
-        #expect(h.actions.map(\.action) == [close])
-        #expect(h.ends == [.committed("close")])
+        #expect(h.actions.isEmpty)
+        #expect(h.ends == [.cancelSlot])
     }
 
     @Test func liftOnCancelSlotClosesWithoutAction() {

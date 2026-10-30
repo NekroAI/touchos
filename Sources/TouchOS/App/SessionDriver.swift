@@ -56,7 +56,7 @@ final class SessionDriver: @unchecked Sendable {
     func apply(_ config: AppConfig) {
         queue.async {
             self.config = config
-            self.environment.panels = config.panels
+            self.environment.panels = config.activePanels  // 停用的面板不参与（D37）
             self.environment.bindings = config.bindingMap
             self.handle(.environment(self.environment))
             self.applyTuning()

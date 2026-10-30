@@ -206,6 +206,15 @@ public struct AppConfig: Codable, Equatable, Sendable {
         }
     }
 
+    /// 参与唤起与切换的面板：去掉停用的（D37）。全部停用时退回第一个，保证总有面板可开
+    public var activePanels: [Layout] {
+        let on = panels.filter(\.isEnabled)
+        return on.isEmpty ? Array(panels.prefix(1)) : on
+    }
+
+    /// 默认面板：第一个启用的面板
+    public var defaultPanel: Layout? { activePanels.first }
+
     /// 绑定表；写错的唤起方式忽略
     public var bindingMap: [PanelTrigger: String] {
         bindings.reduce(into: [:]) { map, b in

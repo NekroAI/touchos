@@ -141,21 +141,24 @@ private struct Sidebar: View {
     var body: some View {
         List(selection: selection) {
             Section {
-                ForEach(Array(configs.config.panels.enumerated()), id: \.element.id) { i, panel in
+                ForEach(configs.config.panels, id: \.id) { panel in
+                    let isDefault = configs.config.defaultPanel?.id == panel.id
                     HStack(spacing: 10) {
                         PanelThumbnail(panel: panel)
                         Text(panel.name).lineLimit(1)
                         Spacer(minLength: 4)
-                        if i == 0 {
-                            Text("默认").font(.caption2.weight(.medium)).foregroundStyle(.secondary)
+                        if isDefault || !panel.isEnabled {
+                            Text(isDefault ? "默认" : "已停用").font(.caption2.weight(.medium)).foregroundStyle(.secondary)
                                 .padding(.horizontal, 5).padding(.vertical, 1)
                                 .background(Capsule().fill(.quaternary))
                         }
                     }
+                    .opacity(panel.isEnabled ? 1 : 0.5)
                     .tag(SidebarItem.panel(panel.id))
                     .contextMenu {
                         Button("复制") { PanelCommands.add(panel, configs: configs, navigation: navigation) }
-                        Button("设为默认面板") { PanelCommands.makeDefault(panel.id, configs: configs) }.disabled(i == 0)
+                        Button("设为默认面板") { PanelCommands.makeDefault(panel.id, configs: configs) }.disabled(isDefault || !panel.isEnabled)
+                        PanelCommands.enableButton(panel, configs: configs)
                         Divider()
                         Button("删除", role: .destructive) { PanelCommands.remove(panel.id, configs: configs, navigation: navigation) }
                             .disabled(configs.config.panels.count <= 1)

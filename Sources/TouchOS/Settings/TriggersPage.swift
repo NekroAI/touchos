@@ -106,8 +106,9 @@ private struct TriggerRow: View {
             }
             Spacer(minLength: 8)
             Picker("打开", selection: panel) {
-                Text("默认面板（\(configs.config.panels.first?.name ?? "—")）").tag(String?.none)
-                ForEach(configs.config.panels, id: \.id) { Text($0.name).tag(Optional($0.id)) }
+                Text("默认面板（\(configs.config.defaultPanel?.name ?? "—")）").tag(String?.none)
+                // 停用的面板仍可选，但唤起时打开默认面板（D37）
+                ForEach(configs.config.panels, id: \.id) { Text($0.isEnabled ? $0.name : "\($0.name)（已停用）").tag(Optional($0.id)) }
             }
             .labelsHidden()
             .fixedSize()
@@ -177,7 +178,7 @@ struct TriggerPreview: View {
     /// 预览里画在映射区中的面板：悬停的唤起方式打开的面板，否则为默认面板
     private var shownPanel: PanelLayout? {
         let id: String? = if case .trigger(let t) = focus { config.binding(for: t) } else { nil }
-        return config.panels.first { $0.id == id } ?? config.panels.first
+        return config.activePanels.first { $0.id == id } ?? config.defaultPanel
     }
 
     var body: some View {

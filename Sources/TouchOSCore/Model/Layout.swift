@@ -108,13 +108,16 @@ public struct Layout: Equatable, Sendable {
     public var cols: Int
     /// 数组顺序即 z 序（FR-6.9）
     public var slots: [Slot]
+    /// 停用的面板保留配置，但不参与唤起与切换（D37）
+    public var isEnabled: Bool
 
-    public init(id: String, name: String, rows: Int = 1, cols: Int = 1, slots: [Slot]) {
+    public init(id: String, name: String, rows: Int = 1, cols: Int = 1, slots: [Slot], isEnabled: Bool = true) {
         self.id = id
         self.name = name
         self.rows = rows
         self.cols = cols
         self.slots = slots
+        self.isEnabled = isEnabled
     }
 
     /// 矩形类槽位的面板归一化矩形，原点左上（FR-10.5）；扇区为 nil
