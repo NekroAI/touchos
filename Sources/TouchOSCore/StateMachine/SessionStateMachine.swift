@@ -19,6 +19,8 @@ public enum SessionEnd: Equatable, Sendable {
     case liftAfterPress
     /// 在映射区之外抬起：关闭，不执行（D21）
     case liftOutside
+    /// 手指落下后很快抬起且基本没动：关闭，不执行（D53）
+    case quickLift
     /// 面板开着时再做一次已启用的多指轻点唤起手势：关闭（D22）
     case tapToggle
     /// 在关闭上按住进入编辑（D23），值为当前面板 ID
@@ -791,7 +793,7 @@ public struct SessionStateMachine: Sendable {
                 return effects
             }
             // 手指回来了：当作没抬起过，从落点接着移动，悬停与按压状态都保留
-            ctx.pointer = PointerTrack(id: c.id, t: frame.timestamp, p: c.position)
+            ctx.pointer = PointerTrack(id: c.id, t: frame.timestamp, p: c.position, continuing: pending.pointer)
         } else if var pointer = ctx.pointer {
             guard let c = frame.contacts.first(where: { $0.id == pointer.id }), c.phase != .cancelled else {
                 clearPointer(&ctx)  // 指点指异常消失：不提交，允许重新选择
@@ -846,6 +848,12 @@ public struct SessionStateMachine: Sendable {
             return stay(&ctx)
         }
         guard settled(ctx, at: liftAt) else { return stay(&ctx) }
+        // 误开面板后抬手不能直接触发（D53）；滑杆同样不接受
+        let mm = environment.devices[ctx.device]?.surfaceSizeMM ?? .zero
+        if liftAt - pointer.startedAt < tuning.commitGuardMs / 1000,
+           hypot(pointer.spanX * mm.width, pointer.spanY * mm.height) < tuning.stillThresholdMM {
+            return exit(ctx, now: liftAt, end: .quickLift)
+        }
         let tester = tester(ctx)
         if let id = ctx.hovered, let slot = ctx.layout.slot(id), let target = slot.slider {
             // 滑杆：在滑杆上抬起即接受，按提交坐标确定最终数值（抬起去抖同 FR-6.10）

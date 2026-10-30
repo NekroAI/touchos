@@ -374,3 +374,60 @@ private func shown(_ h: Harness) -> Bool {
         #expect(h.machine.environment.suspended)
     }
 }
+
+/// 选择确认时间（D53）：手指落下后很快抬起且基本没动，只关闭不执行
+@Suite struct CommitGuardTests {
+    private var tuning: Tuning {
+        var t = Tuning.test
+        t.commitGuardMs = 200
+        return t
+    }
+
+    private func actions(_ h: Harness) -> Int {
+        h.effects.filter { if case .action = $0 { true } else { false } }.count
+    }
+
+    @Test func quickLiftAfterOpeningClosesWithoutRunning() {
+        // 面板 0.22 打开，指点指从打开时算起，0.3 抬起只过了 0.08 s
+        let h = run(Gesture.tapHold(at: Spot.close, until: 0.3).lift(id: 2, t: 0.3), tuning: tuning, until: 0.6)
+        #expect(h.ends == [.quickLift])
+        #expect(actions(h) == 0)
+    }
+
+    @Test func holdingStillPastTheGuardRuns() {
+        let h = run(Gesture.tapHold(at: Spot.close, until: 0.5).lift(id: 2, t: 0.5), tuning: tuning, until: 0.8)
+        #expect(h.ends == [.committed("close")])
+        #expect(actions(h) == 1)
+    }
+
+    @Test func movingWithinTheGuardRuns() {
+        let g = Gesture.tapHold(until: 0.22).move(id: 2, to: Spot.close, over: 0.1).lift(id: 2, t: 0.34)
+        let h = run(g, tuning: tuning, until: 0.7)
+        #expect(h.ends == [.committed("close")])
+        #expect(actions(h) == 1)
+    }
+
+    @Test func zeroTurnsTheGuardOff() {
+        var off = tuning
+        off.commitGuardMs = 0
+        let h = run(Gesture.tapHold(at: Spot.close, until: 0.3).lift(id: 2, t: 0.3), tuning: off, until: 0.6)
+        #expect(h.ends == [.committed("close")])
+    }
+
+    /// E：四指轻点打开的面板上，碰一下不算选择
+    @Test func quickTapOnOpenPanelDoesNotRun() {
+        let g = Gesture.fourFingerTap().touch(id: 5, at: Spot.close, t: 0.5).lift(id: 5, t: 0.56)
+        let h = run(g, tuning: tuning, until: 0.9)
+        #expect(h.ends == [.quickLift])
+        #expect(actions(h) == 0)
+    }
+
+    @Test func settingsAreClampedIntoTuning() {
+        var config = AppConfig.default
+        config.sizes.tapHoldDelayMs = 5
+        config.sizes.commitGuardMs = 9000
+        var t = Tuning()
+        config.apply(to: &t)
+        #expect(t.tapHoldDelayMs == Tuning.tapHoldDelayRange.lowerBound && t.commitGuardMs == Tuning.commitGuardRange.upperBound)
+    }
+}

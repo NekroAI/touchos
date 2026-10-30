@@ -821,6 +821,8 @@ let frames = Gesture(device: .builtIn)
 | `P.cooldownMs` | 150 ms | 50–500 | 是 | 冷却期 |
 | `P.momentumSuppressMs` | 1200 ms | 0–2000 | 否 | 退出后屏蔽惯性滚动的时长 |
 | `P.frameTimeoutMs` | 500 ms | 200–2000 | 否 | 激活态无新帧即取消 |
+| `P.tapHoldDelayMs` | 160 ms | 80–400 | 是 | 轻点后按住的第二下停留多久打开面板（D38，默认值见 D53） |
+| `P.commitGuardMs` | 200 ms | 0–500 | 是 | 手指落下后不到该时长抬起且移动不到 `P.stillThresholdMM`：只关闭不执行（D53） |
 | `P.clockResyncMs` | 50 ms | 10–小于 `P.frameTimeoutMs` | 否 | 一段触摸中帧时间落后超过该值时重新对齐设备时钟（D49、D52） |
 | `P.cursorStallLimitMs` | 2000 ms | 500–5000 | 否 | 激活态输入队列无响应超过该值即恢复光标（D50） |
 | `P.maxSessionSec` | 30 s | 5–120 | 否 | 单次激活最长时长 |

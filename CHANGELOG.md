@@ -4,6 +4,13 @@ All notable changes to this project are documented here. The format is based on 
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-10-31
+
+### Changed
+- Tap-then-hold now takes 160 ms to open a panel instead of 120 ms, to reduce accidental summons.
+- Lifting within 200 ms of touching down without really moving now closes the panel instead of running a button.
+- Both times can be adjusted under Feel on the Triggers page.
+
 ## [0.1.5] - 2026-10-31
 
 ### Changed

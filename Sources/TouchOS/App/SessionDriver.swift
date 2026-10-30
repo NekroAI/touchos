@@ -166,7 +166,7 @@ final class SessionDriver: @unchecked Sendable {
     static func dismissal(for end: SessionEnd?) -> OverlayController.Dismissal {
         switch end {
         case .committed(let id): .commit(id)
-        case .escape, .cancelSlot, .idleTimeout, .handoff, .liftAfterPress, .liftOutside, .tapToggle, .edit: .fade
+        case .escape, .cancelSlot, .idleTimeout, .handoff, .liftAfterPress, .liftOutside, .quickLift, .tapToggle, .edit: .fade
         default: .immediate
         }
     }

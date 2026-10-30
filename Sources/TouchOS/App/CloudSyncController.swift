@@ -106,7 +106,7 @@ final class CloudSyncController {
         if let date = Self.modifiedAt(Self.fileURL) {
             lines.append(String(localized: "iCloud 中的配置修改于 \(date.formatted(date: .abbreviated, time: .shortened))。"))
         }
-        lines.append(String(localized: "面板大小、映射区、按钮间隙只属于这台 Mac，不受影响。"))
+        lines.append(String(localized: "面板大小、映射区、按钮间隙、按住与确认时间只属于这台 Mac，不受影响。"))
         alert.informativeText = lines.joined(separator: "\n")
         alert.addButton(withTitle: String(localized: "使用 iCloud 中的配置"))
         alert.addButton(withTitle: String(localized: "使用这台 Mac 的配置"))

@@ -13,7 +13,11 @@ public struct Tuning: Equatable, Sendable {
     public var zoneW = 0.12
     public var zoneH = 0.15
     /// `P.tapHoldDelayMs`：轻点后按住的第二下落下后停留这么久才打开面板，期间抬起即普通轻点（D38）
-    public var tapHoldDelayMs = 120.0
+    public var tapHoldDelayMs = 160.0
+    public static let tapHoldDelayRange = 80.0...400.0
+    /// 指点指落下后这么久以内抬起、且移动不到 `P.stillThresholdMM`：只关闭不执行，防止误开面板后抬手就触发（D53）。0 表示不保护
+    public var commitGuardMs = 200.0
+    public static let commitGuardRange = 0.0...500.0
     /// `P.stillThresholdMM`：确认期间手指的最大位移，超出即放弃
     public var stillThresholdMM = 2.0
     /// `P.palmSize`：nil 表示使用校准值，未校准时用 `defaultPalmSize`（FR-10.8）

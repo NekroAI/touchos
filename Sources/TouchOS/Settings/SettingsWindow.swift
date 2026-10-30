@@ -477,7 +477,7 @@ private struct GeneralPage: View {
             } header: {
                 Text("iCloud 同步")
             } footer: {
-                FormFooter(String(localized: "面板、外观、唤起方式、排除的应用在各台 Mac 之间同步；面板大小、映射区、按钮间隙与「启用 TouchOS」只属于这台 Mac。在另一台 Mac 上安装后打开这个开关即可接入。"))
+                FormFooter(String(localized: "面板、外观、唤起方式、排除的应用在各台 Mac 之间同步；面板大小、映射区、按钮间隙、按住与确认时间与「启用 TouchOS」只属于这台 Mac。在另一台 Mac 上安装后打开这个开关即可接入。"))
             }
             Section("配置文件") {
                 HStack {

@@ -327,13 +327,13 @@
 "面板 %@ 的按钮重叠：%@" = "Buttons of panel %1$@ overlap: %2$@";
 "面板 %@ 的网格行列数超出范围（1–%lld 行、1–%lld 列）" = "The grid size of panel %1$@ is out of range (1–%2$lld rows, 1–%3$lld columns)";
 "面板 ID 重复：%@" = "Duplicate panel ID: %@";
-"面板、外观、唤起方式、排除的应用在各台 Mac 之间同步；面板大小、映射区、按钮间隙与「启用 TouchOS」只属于这台 Mac。在另一台 Mac 上安装后打开这个开关即可接入。" = "Panels, appearance, triggers and excluded apps sync across your Macs. Panel size, mapping area, button gap and “Enable TouchOS” stay on this Mac. Install TouchOS on another Mac and turn this on to join.";
+"面板、外观、唤起方式、排除的应用在各台 Mac 之间同步；面板大小、映射区、按钮间隙、按住与确认时间与「启用 TouchOS」只属于这台 Mac。在另一台 Mac 上安装后打开这个开关即可接入。" = "Panels, appearance, triggers and excluded apps sync across your Macs. Panel size, mapping area, button gap and “Enable TouchOS” stay on this Mac. Install TouchOS on another Mac and turn this on to join.";
 "面板出现在屏幕上的位置" = "Where the panel appears on screen";
 "面板出现时压暗背景" = "Dim Background When a Panel Appears";
 "面板切换动画" = "Panel Transition";
 "面板占屏幕 %lld%%，总在屏幕中央" = "Panel takes %lld%% of the screen, always centered";
 "面板名称" = "Panel Name";
-"面板大小、映射区、按钮间隙只属于这台 Mac，不受影响。" = "Panel size, mapping area and button gap belong to this Mac only and aren't affected.";
+"面板大小、映射区、按钮间隙、按住与确认时间只属于这台 Mac，不受影响。" = "Panel size, mapping area, button gap, hold and confirm times belong to this Mac only and aren't affected.";
 "面板大小（占屏幕）" = "Panel Size (of Screen)";
 "音量" = "Volume";
 "音量 +" = "Volume +";
@@ -351,3 +351,6 @@
 "隐藏时由面板上的指示点代替光标，关闭面板后光标回到原处。保持显示时，部分 Mac 上光标可能跟着手指移动。" = "When hidden, the panel’s pointer dot stands in for the cursor, which returns to its place when the panel closes. When kept visible, the cursor may follow your finger on some Macs.";
 "调试模式" = "Debug Mode";
 "显示调试叠层，用于排查问题。其中的诊断日志只留在内存里，不会写入文件或上传，是否复制给别人由你决定。" = "Shows the debug overlay for troubleshooting. Its diagnostic log stays in memory and is never written to a file or uploaded; you decide whether to copy it for anyone.";
+"按住多久打开面板" = "Hold Time to Open Panel";
+"选择确认时间" = "Selection Confirm Time";
+"经常误开面板或误执行时，把这两项调大。手指落下后不到确认时间就抬起、且基本没移动，只关闭面板不执行；设为 0 ms 则不保护。" = "Increase these two if panels open or actions run by accident. Lifting before the confirm time without really moving just closes the panel; 0 ms turns this protection off.";

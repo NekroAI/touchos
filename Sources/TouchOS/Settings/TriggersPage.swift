@@ -33,7 +33,7 @@ struct TriggersPage: View {
                     SectionHeader(title: String(localized: "在边角轻点后按住"),
                                   note: String(localized: "第一下轻点落在开启的角或边上，接着按住，打开为这个方位选择的面板；落在别处仍是普通的轻点后按住。"))
                 }
-                Section("手感") {
+                Section {
                     LabeledSlider(title: String(localized: "面板大小（占屏幕）"), value: binding(configs, \.sizes.panelScale), range: Tuning.panelScaleRange)
                         .onHover { hover(.panel, $0) }
                     LabeledSlider(title: String(localized: "映射区大小（占触控板）"), value: binding(configs, \.sizes.mappingScale), range: Tuning.mappingScaleRange)
@@ -41,7 +41,15 @@ struct TriggersPage: View {
                     LabeledSlider(title: String(localized: "按钮间隙"), value: binding(configs, \.sizes.hitGapMM), range: Tuning.hitGapRange,
                                   step: 0.5, format: { String(format: "%.1f mm", $0) })
                         .onHover { hover(.gap, $0) }
+                    LabeledSlider(title: String(localized: "按住多久打开面板"), value: binding(configs, \.sizes.tapHoldDelayMs), range: Tuning.tapHoldDelayRange,
+                                  step: 10, format: { "\(Int($0)) ms" })
+                    LabeledSlider(title: String(localized: "选择确认时间"), value: binding(configs, \.sizes.commitGuardMs), range: Tuning.commitGuardRange,
+                                  step: 10, format: { "\(Int($0)) ms" })
                     Toggle("触觉反馈", isOn: binding(configs, \.general.haptics))
+                } header: {
+                    Text("手感")
+                } footer: {
+                    FormFooter(String(localized: "经常误开面板或误执行时，把这两项调大。手指落下后不到确认时间就抬起、且基本没移动，只关闭面板不执行；设为 0 ms 则不保护。"))
                 }
             }
             .formStyle(.grouped)

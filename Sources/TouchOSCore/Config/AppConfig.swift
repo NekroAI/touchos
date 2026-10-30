@@ -124,10 +124,13 @@ public struct AppConfig: Codable, Equatable, Sendable {
         public var mappingScale = Tuning().mappingScale
         /// 按钮间隙（毫米，D31）
         public var hitGapMM = Tuning().hitGapMM
+        /// 按住多久打开面板、选择确认时间（毫秒，D53）
+        public var tapHoldDelayMs = Tuning().tapHoldDelayMs
+        public var commitGuardMs = Tuning().commitGuardMs
 
         public init() {}
 
-        private enum Keys: String, CodingKey { case panelScale, mappingScale, hitGapMM }
+        private enum Keys: String, CodingKey { case panelScale, mappingScale, hitGapMM, tapHoldDelayMs, commitGuardMs }
 
         /// 缺省的字段取默认值：旧版本写出的文件没有后来新增的字段
         public init(from decoder: Decoder) throws {
@@ -136,6 +139,8 @@ public struct AppConfig: Codable, Equatable, Sendable {
             panelScale = try c.decodeIfPresent(Double.self, forKey: .panelScale) ?? d.panelScale
             mappingScale = try c.decodeIfPresent(Double.self, forKey: .mappingScale) ?? d.mappingScale
             hitGapMM = try c.decodeIfPresent(Double.self, forKey: .hitGapMM) ?? d.hitGapMM
+            tapHoldDelayMs = try c.decodeIfPresent(Double.self, forKey: .tapHoldDelayMs) ?? d.tapHoldDelayMs
+            commitGuardMs = try c.decodeIfPresent(Double.self, forKey: .commitGuardMs) ?? d.commitGuardMs
         }
 
         public func encode(to encoder: Encoder) throws {
@@ -143,6 +148,8 @@ public struct AppConfig: Codable, Equatable, Sendable {
             try c.encode(panelScale, forKey: .panelScale)
             try c.encode(mappingScale, forKey: .mappingScale)
             try c.encode(hitGapMM, forKey: .hitGapMM)
+            try c.encode(tapHoldDelayMs, forKey: .tapHoldDelayMs)
+            try c.encode(commitGuardMs, forKey: .commitGuardMs)
         }
     }
 
@@ -248,6 +255,8 @@ public struct AppConfig: Codable, Equatable, Sendable {
         t.panelScale = min(max(sizes.panelScale, Tuning.panelScaleRange.lowerBound), Tuning.panelScaleRange.upperBound)
         t.mappingScale = min(max(sizes.mappingScale, Tuning.mappingScaleRange.lowerBound), Tuning.mappingScaleRange.upperBound)
         t.hitGapMM = min(max(sizes.hitGapMM, Tuning.hitGapRange.lowerBound), Tuning.hitGapRange.upperBound)
+        t.tapHoldDelayMs = min(max(sizes.tapHoldDelayMs, Tuning.tapHoldDelayRange.lowerBound), Tuning.tapHoldDelayRange.upperBound)
+        t.commitGuardMs = min(max(sizes.commitGuardMs, Tuning.commitGuardRange.lowerBound), Tuning.commitGuardRange.upperBound)
     }
 
     // MARK: 编码

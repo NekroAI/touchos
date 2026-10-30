@@ -253,16 +253,35 @@ public struct PointerTrack: Equatable, Sendable {
 
     public let id: Int
     public private(set) var samples: [(t: TimeInterval, p: CGPoint)] = []
+    /// 这根手指落下的时刻，以及离落点最远的横竖距离（归一化）：判断抬手是不是太快、太没动（D53）
+    public let startedAt: TimeInterval
+    private let origin: CGPoint
+    public private(set) var spanX = 0.0
+    public private(set) var spanY = 0.0
 
     public init(id: Int, t: TimeInterval, p: CGPoint) {
         self.id = id
         samples = [(t, p)]
+        startedAt = t
+        origin = p
+    }
+
+    /// 抬起防抖内落回的手指（D36）：当作同一次触摸，落下时刻和移动量接着算
+    public init(id: Int, t: TimeInterval, p: CGPoint, continuing track: PointerTrack) {
+        self.id = id
+        samples = [(t, p)]
+        startedAt = track.startedAt
+        origin = track.origin
+        spanX = max(track.spanX, abs(p.x - track.origin.x))
+        spanY = max(track.spanY, abs(p.y - track.origin.y))
     }
 
     public var latest: CGPoint { samples[samples.count - 1].p }
 
     public mutating func append(t: TimeInterval, p: CGPoint) {
         samples.append((t, p))
+        spanX = max(spanX, abs(p.x - origin.x))
+        spanY = max(spanY, abs(p.y - origin.y))
         samples.removeAll { $0.t < t - Self.historyWindow }
     }
 
