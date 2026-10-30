@@ -62,15 +62,27 @@ extension AppConfig {
 
     /// 复制面板：新的面板 ID 与槽位 ID，名称加"副本"
     public func duplicate(_ panel: Layout) -> Layout {
-        let id = Self.uniqueID(panel.id, existing: Set(panels.map(\.id)))
-        var used = allSlotIDs
+        var copy = Self.instance(of: panel, id: Self.uniqueID(panel.id, existing: Set(panels.map(\.id))), used: allSlotIDs)
+        copy.name = panel.name + " 副本"
+        return copy
+    }
+
+    /// 重置面板：换成模板的内容（含名称），保留面板 ID 与指向它的绑定；按钮 ID 重新生成
+    public mutating func resetPanel(_ id: String, to template: Layout) {
+        guard let i = panels.firstIndex(where: { $0.id == id }) else { return }
+        let used = Set(panels.filter { $0.id != id }.flatMap { $0.slots.map(\.id.raw) })
+        panels[i] = Self.instance(of: template, id: id, used: used)
+    }
+
+    /// 以 `id` 为新面板 ID 的模板副本，按钮 ID 改为 `<id>.<原后缀>` 并避开 `used`
+    static func instance(of panel: Layout, id: String, used: Set<String>) -> Layout {
+        var used = used
         var copy = panel
         copy.id = id
-        copy.name = panel.name + " 副本"
         copy.slots = panel.slots.map { s in
             var t = s
             let suffix = s.id.raw.hasPrefix(panel.id + ".") ? String(s.id.raw.dropFirst(panel.id.count + 1)) : s.id.raw
-            let new = Self.uniqueID("\(id).\(suffix)", existing: used)
+            let new = uniqueID("\(id).\(suffix)", existing: used)
             used.insert(new)
             t.id = SlotID(new)
             return t

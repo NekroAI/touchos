@@ -265,6 +265,29 @@ private func temporaryStore() -> ConfigStore {
         #expect(ring.rebuiltRing(items: ring.ringItems, center: .some(nil)).ringCenter == nil)
     }
 
+    @Test func resetRestoresTemplateAndKeepsIDAndBindings() {
+        var config = AppConfig()
+        config.panels.append(config.duplicate(PresetPanels.browser))
+        config.bind(.tapHold, to: "browser-2")
+        config.panels[4].name = "改过"
+        config.panels[4].slots.removeAll()
+        config.resetPanel("browser-2", to: PresetPanels.browser)
+        let reset = config.panels[4]
+        #expect(reset.id == "browser-2" && reset.name == "浏览器" && reset.slots.count == PresetPanels.browser.slots.count)
+        #expect(reset.slots.allSatisfy { $0.id.raw.hasPrefix("browser-2.") })
+        #expect(config.binding(for: .tapHold) == "browser-2" && config.validate().isEmpty)
+        config.resetPanel("missing", to: PresetPanels.media)
+        #expect(config.panels.count == 5)
+    }
+
+    @Test func presetOriginFollowsCopies() {
+        #expect(PresetPanels.origin(of: "browser")?.id == "browser")
+        #expect(PresetPanels.origin(of: "browser-2-3")?.id == "browser")
+        #expect(PresetPanels.origin(of: "edit-2")?.id == "edit")
+        #expect(PresetPanels.origin(of: "browsers") == nil && PresetPanels.origin(of: "panel-2") == nil)
+        #expect(PresetPanels.origin(of: "browser-x") == nil)
+    }
+
     @Test func duplicateRemoveAndBind() {
         var config = AppConfig()
         let copy = config.duplicate(PresetPanels.browser)

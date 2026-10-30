@@ -136,6 +136,8 @@ private struct PanelHeader: View {
     @Bindable var navigation: SettingsNavigation
     let panel: PanelLayout
     @State private var note: String?
+    @State private var confirmingReset = false
+    @FocusState private var editingName: Bool
 
     var body: some View {
         HStack(alignment: .center, spacing: 16) {
@@ -143,6 +145,8 @@ private struct PanelHeader: View {
                 TextField("面板名称", text: Binding(get: { panel.name }, set: { n in updatePanel(configs, panel.id) { $0.name = n } }))
                     .textFieldStyle(.plain)
                     .font(.title2.weight(.semibold))
+                    .focused($editingName)
+                    .help("点击修改名称")
                 Text(subtitle).font(.callout).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 12)
@@ -157,10 +161,12 @@ private struct PanelHeader: View {
                 }
             }
             Menu {
+                Button("重命名") { editingName = true }
                 Button("复制面板") { PanelCommands.add(panel, configs: configs, navigation: navigation) }
                 Button("设为默认面板") { PanelCommands.makeDefault(panel.id, configs: configs) }
                     .disabled(isDefault)
                 Divider()
+                Button(resetTitle + "…") { confirmingReset = true }
                 Button("删除面板", role: .destructive) { PanelCommands.remove(panel.id, configs: configs, navigation: navigation) }
                     .disabled(configs.config.panels.count <= 1)
             } label: {
@@ -175,7 +181,23 @@ private struct PanelHeader: View {
         .padding(.top, 18)
         .padding(.bottom, 14)
         .onChange(of: panel.id) { note = nil }
+        .confirmationDialog(resetTitle + "？", isPresented: $confirmingReset) {
+            Button(resetTitle, role: .destructive) {
+                navigation.selectedSlot = nil
+                note = nil
+                configs.update { $0.resetPanel(panel.id, to: resetTemplate) }
+            }
+        } message: {
+            Text("「\(panel.name)」的名称、行列和全部按钮都会换成\(PresetPanels.origin(of: panel.id).map { "预置的「\($0.name)」" } ?? "空白面板")，唤起方式的绑定保留。可以在 通用 › 配置文件 里从备份恢复。")
+        }
     }
+
+    /// 来自预置面板的恢复成预置内容，其余的清空
+    private var resetTemplate: PanelLayout {
+        PresetPanels.origin(of: panel.id) ?? (panel.isRing ? PanelCommands.blankRing : PanelCommands.blankGrid)
+    }
+
+    private var resetTitle: String { PresetPanels.origin(of: panel.id) == nil ? "清空面板" : "重置面板" }
 
     private var isDefault: Bool { configs.config.panels.first?.id == panel.id }
 
@@ -274,9 +296,11 @@ private struct PanelStage: View {
 
     @ViewBuilder private var backdrop: some View {
         if let image = StageBackdrop.image {
+            // 按填满缩放的图片布局尺寸超出舞台，裁剪只裁显示、不裁命中区域：不让它接收点击，否则会盖住上方的标题栏
             Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
                 .blur(radius: 6, opaque: true)
                 .overlay(Color.black.opacity(0.3))
+                .allowsHitTesting(false)
         } else {
             LinearGradient(colors: [Color(red: 0.13, green: 0.15, blue: 0.24), Color(red: 0.07, green: 0.07, blue: 0.11)],
                            startPoint: .topLeading, endPoint: .bottomTrailing)

@@ -85,4 +85,12 @@ public enum PresetPanels {
     ], center: Slot(id: "edit.close", shape: .rect(.zero), title: "关闭", symbol: "xmark", action: .none))
 
     public static let all = [browser, media, window, editing]
+
+    /// 面板来自哪个预置面板：ID 相同，或是它的副本（`browser-2`、`browser-2-3`）
+    public static func origin(of id: String) -> Layout? {
+        all.first { preset in
+            id == preset.id || (id.hasPrefix(preset.id + "-")
+                && id.dropFirst(preset.id.count + 1).split(separator: "-").allSatisfy { Int($0) != nil })
+        }
+    }
 }
