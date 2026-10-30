@@ -12,8 +12,11 @@ final class WelcomeWindowController {
     func show() {
         let window = self.window ?? makeWindow()
         self.window = window
+        // 从触控板手势打开时本应用不在前台，系统可以拒绝激活（macOS 14 起为协作式激活），
+        // 只 makeKeyAndOrderFront 窗口会落在当前应用后面；orderFrontRegardless 保证它出现在最前
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
     }
 
     private func makeWindow() -> NSWindow {
