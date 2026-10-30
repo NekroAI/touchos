@@ -9,8 +9,7 @@ extension Layout {
               cell.row + cell.rowSpan <= rows, cell.col + cell.colSpan <= cols else { return false }
         return !slots.contains { s in
             guard s.id != ignoring, case .cell(let c) = s.shape else { return false }
-            return c.row < cell.row + cell.rowSpan && cell.row < c.row + c.rowSpan
-                && c.col < cell.col + cell.colSpan && cell.col < c.col + c.colSpan
+            return c.overlaps(cell)
         }
     }
 
@@ -20,6 +19,35 @@ extension Layout {
             guard case .cell(let c) = s.shape else { return false }
             return (c.row..<(c.row + c.rowSpan)).contains(row) && (c.col..<(c.col + c.colSpan)).contains(col)
         }
+    }
+
+    /// 拖动放置（D29）：落点空着就移过去；压到别的按钮时，被压住的按钮整体平移到空出来的位置
+    /// （同尺寸即互换）。平移后越界或重叠时放不下，返回 nil
+    public func moving(_ id: SlotID, to target: GridCell) -> Layout? {
+        guard let i = slots.firstIndex(where: { $0.id == id }), case .cell(let source) = slots[i].shape else { return nil }
+        if target == source { return self }
+        let dr = source.row - target.row, dc = source.col - target.col
+        var copy = self
+        copy.slots[i].shape = .cell(target)
+        for (j, s) in slots.enumerated() where j != i {
+            guard case .cell(let c) = s.shape, c.overlaps(target) else { continue }
+            copy.slots[j].shape = .cell(GridCell(row: c.row + dr, col: c.col + dc, rowSpan: c.rowSpan, colSpan: c.colSpan))
+        }
+        let cells = copy.slots.compactMap { s -> GridCell? in if case .cell(let c) = s.shape { c } else { nil } }
+        for (k, c) in cells.enumerated() {
+            guard c.row >= 0, c.col >= 0, c.row + c.rowSpan <= rows, c.col + c.colSpan <= cols,
+                  !cells[(k + 1)...].contains(where: c.overlaps) else { return nil }
+        }
+        return copy
+    }
+
+    /// 环形外圈的项目移到第 `index` 位（顺时针，从正上方起）
+    public func movingRingItem(_ id: SlotID, to index: Int) -> Layout {
+        var items = ringItems
+        guard let from = items.firstIndex(where: { $0.id == id }) else { return self }
+        let item = items.remove(at: from)
+        items.insert(item, at: min(max(index, 0), items.count))
+        return rebuiltRing(items: items)
     }
 
     /// 改网格行列数；有槽位会越界时返回 nil（编辑器提示先移动或删除）
@@ -46,6 +74,12 @@ extension Layout {
     /// 按新的项目列表重建环形布局（保留 ID、名称与中心）
     public func rebuiltRing(items: [Slot], center: Slot?? = .none) -> Layout {
         Layout.ring(id: id, name: name, items: items, center: center ?? ringCenter)
+    }
+}
+
+extension GridCell {
+    func overlaps(_ o: GridCell) -> Bool {
+        row < o.row + o.rowSpan && o.row < row + rowSpan && col < o.col + o.colSpan && o.col < col + colSpan
     }
 }
 

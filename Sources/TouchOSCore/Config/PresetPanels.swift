@@ -1,6 +1,6 @@
 import Foundation
 
-/// 预置面板（D23）：网格 5 × 3，正中为关闭；"编辑"为环形。首次启动写入配置，之后由用户在编辑器中修改。
+/// 预置面板（D23、D29）：网格 5 × 3，正中为关闭；"编辑"为环形。首次启动写入配置，之后由用户在编辑器中修改。
 /// 不放系统手势已能完成的功能（如调度中心）。
 public enum PresetPanels {
     public static let cols = 5
@@ -21,6 +21,21 @@ public enum PresetPanels {
     public static func close(_ panel: String, col: Int = 2, row: Int = 1) -> Slot {
         cell(panel, "close", col, row, "关闭", "xmark", .none)
     }
+
+    /// 默认面板（D29）：各应用通用的高频操作，不铺满。关闭正下方两格留空，手指下滑不会误触回车或锁屏；退出放在角上
+    public static let common = Layout(id: "common", name: "常用", rows: rows, cols: cols, slots: [
+        cell("common", "quit", 0, 0, "退出", "rectangle.portrait.and.arrow.right", key(12, [.command], "⌘Q")),
+        cell("common", "closeWindow", 1, 0, "关闭窗口", "xmark.square", key(13, [.command], "⌘W")),
+        cell("common", "reload", 2, 0, "刷新", "arrow.clockwise", key(15, [.command], "⌘R")),
+        cell("common", "settings", 3, 0, "设置", "gearshape", key(43, [.command], "⌘,")),
+        cell("common", "volume", 4, 0, h: 3, "音量", "speaker.wave.2", .none, slider: .volume),
+        cell("common", "selectAll", 0, 1, "全选", "selection.pin.in.out", key(0, [.command], "⌘A")),
+        cell("common", "copy", 1, 1, "拷贝", "doc.on.doc", key(8, [.command], "⌘C")),
+        close("common"),
+        cell("common", "paste", 3, 1, "粘贴", "doc.on.clipboard", key(9, [.command], "⌘V")),
+        cell("common", "lock", 0, 2, "锁屏", "lock", .system(.lockScreen)),
+        cell("common", "return", 3, 2, "回车", "return", key(36, [], "↩")),
+    ])
 
     public static let browser = Layout(id: "browser", name: "浏览器", rows: rows, cols: cols, slots: [
         cell("browser", "new", 0, 0, "新标签", "plus.square", key(17, [.command], "⌘T")),
@@ -84,11 +99,14 @@ public enum PresetPanels {
         ringItem("undo", "撤销", "arrow.uturn.backward", key(6, [.command], "⌘Z")),
     ], center: Slot(id: "edit.close", shape: .rect(.zero), title: "关闭", symbol: "xmark", action: .none))
 
-    public static let all = [browser, media, window, editing]
+    /// 首次启动写入的面板，第一个为默认面板
+    public static let all = [common, media, window, editing]
+    /// 新建面板可选的模板：默认面板之外还有浏览器
+    public static let templates = all + [browser]
 
     /// 面板来自哪个预置面板：ID 相同，或是它的副本（`browser-2`、`browser-2-3`）
     public static func origin(of id: String) -> Layout? {
-        all.first { preset in
+        templates.first { preset in
             id == preset.id || (id.hasPrefix(preset.id + "-")
                 && id.dropFirst(preset.id.count + 1).split(separator: "-").allSatisfy { Int($0) != nil })
         }

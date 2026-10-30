@@ -18,7 +18,7 @@ private func temporaryStore() -> ConfigStore {
         let config = AppConfig.default
         #expect(try AppConfig.decode(try config.encoded()) == config)
         #expect(config.validate().isEmpty)
-        #expect(config.panels.map(\.id) == ["browser", "media", "window", "edit"])
+        #expect(config.panels.map(\.id) == ["common", "media", "window", "edit"])
     }
 
     @Test func everyActionTypeRoundTrips() throws {
@@ -194,7 +194,7 @@ private func temporaryStore() -> ConfigStore {
     }
 
     @Test func presetsHaveNoProblems() {
-        for p in PresetPanels.all { #expect(AppConfig.gridIssues(p).isEmpty) }
+        for p in PresetPanels.templates { #expect(AppConfig.gridIssues(p).isEmpty) }
     }
 }
 
@@ -259,6 +259,43 @@ private func temporaryStore() -> ConfigStore {
         #expect(grid.slot(atRow: 0, col: 1)?.id == "g.a" && grid.slot(atRow: 1, col: 0) == nil)
     }
 
+    @Test func movingSwapsDisplacedSlots() {
+        func cell(_ l: Layout?, _ id: SlotID) -> GridCell? {
+            if case .cell(let c)? = l?.slot(id)?.shape { c } else { nil }
+        }
+        // 空位直接移动
+        #expect(cell(grid.moving("g.b", to: GridCell(row: 1, col: 0)), "g.b") == GridCell(row: 1, col: 0))
+        #expect(grid.moving("g.b", to: GridCell(row: 1, col: 2)) == grid)
+        // 压住 A：A 平移到 B 空出的位置会越界，放不下
+        #expect(grid.moving("g.b", to: GridCell(row: 0, col: 0)) == nil)
+        // 同尺寸互换
+        let two = Layout(id: "t", name: "t", rows: 1, cols: 3, slots: [
+            Slot(id: "t.a", cell: GridCell(row: 0, col: 0), title: "A", symbol: "", action: .none),
+            Slot(id: "t.b", cell: GridCell(row: 0, col: 2), title: "B", symbol: "", action: .none),
+        ])
+        let swapped = two.moving("t.a", to: GridCell(row: 0, col: 2))
+        #expect(cell(swapped, "t.a") == GridCell(row: 0, col: 2) && cell(swapped, "t.b") == GridCell(row: 0, col: 0))
+        // 越界、未知按钮
+        #expect(two.moving("t.a", to: GridCell(row: 0, col: 3)) == nil && two.moving("x", to: GridCell(row: 0, col: 1)) == nil)
+        // 宽按钮压到两个小按钮：两个一起平移
+        let wide = Layout(id: "w", name: "w", rows: 2, cols: 2, slots: [
+            Slot(id: "w.a", cell: GridCell(row: 0, col: 0, colSpan: 2), title: "A", symbol: "", action: .none),
+            Slot(id: "w.b", cell: GridCell(row: 1, col: 0), title: "B", symbol: "", action: .none),
+            Slot(id: "w.c", cell: GridCell(row: 1, col: 1), title: "C", symbol: "", action: .none),
+        ])
+        let down = wide.moving("w.a", to: GridCell(row: 1, col: 0, colSpan: 2))
+        #expect(cell(down, "w.b") == GridCell(row: 0, col: 0) && cell(down, "w.c") == GridCell(row: 0, col: 1))
+    }
+
+    @Test func ringItemsReorder() {
+        let ring = PresetPanels.editing
+        let moved = ring.movingRingItem("edit.copy", to: 3)
+        #expect(moved.ringItems.map(\.id.raw).prefix(4) == ["edit.paste", "edit.cut", "edit.redo", "edit.copy"])
+        #expect(moved.ringCenter?.id == "edit.close" && moved.isRing)
+        #expect(ring.movingRingItem("edit.copy", to: 99).ringItems.last?.id == "edit.copy")
+        #expect(ring.movingRingItem("x", to: 0) == ring)
+    }
+
     @Test func resizingRejectsCuttingSlots() {
         #expect(grid.resized(rows: 3, cols: 4)?.cols == 4)
         #expect(grid.resized(rows: 1, cols: 3) == nil)
@@ -275,15 +312,15 @@ private func temporaryStore() -> ConfigStore {
 
     @Test func resetRestoresTemplateAndKeepsIDAndBindings() {
         var config = AppConfig()
-        config.panels.append(config.duplicate(PresetPanels.browser))
-        config.bind(.tapHold, to: "browser-2")
+        config.panels.append(config.duplicate(PresetPanels.common))
+        config.bind(.tapHold, to: "common-2")
         config.panels[4].name = "改过"
         config.panels[4].slots.removeAll()
-        config.resetPanel("browser-2", to: PresetPanels.browser)
+        config.resetPanel("common-2", to: PresetPanels.common)
         let reset = config.panels[4]
-        #expect(reset.id == "browser-2" && reset.name == "浏览器" && reset.slots.count == PresetPanels.browser.slots.count)
-        #expect(reset.slots.allSatisfy { $0.id.raw.hasPrefix("browser-2.") })
-        #expect(config.binding(for: .tapHold) == "browser-2" && config.validate().isEmpty)
+        #expect(reset.id == "common-2" && reset.name == "常用" && reset.slots.count == PresetPanels.common.slots.count)
+        #expect(reset.slots.allSatisfy { $0.id.raw.hasPrefix("common-2.") })
+        #expect(config.binding(for: .tapHold) == "common-2" && config.validate().isEmpty)
         config.resetPanel("missing", to: PresetPanels.media)
         #expect(config.panels.count == 5)
     }
@@ -298,16 +335,16 @@ private func temporaryStore() -> ConfigStore {
 
     @Test func duplicateRemoveAndBind() {
         var config = AppConfig()
-        let copy = config.duplicate(PresetPanels.browser)
-        #expect(copy.id == "browser-2" && copy.name == "浏览器 副本")
-        #expect(copy.slots.first?.id == "browser-2.new")
+        let copy = config.duplicate(PresetPanels.common)
+        #expect(copy.id == "common-2" && copy.name == "常用 副本")
+        #expect(copy.slots.first?.id == "common-2.quit")
         config.panels.append(copy)
         #expect(config.validate().isEmpty)
-        config.bind(.threeFingerTap, to: "browser-2")
+        config.bind(.threeFingerTap, to: "common-2")
         config.bind(.threeFingerTap, to: "media")
         #expect(config.binding(for: .threeFingerTap) == "media" && config.bindings.count == 1)
-        config.bind(.fourFingerTap, to: "browser-2")
-        config.removePanel("browser-2")
+        config.bind(.fourFingerTap, to: "common-2")
+        config.removePanel("common-2")
         #expect(config.binding(for: .fourFingerTap) == nil && config.panels.count == 4)
         config.bind(.threeFingerTap, to: nil)
         #expect(config.bindings.isEmpty)

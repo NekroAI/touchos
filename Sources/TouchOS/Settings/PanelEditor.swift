@@ -77,7 +77,7 @@ enum PanelCommands {
         Button("环形") { add(blankRing, configs: configs, navigation: navigation) }
         Divider()
         Section("从模板") {
-            ForEach(PresetPanels.all, id: \.id) { preset in
+            ForEach(PresetPanels.templates, id: \.id) { preset in
                 Button(preset.name) { add(preset, configs: configs, navigation: navigation) }
             }
         }
@@ -308,8 +308,8 @@ private struct PanelStage: View {
     }
 
     private var hint: String {
-        panel.isRing ? "点按钮编辑 · 外圈按钮顺时针排列，在属性里调整顺序"
-            : "点空位添加 · 拖动移动 · 拖右下角调整大小 · 位置与触控板一一对应"
+        panel.isRing ? "点按钮编辑 · 拖动外圈按钮调整顺序"
+            : "点空位添加 · 拖动移动，拖到别的按钮上互换 · 拖右下角调整大小 · 位置与触控板一一对应"
     }
 
     /// 唤起时面板在主屏上的实际尺寸（FR-6.4）
@@ -408,7 +408,7 @@ private struct GridCanvas: View {
                     .animation(.spring(response: 0.28, dampingFraction: 0.8), value: g)
             }
             if let d = drag, let slot = panel.slot(d.id), case .cell(let cell) = slot.shape,
-               let target = proposed(cell, cw, ch), !panel.canPlace(target, ignoring: slot.id) {
+               let target = proposed(cell, cw, ch), placed(slot.id, target, resize: d.resize) == nil {
                 let r = rect(target, cw, ch).insetBy(dx: gap, dy: gap)
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(Color.red.opacity(0.8), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
@@ -422,11 +422,17 @@ private struct GridCanvas: View {
         .frame(width: size.width, height: size.height, alignment: .topLeading)
     }
 
-    /// 拖动中按落点实时显示（放不下时留在原处）
+    /// 拖动中按落点实时显示，被压住的按钮让到空出的位置（放不下时留在原处）
     private func displayed(_ cw: CGFloat, _ ch: CGFloat) -> PanelLayout {
-        guard let d = drag, let i = panel.slots.firstIndex(where: { $0.id == d.id }),
-              case .cell(let cell) = panel.slots[i].shape,
-              let target = proposed(cell, cw, ch), panel.canPlace(target, ignoring: d.id) else { return panel }
+        guard let d = drag, let slot = panel.slot(d.id), case .cell(let cell) = slot.shape,
+              let target = proposed(cell, cw, ch) else { return panel }
+        return placed(d.id, target, resize: d.resize) ?? panel
+    }
+
+    /// 移动可以和别的按钮互换位置（D29）；改大小只能占空位
+    private func placed(_ id: SlotID, _ target: GridCell, resize: Bool) -> PanelLayout? {
+        guard resize else { return panel.moving(id, to: target) }
+        guard panel.canPlace(target, ignoring: id), let i = panel.slots.firstIndex(where: { $0.id == id }) else { return nil }
         var copy = panel
         copy.slots[i].shape = .cell(target)
         return copy
@@ -465,13 +471,14 @@ private struct GridCanvas: View {
             .position(x: frame.midX, y: frame.midY)
             .onTapGesture { navigation.selectedSlot = slot.id }
             .gesture(DragGesture(minimumDistance: 3)
-                .onChanged { v in
+                .onChanged { v in drag = (slot.id, v.translation, false) }
+                .onEnded { _ in
+                    commit(slot, cell, cw, ch)
+                    // 松手后再选中：拖动途中打开属性栏会缩小画布，落点跟着错位
                     navigation.selectedSlot = slot.id
-                    drag = (slot.id, v.translation, false)
-                }
-                .onEnded { _ in commit(slot, cell, cw, ch) })
+                })
         if navigation.selectedSlot == slot.id && !slot.isCancel && (drag == nil || drag?.resize == true) {
-            let target = proposed(cell, cw, ch).flatMap { panel.canPlace($0, ignoring: slot.id) ? $0 : nil } ?? cell
+            let target = proposed(cell, cw, ch).flatMap { placed(slot.id, $0, resize: true) != nil ? $0 : nil } ?? cell
             let r = rect(target, cw, ch).insetBy(dx: gap, dy: gap)
             ResizeHandle()
                 .position(x: r.maxX - 2, y: r.maxY - 2)
@@ -500,10 +507,8 @@ private struct GridCanvas: View {
 
     private func commit(_ slot: Slot, _ cell: GridCell, _ cw: CGFloat, _ ch: CGFloat) {
         // 先写入新位置再清掉拖动状态，松手时不会闪回原处
-        if let target = proposed(cell, cw, ch), target != cell, panel.canPlace(target, ignoring: slot.id) {
-            updatePanel(configs, panel.id) { p in
-                if let i = p.slots.firstIndex(where: { $0.id == slot.id }) { p.slots[i].shape = .cell(target) }
-            }
+        if let d = drag, let target = proposed(cell, cw, ch), target != cell, let layout = placed(slot.id, target, resize: d.resize) {
+            updatePanel(configs, panel.id) { $0 = layout }
         }
         drag = nil
     }
@@ -540,26 +545,60 @@ private struct RingCanvas: View {
 
     static let maxItems = 12
 
+    /// 拖动中的外圈按钮与它将落到的位置
+    @State private var drag: (id: SlotID, index: Int)?
+
     var body: some View {
         let size = stage.display
+        let shown = drag.map { panel.movingRingItem($0.id, to: $0.index) } ?? panel
         let chips = panel.slots.compactMap { s in stage.chip(s, in: panel).map { (slot: s, geometry: $0) } }
         ZStack(alignment: .topLeading) {
-            LivePanel(layout: panel, stage: stage, lit: navigation.selectedSlot)
-                .animation(.spring(response: 0.3, dampingFraction: 0.8), value: panel)
+            LivePanel(layout: shown, stage: stage, lit: navigation.selectedSlot)
+                .animation(.spring(response: 0.3, dampingFraction: 0.8), value: shown)
+            if let id = navigation.selectedSlot, let slot = shown.slot(id), let g = stage.chip(slot, in: shown) {
+                SelectionMark(geometry: g)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.8), value: g)
+            }
+            // 操作区按拖动前的位置排布，拖动途中不会换到别的按钮上
             ForEach(chips, id: \.slot.id) { chip in
                 let r = chip.geometry.frame.insetBy(dx: -SelectionMark.outset, dy: -SelectionMark.outset)
+                let outer = panel.ringItems.contains { $0.id == chip.slot.id }
                 Circle().fill(Color.clear).contentShape(Circle())
                     .frame(width: r.width, height: r.height)
                     .position(x: r.midX, y: r.midY)
                     .onTapGesture { navigation.selectedSlot = chip.slot.id }
-                if navigation.selectedSlot == chip.slot.id { SelectionMark(geometry: chip.geometry) }
+                    .gesture(DragGesture(minimumDistance: 3, coordinateSpace: .named(Self.space))
+                        .onChanged { v in
+                            guard outer else { return }
+                            drag = (chip.slot.id, index(at: v.location, size: size))
+                        }
+                        .onEnded { v in
+                            guard outer else { return }
+                            let target = index(at: v.location, size: size)
+                            // 先写入新顺序再清掉拖动状态，松手时不会闪回原处；松手后再选中（同网格）
+                            updatePanel(configs, panel.id) { $0 = $0.movingRingItem(chip.slot.id, to: target) }
+                            drag = nil
+                            navigation.selectedSlot = chip.slot.id
+                        })
             }
         }
+        .coordinateSpace(name: Self.space)
         .frame(width: size.width, height: size.height, alignment: .topLeading)
         .overlay(alignment: .bottomTrailing) {
             Button { addItem() } label: { Label("添加按钮", systemImage: "plus") }
                 .disabled(panel.ringItems.count >= Self.maxItems)
         }
+    }
+
+    private static let space = "ring"
+
+    /// 拖动位置对应的外圈序号：按角度取最近的一格，从正上方起顺时针
+    private func index(at p: CGPoint, size: CGSize) -> Int {
+        let n = panel.ringItems.count
+        guard n > 0 else { return 0 }
+        let angle = atan2(p.x - size.width / 2, size.height / 2 - p.y) * 180 / .pi
+        let step = 360 / Double(n)
+        return Int(((angle + 360).truncatingRemainder(dividingBy: 360) / step).rounded()) % n
     }
 
     private func addItem() {
