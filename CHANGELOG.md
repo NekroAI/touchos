@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format is based on 
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-30
+
+### Fixed
+- The on-screen cursor could follow the finger while a panel was open. The cursor is now disassociated from the mouse during a session and restored afterwards, including when input stalls or the Mac sleeps.
+- Panels could close immediately on every summon until the app was restarted, after the trackpad's clock fell out of step (seen after switching a KVM).
+
 ## [0.1.2] - 2026-10-30
 
 ### Added

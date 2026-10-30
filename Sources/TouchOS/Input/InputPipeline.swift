@@ -1,5 +1,6 @@
 import Foundation
 import OSLog
+import TouchOSAtomics
 import TouchOSCore
 
 /// input.queue 上的输入处理（SRS 2.3）：原始接触 → `TouchFrame`（FR-4.2、4.3）、布局自检（FR-4.1）、帧率统计。
@@ -7,8 +8,7 @@ import TouchOSCore
 /// 除 `queue` 外的状态只在 `queue` 上访问。
 ///
 /// 时间戳换算：私有框架的时间戳是设备时钟，会话状态机、tick 与事件拦截统一使用 `systemUptime`。
-/// 每台设备记录"收到回调时的 uptime − 设备时间戳"的最小值作为偏移，帧时间戳 = 设备时间戳 + 偏移，
-/// 既保留设备时钟的帧间隔精度，又与其他时间可比。
+/// 每台设备一个 `DeviceClockAligner`（D49）。
 final class InputPipeline: @unchecked Sendable {
     let queue: DispatchQueue
 
@@ -22,14 +22,20 @@ final class InputPipeline: @unchecked Sendable {
     private var trackers: [TrackpadDeviceID: ContactTracker] = [:]
     private var selfChecks: [TrackpadDeviceID: LayoutSelfCheck] = [:]
     private var meters: [TrackpadDeviceID: FrameRateMeter] = [:]
-    private var clockOffsets: [TrackpadDeviceID: TimeInterval] = [:]
+    private var clocks: [TrackpadDeviceID: DeviceClockAligner] = [:]
+    private let clockResyncThreshold: TimeInterval
+    private let clockResyncCount = TOAtomicCreate()!
     private var layoutMismatch = false
     private var debugSink: DebugSink?
 
+    /// 设备时钟重新对齐的次数（调试叠层）
+    var clockResyncs: UInt64 { TOAtomicLoad(clockResyncCount) }
+
     /// `onFrame`、`onLayoutMismatch` 在 input.queue 上调用。
-    init(queue: DispatchQueue, onFrame: @escaping @Sendable (TouchFrame) -> Void,
+    init(queue: DispatchQueue, clockResyncThreshold: TimeInterval, onFrame: @escaping @Sendable (TouchFrame) -> Void,
          onLayoutMismatch: @escaping @Sendable () -> Void) {
         self.queue = queue
+        self.clockResyncThreshold = clockResyncThreshold
         self.onFrame = onFrame
         self.onLayoutMismatch = onLayoutMismatch
     }
@@ -48,7 +54,7 @@ final class InputPipeline: @unchecked Sendable {
                 self.trackers[id] = nil
                 self.selfChecks[id] = nil
                 self.meters[id] = nil
-                self.clockOffsets[id] = nil
+                self.clocks[id] = nil
             }
         }
     }
@@ -60,9 +66,12 @@ final class InputPipeline: @unchecked Sendable {
 
     private func process(device: TrackpadDeviceID, timestamp deviceTime: TimeInterval, received: TimeInterval, raw: [RawContact]) {
         guard !layoutMismatch, activeDevices.contains(device) else { return }
-        let offset = min(clockOffsets[device] ?? .infinity, received - deviceTime)
-        clockOffsets[device] = offset
-        let timestamp = deviceTime + offset
+        let (timestamp, resynced) = clocks[device, default: DeviceClockAligner(resyncThreshold: clockResyncThreshold)]
+            .align(deviceTime: deviceTime, received: received)
+        if resynced {
+            TOAtomicIncrement(clockResyncCount)
+            log.info("device clock resynced: device \(device.raw, privacy: .public)")
+        }
         if selfChecks[device, default: LayoutSelfCheck()].observe(raw) {
             layoutMismatch = true
             log.error("contact layout self-check failed; input disabled")

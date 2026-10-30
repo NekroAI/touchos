@@ -6,7 +6,7 @@ import TouchOSAtomics
 import TouchOSCore
 
 /// HID 层可修改的事件拦截（SRS 7.1、7.2）。回调运行在专用线程的 RunLoop 上，只读取无锁发布的 `TapPolicy` 快照查表决定放行或丢弃；
-/// 物理按下与 Esc 通过回调异步上报给状态机。光标冻结只靠丢弃指针移动实现：进程退出后拦截随之消失，系统行为立即恢复（NFR-7）。
+/// 物理按下与 Esc 通过回调异步上报给状态机。进程退出后拦截随之消失（NFR-7）；光标冻结另见 `CursorLock`（D50）。
 final class EventTapController: @unchecked Sendable {
     /// TouchOS 合成的事件在事件源用户数据字段写入该值，拦截见到一律放行（FR-7.3）
     static let syntheticMarker: Int64 = 0x546F_7563_684F_53  // "TouchOS"

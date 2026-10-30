@@ -32,6 +32,7 @@ final class DebugOverlayModel {
     var pressure: (stage: Int, value: Float)?
     /// 指针诊断（D47）：激活态丢弃的指针事件数与校正情况，统计从打开叠层时开始
     var droppedMoves: UInt64 = 0
+    var clockResyncs: UInt64 = 0
     var cursor: CursorLock.Diagnostics?
 
     func record(_ sample: LatencySample) {
@@ -112,11 +113,12 @@ final class DebugOverlayController {
         model.resetLatency()
         tap.resetTiming()
         cursor.resetDiagnostics()
-        let tap = self.tap, cursor = self.cursor
+        let tap = self.tap, cursor = self.cursor, pipeline = self.pipeline
         timer = Timer.scheduledTimer(withTimeInterval: Self.timingRefreshInterval, repeats: true) { _ in
             MainActor.assumeIsolated {
                 model.tapTiming = tap.timingSnapshot()
                 model.droppedMoves = tap.droppedActiveMoves
+                model.clockResyncs = pipeline.clockResyncs
                 model.cursor = cursor.diagnostics
             }
         }
@@ -245,6 +247,7 @@ private struct CursorSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text("SDK \(Self.linkedSDK) · 丢弃指针事件 \(model.droppedMoves)")
+            Text("时钟重对齐 \(model.clockResyncs)")
             if let c = model.cursor {
                 Text("校验 \(c.checks) · 校正 \(c.corrections)")
                 Text(String(format: "最大偏离 事件 %.1f · 屏幕 %.1f pt", c.maxEventDeviation, c.maxScreenDeviation))

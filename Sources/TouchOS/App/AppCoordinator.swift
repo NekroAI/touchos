@@ -44,7 +44,7 @@ final class AppCoordinator {
         tap.onPhysicalRelease = { ref.driver?.send(.physicalRelease) }
         let overlay = OverlayController(slotGap: tuning.slotGap, trailMs: tuning.trailMs)
         let executor = ActionExecutor()
-        let cursor = CursorLock(tap: tap)
+        let cursor = CursorLock(tap: tap, stallLimit: tuning.cursorStallLimitMs / 1000)
         let driver = SessionDriver(queue: queue, tuning: tuning, tap: tap, cursor: cursor,
                                    executor: executor, overlay: overlay)
         ref.driver = driver
@@ -73,6 +73,7 @@ final class AppCoordinator {
 
         pipeline = InputPipeline(
             queue: queue,
+            clockResyncThreshold: tuning.clockResyncMs / 1000,
             onFrame: { frame in driver.handle(.frame(frame)) },
             onLayoutMismatch: { [weak self] in
                 DispatchQueue.main.async { self?.setInputUnavailable(String(localized: "触点数据格式与本机系统不符")) }
@@ -186,9 +187,15 @@ final class AppCoordinator {
         let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         self.frontmost = frontmost
         driver.updateEnvironment { $0.frontmostBundleID = frontmost }
-        // SRS 5.2 forceCancel：屏幕锁定、快速用户切换
+        // SRS 5.2 forceCancel：屏幕锁定、快速用户切换；睡眠与关屏时也不留着断开关联的光标（D50）
         workspace.addObserver(forName: NSWorkspace.sessionDidResignActiveNotification, object: nil, queue: .main) { _ in
             driver.send(.forceCancel("session resigned"))
+        }
+        workspace.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { _ in
+            driver.send(.forceCancel("will sleep"))
+        }
+        workspace.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main) { _ in
+            driver.send(.forceCancel("screens slept"))
         }
         DistributedNotificationCenter.default().addObserver(forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main) { _ in
             driver.send(.forceCancel("screen locked"))

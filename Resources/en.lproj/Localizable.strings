@@ -348,6 +348,6 @@
 "调试工具" = "Debug Tools";
 "在菜单栏显示调试叠层，用于排查问题。数据只显示在屏幕上，不会写入文件或上传。" = "Shows a debug overlay in the menu bar for troubleshooting. Its data stays on screen and is never written to a file or uploaded.";
 "光标冻结方式" = "Cursor Freeze Method";
-"只靠拦截（默认）" = "Event Tap Only (Default)";
+"断开光标关联（默认）" = "Disassociate Cursor (Default)";
 "隐藏光标" = "Hide Cursor";
-"断开光标关联" = "Disassociate Cursor";
+"只靠拦截" = "Event Tap Only";

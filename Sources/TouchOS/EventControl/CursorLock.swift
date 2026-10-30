@@ -5,23 +5,35 @@ import TouchOSAtomics
 import TouchOSCore
 
 /// 光标冻结与校正（SRS 7.4）。只在 input.queue 上使用。
-/// 不使用"断开鼠标与光标关联"接口：冻结完全靠拦截丢弃指针移动，再逐 tick 校验并拉回。
+/// 激活态断开鼠标与光标的关联（D50）：只靠拦截丢弃时，有的机器上屏幕光标仍会跟手（D47）。
+/// 丢弃指针移动和逐 tick 校验继续保留。
 final class CursorLock: @unchecked Sendable {
     /// FR-7.7：偏离冻结点超过该距离（pt）时移回
     static let tolerance: CGFloat = 0.5
+    /// 看门狗的检查间隔
+    private static let watchdogInterval: DispatchTimeInterval = .milliseconds(250)
 
-    /// 激活态怎么冻结屏幕上的光标（D48，调试工具中切换以便实测）。默认只靠拦截丢弃
+    /// 激活态怎么冻结屏幕上的光标（D48、D50，调试工具中可切换）
     enum FreezeMethod: String, CaseIterable {
         case tap, hide, detach
         static let defaultsKey = "cursorFreezeMethod"
         static var current: FreezeMethod {
-            UserDefaults.standard.string(forKey: defaultsKey).flatMap(FreezeMethod.init) ?? .tap
+            UserDefaults.standard.string(forKey: defaultsKey).flatMap(FreezeMethod.init) ?? .detach
         }
     }
 
     private let tap: EventTapController
-    /// 这次会话实际施加的方式，退出时撤销。只在 input.queue 上读写
+    private let stallLimit: TimeInterval
+    /// input.queue 卡住时在看门狗队列上调用（光标已恢复），用来放开拦截并结束会话。启动前设置一次
+    var onStall: (@Sendable () -> Void)?
+    /// 保护 `applied` 与 `watchdog`：撤销可能来自 input.queue，也可能来自看门狗
+    private let freezeLock = NSLock()
+    /// 这次会话实际施加的方式，退出时撤销
     private var applied: FreezeMethod?
+    private var watchdog: DispatchSourceTimer?
+    private let watchdogQueue = DispatchQueue(label: "ai.nekro.touchos.cursor-watchdog", qos: .userInteractive)
+    /// input.queue 最后一次校验的时刻
+    private let heartbeat = TOAtomicCreate()!
     /// 冻结点（Quartz 全局坐标，原点为主屏左上角）
     private var freezePoint: CGPoint?
 
@@ -37,8 +49,11 @@ final class CursorLock: @unchecked Sendable {
     private let maxEventDeviation = TOAtomicCreate()!
     private let maxScreenDeviation = TOAtomicCreate()!
 
-    init(tap: EventTapController) {
+    init(tap: EventTapController, stallLimit: TimeInterval) {
         self.tap = tap
+        self.stallLimit = stallLimit
+        // 上一个进程异常结束时可能没来得及恢复（NFR-7）；关联着时重复调用没有副作用
+        CGAssociateMouseAndMouseCursorPosition(1)
     }
 
     func apply(_ command: CursorCommand) {
@@ -65,27 +80,51 @@ final class CursorLock: @unchecked Sendable {
     }
 
     private func applyFreezeMethod() {
+        freezeLock.lock()
+        defer { freezeLock.unlock() }
         guard applied == nil else { return }
-        let method = FreezeMethod.current
+        var method = FreezeMethod.current
         switch method {
         case .tap: break
         case .hide:
             Self.allowHidingInBackground()
             CGDisplayHideCursor(CGMainDisplayID())
         case .detach:
-            CGAssociateMouseAndMouseCursorPosition(0)
+            // 调用失败时退回只靠拦截
+            if CGAssociateMouseAndMouseCursorPosition(0) != .success { method = .tap }
         }
         applied = method
+        startWatchdog()
     }
 
-    /// 撤销这次会话施加的方式。所有退出路径（含退出应用时的取消）都经过 `.restore`
+    /// 撤销这次会话施加的方式，可重复调用。所有退出路径（含退出应用时的取消）都经过 `.restore`，
+    /// input.queue 卡住时由看门狗调用
     private func releaseFreezeMethod() {
+        freezeLock.lock()
+        defer { freezeLock.unlock() }
         switch applied {
         case .hide: CGDisplayShowCursor(CGMainDisplayID())
         case .detach: CGAssociateMouseAndMouseCursorPosition(1)
         case .tap, nil: break
         }
         applied = nil
+        watchdog?.cancel()
+        watchdog = nil
+    }
+
+    /// NFR-7：进程还活着时系统不会替我们恢复，所以 input.queue 超过 `stallLimit` 没有校验就直接恢复。
+    /// 调用方持有 `freezeLock`
+    private func startWatchdog() {
+        TOAtomicStoreDouble(heartbeat, ProcessInfo.processInfo.systemUptime)
+        let timer = DispatchSource.makeTimerSource(queue: watchdogQueue)
+        timer.schedule(deadline: .now() + Self.watchdogInterval, repeating: Self.watchdogInterval)
+        timer.setEventHandler { [weak self] in
+            guard let self, ProcessInfo.processInfo.systemUptime - TOAtomicLoadDouble(self.heartbeat) > self.stallLimit else { return }
+            self.releaseFreezeMethod()
+            self.onStall?()
+        }
+        timer.resume()
+        watchdog = timer
     }
 
     /// 后台应用默认不能隐藏光标，要先设置连接属性 `SetsCursorInBackground`。
@@ -101,6 +140,7 @@ final class CursorLock: @unchecked Sendable {
 
     /// FR-7.7：激活态每个 tick 校验一次
     func verify() {
+        TOAtomicStoreDouble(heartbeat, ProcessInfo.processInfo.systemUptime)
         guard let p = freezePoint else { return }
         // 两个来源都看：只读事件位置时，有的构建上光标在动它却不变（0.1.0 发布版，D47）
         let event = Self.location, screen = Self.screenLocation

@@ -665,9 +665,9 @@ private struct AboutPage: View {
                     freezeMethod = m
                     UserDefaults.standard.set(m.rawValue, forKey: CursorLock.FreezeMethod.defaultsKey)
                 })) {
-                    Text("只靠拦截（默认）").tag(CursorLock.FreezeMethod.tap)
+                    Text("断开光标关联（默认）").tag(CursorLock.FreezeMethod.detach)
                     Text("隐藏光标").tag(CursorLock.FreezeMethod.hide)
-                    Text("断开光标关联").tag(CursorLock.FreezeMethod.detach)
+                    Text("只靠拦截").tag(CursorLock.FreezeMethod.tap)
                 }
                 .frame(maxWidth: 420)
             }

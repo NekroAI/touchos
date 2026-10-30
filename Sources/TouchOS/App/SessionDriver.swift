@@ -52,6 +52,11 @@ final class SessionDriver: @unchecked Sendable {
         environment = SessionEnvironment()
         baseTuning = tuning
         machine = SessionStateMachine(tuning: tuning, environment: environment)
+        // input.queue 卡住时拦截还在按激活策略丢弃，先放开；队列恢复后再结束会话（NFR-7，D50）
+        cursor.onStall = { [weak self] in
+            tap.publish(TapPolicy(mode: .idle))
+            self?.send(.forceCancel("input stalled"))
+        }
     }
 
     /// 配置变更：面板与绑定立即进入会话环境，参数在下一次有手指落下时生效
