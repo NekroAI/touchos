@@ -149,6 +149,57 @@ private struct FillBar: View {
     }
 }
 
+/// 文字衬底：深色字形的宽晕、贴边的晕与细阴影，第一次出现时离线渲染成图片并缓存，浮层里只贴图片。
+/// 不在浮层里实时模糊：面板缩放、移动、淡入淡出时每个名称的模糊都要逐帧重做，是展开、收起、切换卡顿的主因；
+/// 改成 `drawingGroup` 又会在透明的浮层窗口里丢掉衬底（性能实测与负责人反馈，D28）
+private struct FloatingLabel<Glyphs: View>: ViewModifier {
+    let key: String
+    let glyphs: Glyphs
+
+    func body(content: Content) -> some View {
+        content.background {
+            GeometryReader { g in
+                if let image = LabelGlow.image(key, size: g.size, glyphs: glyphs) {
+                    let m = PanelMetrics.labelBitmapMargin
+                    Image(nsImage: image)
+                        .frame(width: g.size.width + 2 * m, height: g.size.height + 2 * m)
+                        .offset(x: -m, y: -m)
+                }
+            }
+        }
+    }
+}
+
+@MainActor
+private enum LabelGlow {
+    /// 缓存上限：超出时清空重来（名称、点亮状态、滑杆数值的组合）
+    static let limit = 400
+    private static var cache: [String: NSImage] = [:]
+
+    static func image<V: View>(_ key: String, size: CGSize, glyphs: V) -> NSImage? {
+        guard size.width > 0, size.height > 0 else { return nil }
+        let full = "\(key)|\(Int(size.width.rounded()))x\(Int(size.height.rounded()))"
+        if let hit = cache[full] { return hit }
+        let glyph = glyphs.colorMultiply(.black)
+        let layers = ZStack {
+            // 外层宽而淡的晕压住背景的纹理，内层贴着笔画勾出轮廓，最后一层细阴影
+            glyph.blur(radius: PanelMetrics.labelHaloRadius).opacity(PanelMetrics.labelHaloOpacity)
+            glyph.blur(radius: PanelMetrics.labelGlowRadius).opacity(PanelMetrics.labelGlowOpacity)
+            glyph.blur(radius: PanelMetrics.labelShadowRadius).offset(y: PanelMetrics.labelShadowDrop).opacity(PanelMetrics.labelShadowOpacity)
+        }
+        .frame(width: size.width, height: size.height)
+        .padding(PanelMetrics.labelBitmapMargin)
+        let renderer = ImageRenderer(content: layers)
+        let scale = NSScreen.main?.backingScaleFactor ?? 2
+        renderer.scale = scale
+        guard let cg = renderer.cgImage else { return nil }
+        let image = NSImage(cgImage: cg, size: CGSize(width: CGFloat(cg.width) / scale, height: CGFloat(cg.height) / scale))
+        if cache.count >= limit { cache.removeAll() }
+        cache[full] = image
+        return image
+    }
+}
+
 /// 毛玻璃底：只保留一部分强度，叠一层底色
 private struct Glass<S: InsettableShape>: ViewModifier {
     let shape: S
@@ -179,18 +230,10 @@ private extension View {
         modifier(Glass(shape: shape, tint: tint, edge: edge, glow: glow))
     }
 
-    /// 直接浮在桌面上的文字：身后衬一层模糊的深色字形，只贴着笔画，没有底框（负责人反馈：被桌面干扰，但不要框）
-    func floatingLabel() -> some View {
-        background {
-            self.colorMultiply(.black)
-                .blur(radius: PanelMetrics.labelGlowRadius)
-                .opacity(PanelMetrics.labelGlowOpacity)
-        }
-        .shadow(color: .black.opacity(PanelMetrics.labelShadowOpacity), radius: 1.5, y: 0.5)
-        // 模糊与阴影一次栅格化成位图：面板缩放、移动、淡入淡出时只变换位图，不再逐帧重做模糊（性能实测，D28）
-        .padding(PanelMetrics.labelGlowRadius * 2)
-        .drawingGroup()
-        .padding(-PanelMetrics.labelGlowRadius * 2)
+    /// 直接浮在桌面上的文字：身后衬一层模糊的深色字形，只贴着笔画，没有底框（负责人反馈：被桌面干扰，但不要框）。
+    /// `key` 标识这段文字的内容与状态（名称、点亮与否、数值），预渲染的衬底按它缓存
+    func floatingLabel(_ key: String) -> some View {
+        modifier(FloatingLabel(key: key, glyphs: self))
     }
 }
 
@@ -235,13 +278,13 @@ private struct OrbFace: View {
                     .font(.system(size: 11.5, weight: .medium))
                     .foregroundStyle(.white.opacity(lit ? 0.98 : 0.68))
                     .lineLimit(1)
-                    .floatingLabel()
+                    .floatingLabel("orb.tile|\(slot.title)|\(lit)")
             }
         case .round:
             orb(min(size.width, size.height) * (lit ? 1.1 : 1))
                 .overlay(alignment: .bottom) {
                     Text(slot.title).font(.system(size: 11.5, weight: .medium)).foregroundStyle(.white.opacity(lit ? 0.98 : 0.68))
-                        .fixedSize().floatingLabel().offset(y: PanelMetrics.roundTitleOffset)
+                        .fixedSize().floatingLabel("orb.round|\(slot.title)|\(lit)").offset(y: PanelMetrics.roundTitleOffset)
                 }
         case .slider:
             let shape = Capsule()
@@ -317,7 +360,7 @@ private struct LensFace: View {
                 Text(slot.title).font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(lit ? 0.96 : 0.55))
                     .lineLimit(1)
             }
-            .floatingLabel()
+            .floatingLabel("lens.tile|\(slot.symbol)|\(slot.title)|\(lit)")
         case .round:
             Image(systemName: slot.symbol).font(.system(size: 26)).foregroundStyle(.white.opacity(lit ? 1 : 0.86))
                 .frame(width: size.width, height: size.height)
@@ -326,7 +369,7 @@ private struct LensFace: View {
                     Text(slot.title).font(.system(size: 11.5, weight: .medium)).foregroundStyle(.white.opacity(lit ? 0.96 : 0.6))
                         .fixedSize().offset(y: PanelMetrics.roundTitleOffset - 4)
                 }
-                .floatingLabel()
+                .floatingLabel("lens.round|\(slot.symbol)|\(slot.title)|\(lit)")
         case .slider:
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 10) {
@@ -343,7 +386,7 @@ private struct LensFace: View {
             }
             .padding(.horizontal, 20).padding(.vertical, 22)
             .chipBody(.rounded(20))
-            .floatingLabel()
+            .floatingLabel("lens.slider|\(slot.symbol)|\(slot.title)|\(lit)|\(percent(value))")
         case .widget:
             let art = min(96, max(size.height * 0.38, 40))
             VStack(alignment: .leading, spacing: 14) {
@@ -359,7 +402,7 @@ private struct LensFace: View {
             .padding(20)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .chipBody(.rounded(20))
-            .floatingLabel()
+            .floatingLabel("lens.widget|\(slot.symbol)|\(NowPlaying.title)|\(NowPlaying.subtitle)")
         }
     }
 }
@@ -467,7 +510,7 @@ private struct EditHint: View {
             .font(mono ? .system(size: 10, design: .monospaced) : .system(size: 10.5))
             .foregroundStyle(.white.opacity(0.65))
             .fixedSize()
-            .floatingLabel()
+            .floatingLabel("hint|\(mono)")
             .opacity(visible ? 1 : 0)
             .animation(.easeOut(duration: 0.2), value: visible)
     }

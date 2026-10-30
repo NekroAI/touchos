@@ -195,6 +195,14 @@ enum PanelMetrics {
     /// 文字身后深色字形的模糊半径与不透明度
     static let labelGlowRadius: CGFloat = 4
     static let labelGlowOpacity = 0.9
+    /// 细阴影
+    static let labelShadowRadius: CGFloat = 1.5
+    static let labelShadowDrop: CGFloat = 0.5
+    /// 外层的宽晕：预渲染一次（D28），可以比逐帧模糊时更重
+    static let labelHaloRadius: CGFloat = 9
+    static let labelHaloOpacity = 0.55
+    /// 栅格化时四周留出的边距：最大模糊半径的 3 倍，盖住高斯模糊的扩散范围
+    static let labelBitmapMargin: CGFloat = 27
 
     static let pointerCore: CGFloat = 10
     static let pointerHalo: CGFloat = 30
