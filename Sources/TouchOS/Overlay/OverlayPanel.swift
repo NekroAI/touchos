@@ -169,6 +169,9 @@ enum PanelMetrics {
     /// 玻璃：毛玻璃只保留一部分强度（负责人反馈：不要实心），文字加阴影保证可读
     static let materialOpacity = 0.6
     static let labelShadowOpacity = 0.55
+    /// 文字身后深色字形的模糊半径与不透明度
+    static let labelGlowRadius: CGFloat = 4
+    static let labelGlowOpacity = 0.9
 
     static let pointerCore: CGFloat = 10
     static let pointerHalo: CGFloat = 30
@@ -183,16 +186,6 @@ enum PanelMetrics {
     static let cancelHintSize: CGFloat = 11
     static let cancelHintOffset: CGFloat = 26
     static let dimOpacity = 0.14
-    /// 柔焦：只在每个按钮和它的名称身后垫一圈很轻的压暗毛玻璃，边缘羽化，让后面的内容退成色块（负责人反馈：被桌面干扰，
-    /// 但不要大背景）。范围为按钮可见部分每边外扩 `haloPad`，羽化 `haloFeather`
-    static let haloPad: CGFloat = 6
-    static let haloFeather: CGFloat = 10
-    static let haloTint = 0.12
-    /// 卡片式按钮（图标在上、名称在下）可见部分的最大边长
-    static let haloTile: CGFloat = 104
-    /// 圆形按钮下方名称的最小宽度与高度
-    static let haloLabelWidth: CGFloat = 72
-    static let haloLabelHeight: CGFloat = 26
     /// 轨迹最长这么多 pt：手指移得快时只留一段彗尾，不画出绕回来的大弧
     static let trailMaxLength: CGFloat = 90
 

@@ -22,8 +22,7 @@ struct ChipView: View {
         let face = FaceKind(slot: slot, geometry: g)
         Face(kind: face, slot: slot, size: g.frame.size, lit: hovered || chosen, value: value)
             .frame(width: g.frame.width, height: g.frame.height)
-            .background { FocusHalo(kind: face, size: g.frame.size) }
-            .overlay { Ripple(trigger: pulse, size: g.frame.size, wide: face == .slider || face == .widget) }
+            .overlay { Ripple(trigger: pulse, size: g.frame.size, kind: face) }
             .overlay(alignment: .topTrailing) {
                 if presses >= 2 { PressBadge(count: presses).offset(x: face == .tile ? -6 : 6, y: face == .tile ? 4 : -6) }
             }
@@ -121,48 +120,6 @@ private struct Face: View {
 
 // MARK: 公用小件
 
-/// 按钮身后的柔焦（见 `PanelMetrics.haloPad`）：范围按按钮种类估算可见部分，材质用羽化的形状做遮罩，没有硬边
-private struct FocusHalo: View {
-    let kind: FaceKind
-    let size: CGSize
-
-    var body: some View {
-        let (w, h, dy, corner) = extent
-        let pad = PanelMetrics.haloPad, feather = PanelMetrics.haloFeather
-        ZStack {
-            Rectangle().fill(.ultraThinMaterial)
-            Rectangle().fill(Color.black.opacity(PanelMetrics.haloTint))
-        }
-        .environment(\.colorScheme, .dark)
-        .mask {
-            RoundedRectangle(cornerRadius: corner + pad, style: .continuous)
-                .frame(width: w + pad * 2, height: h + pad * 2)
-                .blur(radius: feather / 2)
-        }
-        .frame(width: w + (pad + feather) * 2, height: h + (pad + feather) * 2)
-        .offset(y: dy)
-        .allowsHitTesting(false)
-    }
-
-    /// 可见部分的宽、高、相对按钮中心的竖直偏移、圆角
-    private var extent: (CGFloat, CGFloat, CGFloat, CGFloat) {
-        switch kind {
-        case .tile:
-            let w = min(size.width, PanelMetrics.haloTile), h = min(size.height, PanelMetrics.haloTile)
-            return (w, h, 0, min(w, h) * 0.35)
-        case .round:
-            // 圆钮加下方的名称
-            let d = min(size.width, size.height), label = PanelMetrics.haloLabelHeight
-            return (max(d, PanelMetrics.haloLabelWidth), d + label, label / 2, d / 2)
-        case .close:
-            let d = PanelMetrics.cancelChipSize
-            return (d, d, 0, d / 2)
-        case .slider, .widget:
-            return (size.width, size.height, 0, min(size.width, size.height) * 0.45)
-        }
-    }
-}
-
 private func percent(_ v: Double) -> Int { Int((v * 100).rounded()) }
 
 /// 滑杆的填充：横向从左、纵向从下
@@ -206,9 +163,14 @@ private extension View {
         modifier(Glass(shape: shape, tint: tint, edge: edge, glow: glow))
     }
 
-    /// 直接浮在桌面上的文字：加阴影保证可读
+    /// 直接浮在桌面上的文字：身后衬一层模糊的深色字形，只贴着笔画，没有底框（负责人反馈：被桌面干扰，但不要框）
     func floatingLabel() -> some View {
-        shadow(color: .black.opacity(PanelMetrics.labelShadowOpacity), radius: 4, y: 1)
+        background {
+            self.colorMultiply(.black)
+                .blur(radius: PanelMetrics.labelGlowRadius)
+                .opacity(PanelMetrics.labelGlowOpacity)
+        }
+        .shadow(color: .black.opacity(PanelMetrics.labelShadowOpacity), radius: 1.5, y: 0.5)
     }
 }
 
@@ -230,6 +192,9 @@ private struct OrbFace: View {
 
     static let orb: CGFloat = 58
     static let orbLit: CGFloat = 66
+    /// 卡片里圆钮下方留给名称的高度（间距加一行字）
+    static let labelSpacing: CGFloat = 8
+    static let labelRoom: CGFloat = 30
     static let sliderHeight: CGFloat = 60
 
     var body: some View {
@@ -241,9 +206,9 @@ private struct OrbFace: View {
                 .frame(width: PanelMetrics.cancelChipSize, height: PanelMetrics.cancelChipSize)
                 .overlay(alignment: .bottom) { EditHint(visible: lit).offset(y: 24) }
         case .tile:
-            let room = min(size.width, size.height - 30)
+            let room = min(size.width, size.height - Self.labelRoom)
             let d = min(lit ? Self.orbLit : Self.orb, room)
-            VStack(spacing: 8) {
+            VStack(spacing: Self.labelSpacing) {
                 orb(d)
                 Text(slot.title)
                     .font(.system(size: 11.5, weight: .medium))
@@ -493,30 +458,53 @@ private struct PressBadge: View {
 private struct Ripple: View {
     let trigger: Int
     let size: CGSize
-    /// 滑杆、卡片用圆角矩形，其余用圆
-    let wide: Bool
+    let kind: FaceKind
     @Environment(\.overlayStyle) private var style
 
+    /// 从按钮可见轮廓的 `rippleStart` 倍扩散到 `rippleEnd` 倍：贴着按钮，不越出太远
+    static let rippleStart = 0.9
+    static let rippleEnd = 1.3
+
     var body: some View {
-        let d = min(size.width, size.height) * 0.92
-        let accent = style.accent, size = size, wide = wide
+        let accent = style.accent, shape = outline, start = Self.rippleStart, end = Self.rippleEnd
         Color.clear
-            .keyframeAnimator(initialValue: 1.0, trigger: trigger) { _, p in
+            .keyframeAnimator(initialValue: 1.0, trigger: trigger) { _, raw in
+                let p = min(max(raw, 0), 1)
                 Group {
-                    if wide {
-                        RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(accent, lineWidth: 2)
-                            .frame(width: size.width * 0.92, height: size.height * 0.92)
+                    if let corner = shape.corner {
+                        RoundedRectangle(cornerRadius: corner, style: .continuous).stroke(accent, lineWidth: 2)
                     } else {
-                        Circle().stroke(accent, lineWidth: 2).frame(width: d, height: d)
+                        Circle().stroke(accent, lineWidth: 2)
                     }
                 }
-                .scaleEffect(0.6 + p * 0.75)
+                .frame(width: shape.size.width, height: shape.size.height)
+                .offset(y: shape.dy)
+                .scaleEffect(start + p * (end - start))
                 .opacity(p < 1 ? (1 - p) * 0.85 : 0)
             } keyframes: { _ in
-                // 从 0 走到 1；初值为 1 表示没有在播放
+                // 从 0 走到 1；初值为 1 表示没有在播放。第二段不能用 CubicKeyframe：它沿用上一段的速度，
+                // 1 ms 内从 1 跳到 0 的速度会把进度甩到约 -25，波纹被翻转放大成满屏的粗圆环（负责人反馈的"大圈"）
                 LinearKeyframe(0.0, duration: 0.001)
-                CubicKeyframe(1.0, duration: PanelMetrics.rippleDuration)
+                LinearKeyframe(1.0, duration: PanelMetrics.rippleDuration, timingCurve: .easeOut)
             }
             .allowsHitTesting(false)
+    }
+
+    /// 按钮看得见的轮廓：玻璃圆钮的卡片只画中间的圆钮，不是整个单元格；圆角为 nil 表示圆形
+    private var outline: (size: CGSize, corner: CGFloat?, dy: CGFloat) {
+        switch kind {
+        case .slider, .widget:
+            return (CGSize(width: size.width * 0.92, height: size.height * 0.92), 24, 0)
+        case .round, .close:
+            let d = kind == .close ? PanelMetrics.cancelChipSize : min(size.width, size.height)
+            return (CGSize(width: d, height: d), nil, 0)
+        case .tile:
+            if style.theme == .orb {
+                // 圆钮在名称上方，圆心比单元格中心偏上半个"间距 + 名称"
+                let d = min(OrbFace.orbLit, min(size.width, size.height - OrbFace.labelRoom))
+                return (CGSize(width: d, height: d), nil, -OrbFace.labelRoom / 2)
+            }
+            return (CGSize(width: size.width * 0.92, height: size.height * 0.92), 24, 0)
+        }
     }
 }
