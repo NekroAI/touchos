@@ -43,6 +43,9 @@ struct TriggersPage: View {
                         .onHover { hover(.panel, $0) }
                     LabeledSlider(title: "映射区大小（占触控板）", value: binding(configs, \.sizes.mappingScale), range: Tuning.mappingScaleRange)
                         .onHover { hover(.mapping, $0) }
+                    LabeledSlider(title: "按钮间隙", value: binding(configs, \.sizes.hitGapMM), range: Tuning.hitGapRange,
+                                  step: 0.5, format: { String(format: "%.1f mm", $0) })
+                        .onHover { hover(.gap, $0) }
                     Toggle("触觉反馈", isOn: binding(configs, \.general.haptics))
                 }
             }
@@ -84,6 +87,7 @@ enum PreviewFocus: Equatable {
     case trigger(PanelTrigger)
     case mapping
     case panel
+    case gap
 }
 
 /// 一种唤起方式：名称与说明、打开哪个面板、开关
@@ -237,10 +241,20 @@ struct TriggerPreview: View {
             ?? CGSize(width: t.mappingScale, height: t.mappingScale)
         let mapping = view(Mapper(margin: t.mappingMargin, size: scale).mappingRect)
         var m = ctx
-        m.opacity = dimmed(focus == .mapping || focus == .panel || { if case .trigger = focus { true } else { false } }())
+        m.opacity = dimmed(focus == .mapping || focus == .panel || focus == .gap || { if case .trigger = focus { true } else { false } }())
         m.fill(Path(roundedRect: mapping, cornerRadius: 6), with: .color(.accentColor.opacity(focus == .mapping ? 0.22 : 0.12)))
         m.stroke(Path(roundedRect: mapping, cornerRadius: 6), with: .color(.accentColor.opacity(0.8)), lineWidth: focus == .mapping ? 2 : 1)
-        if let panel = shownPanel {
+        if let panel = shownPanel, focus == .gap, !panel.isRing {
+            // 按真实比例画出各按钮的判定区：之间与外沿的空白就是不触发的间隙（D31）
+            let perMM = mapping.width / (scale.width * device.width)
+            let tester = HitTester(layout: panel, panelSize: mapping.size, slotGap: t.hitGapMM / 2 * perMM, hysteresis: 0, extendsEdges: false)
+            for slot in panel.slots {
+                guard let r = tester.rect(of: slot) else { continue }
+                let shape = Path(roundedRect: r.offsetBy(dx: mapping.minX, dy: mapping.minY), cornerRadius: 2)
+                m.fill(shape, with: .color(.accentColor.opacity(0.45)))
+                m.stroke(shape, with: .color(.accentColor.opacity(0.8)), lineWidth: 0.5)
+            }
+        } else if let panel = shownPanel {
             PanelThumbnail.draw(panel, in: &m, rect: mapping.insetBy(dx: mapping.width * 0.06, dy: mapping.height * 0.06),
                                 fill: .color(.accentColor.opacity(0.45)), line: .color(.accentColor.opacity(0.8)))
         }

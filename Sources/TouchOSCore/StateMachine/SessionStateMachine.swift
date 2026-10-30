@@ -674,7 +674,8 @@ public struct SessionStateMachine: Sendable {
         let value: Double
         switch g.kind {
         case .navigate(let base):
-            value = rubberBand(base + dy / tuning.navDistanceMM, in: navRange(ctx))
+            // 自然滚动：后面的面板排在上方，双指往下拽把它拉下来，面板跟着手指走（D32）
+            value = rubberBand(base - dy / tuning.navDistanceMM, in: navRange(ctx))
             ctx.nav = .at(value)
         case .pinch(let base):
             value = rubberBand(base - ds / tuning.pinchDistanceMM, in: 0...1)
@@ -733,9 +734,10 @@ public struct SessionStateMachine: Sendable {
     /// 映射区对应的显示范围：当前面板，总览时为参考大小
     private func space(_ ctx: ActiveContext) -> CGSize { showingOverview(ctx) ? ctx.geometry.group : ctx.panelSize }
 
-    /// 命中不留空隙：网格单元之间的缝只是视觉（D23）
     private func tester(_ ctx: ActiveContext) -> HitTester {
-        HitTester(layout: ctx.layout, panelSize: ctx.panelSize, slotGap: 0, hysteresis: tuning.hysteresis)
+        // 判定区之间留不触发的空隙，按触控板毫米换算，面板外沿同样留一圈（D31，修订 D9、D23）
+        let gap = tuning.hitGapMM / 2 * ctx.geometry.pointsPerMM(of: ctx.layout)
+        return HitTester(layout: ctx.layout, panelSize: ctx.panelSize, slotGap: gap, hysteresis: tuning.hysteresis, extendsEdges: false)
     }
 
     private func showingOverview(_ ctx: ActiveContext) -> Bool { ctx.overview.target == 1 }
@@ -831,8 +833,8 @@ public struct SessionStateMachine: Sendable {
             let accepted: [SessionEffect] = ctx.panelVisible ? [.updatePanel(panelState(ctx))] : []
             return accepted + exit(ctx, now: liftAt, end: .committed(id))
         }
-        // FR-6.11：按提交坐标做一次不带滞回的命中
-        let hit = tester.hit(panelPoint)
+        // 高亮的就是会执行的：抬起时与悬停同一套滞回规则（D31，修订 FR-6.11 的不带滞回）
+        let hit = tester.hit(panelPoint, current: ctx.hovered)
         if let id = hit, ctx.layout.slot(id)?.isCancel == true {
             return exit(ctx, now: liftAt, end: .cancelSlot)  // 在关闭上抬起即关闭（D17，修订 T13）
         }

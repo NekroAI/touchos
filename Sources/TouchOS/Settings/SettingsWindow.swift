@@ -226,15 +226,15 @@ struct LabeledSlider: View {
     let title: String
     @Binding var value: Double
     let range: ClosedRange<Double>
-
-    static let step = 0.05
+    var step = 0.05
+    var format: (Double) -> String = { "\(Int(($0 * 100).rounded()))%" }
 
     var body: some View {
         LabeledContent(title) {
             HStack {
                 // 不用 step：macOS 会为每一档画刻度，改为写入时取整
-                Slider(value: Binding(get: { value }, set: { value = ($0 / Self.step).rounded() * Self.step }), in: range)
-                Text("\(Int((value * 100).rounded()))%").monospacedDigit().frame(width: 44, alignment: .trailing)
+                Slider(value: Binding(get: { value }, set: { value = ($0 / step).rounded() * step }), in: range)
+                Text(format(value)).monospacedDigit().frame(width: 52, alignment: .trailing)
             }
         }
     }

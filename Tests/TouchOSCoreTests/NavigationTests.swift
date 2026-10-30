@@ -45,42 +45,42 @@ private func context(_ h: Harness) -> ActiveContext? {
     if case .active(let ctx) = h.machine.state { ctx } else { nil }
 }
 
-/// 两指竖直移动 `dy`（触控板归一化，向上为正）
+/// 两指竖直移动 `dy`（触控板归一化，向上为正）。自然滚动：往下拽（`dy` 为负）切到下一个面板（D32）
 private func swipe(_ dy: Double, over: TimeInterval = 0.15) -> Gesture {
-    twoFingers(from: (0.4, 0.4), (0.6, 0.4), to: (0.4, 0.4 + dy), (0.6, 0.4 + dy), over: over, liftAt: 0.8 + over + 0.02)
+    twoFingers(from: (0.4, 0.7), (0.6, 0.7), to: (0.4, 0.7 + dy), (0.6, 0.7 + dy), over: over, liftAt: 0.8 + over + 0.02)
 }
 
 @Suite struct PanelNavigationTests {
-    @Test func swipeUpMovesToNextPanelWithHaptic() throws {
+    @Test func swipeDownMovesToNextPanelWithHaptic() throws {
         // 100 mm 高的板上移动 20 mm，`P.navDistanceMM` 30：超过一半
-        let h = run(swipe(0.2), until: 2.0)
+        let h = run(swipe(-0.2), until: 2.0)
         let ctx = try #require(context(h))
         #expect(ctx.panelIndex == 1 && ctx.layout.id == "p1")
         #expect(ctx.nav.target == 1 && ctx.nav.isSettled(at: 2.0))
         #expect(h.effects.contains(.haptic) && h.ends.isEmpty)
     }
 
-    @Test func swipeDownGoesBack() throws {
-        let g = swipe(0.2).touch(id: 2, at: (0.4, 0.6), t: 1.5).touch(id: 3, at: (0.6, 0.6), t: 1.5)
-            .move(id: 2, to: (0.4, 0.4), over: 0.15).move(id: 3, to: (0.6, 0.4), over: 0.15).lift(id: 2, t: 1.7).lift(id: 3, t: 1.7)
+    @Test func swipeUpGoesBack() throws {
+        let g = swipe(-0.2).touch(id: 2, at: (0.4, 0.4), t: 1.5).touch(id: 3, at: (0.6, 0.4), t: 1.5)
+            .move(id: 2, to: (0.4, 0.6), over: 0.15).move(id: 3, to: (0.6, 0.6), over: 0.15).lift(id: 2, t: 1.7).lift(id: 3, t: 1.7)
         #expect(try #require(context(run(g, until: 2.6))).panelIndex == 0)
     }
 
     @Test func shortSlowSwipeSnapsBack() throws {
-        let h = run(swipe(0.05, over: 0.5), until: 2.5)
+        let h = run(swipe(-0.05, over: 0.5), until: 2.5)
         let ctx = try #require(context(h))
         #expect(ctx.panelIndex == 0 && ctx.nav.target == 0)
     }
 
     @Test func fastLongSwipeMovesOnlyOnePanel() throws {
-        let h = run(swipe(0.5, over: 0.08), until: 2.0)
+        let h = run(swipe(-0.5, over: 0.08), until: 2.0)
         #expect(try #require(context(h)).panelIndex == 1)
     }
 
     @Test func pullingPastFirstPanelResistsAndReturns() throws {
         // 拉动中：超出范围的部分被压缩
-        let g = opened().touch(id: 2, at: (0.4, 0.6), t: 0.8).touch(id: 3, at: (0.6, 0.6), t: 0.8)
-            .move(id: 2, to: (0.4, 0.3), over: 0.2).move(id: 3, to: (0.6, 0.3), over: 0.2).hold(id: 2, until: 1.2).hold(id: 3, until: 1.2)
+        let g = opened().touch(id: 2, at: (0.4, 0.3), t: 0.8).touch(id: 3, at: (0.6, 0.3), t: 0.8)
+            .move(id: 2, to: (0.4, 0.6), over: 0.2).move(id: 3, to: (0.6, 0.6), over: 0.2).hold(id: 2, until: 1.2).hold(id: 3, until: 1.2)
         let pulling = try #require(context(run(g, until: 1.1)))
         let raw = -30.0 / 30  // 移动 30 mm，按 `P.navDistanceMM` 30 应为 −1
         let nav = pulling.nav.value(at: 1.1)
@@ -95,13 +95,13 @@ private func swipe(_ dy: Double, over: TimeInterval = 0.15) -> Gesture {
         let h = run(horizontal, until: 1.5)
         #expect(try #require(context(h)).panelIndex == 0)
         #expect(!h.effects.contains(.haptic))
-        let single = run(swipe(0.3), panels: [panel("only")], until: 1.5)
+        let single = run(swipe(-0.3), panels: [panel("only")], until: 1.5)
         #expect(try #require(context(single)).nav.target == 0)
     }
 
     @Test func pointerDoesNotHoverUntilTransitionSettles() throws {
         // 切换刚结束就落下指点指：弹簧仍在过渡，不命中；停稳后按原位置命中
-        let pointer = { (until: TimeInterval) in swipe(0.2).touch(id: 2, at: Spot.close, t: 1.0).hold(id: 2, until: until) }
+        let pointer = { (until: TimeInterval) in swipe(-0.2).touch(id: 2, at: Spot.close, t: 1.0).hold(id: 2, until: until) }
         let early = try #require(context(run(pointer(1.03), until: 1.03)))
         #expect(early.hovered == nil)
         let late = try #require(context(run(pointer(2.0), until: 2.0)))

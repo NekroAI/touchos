@@ -26,6 +26,9 @@ public struct Tuning: Equatable, Sendable {
     public static let panelScaleRange = 0.3...0.9
     /// `P.hysteresis`（面板比例）
     public var hysteresis = 0.02
+    /// 相邻按钮判定区之间不触发的空隙（触控板毫米），面板外沿也留同样宽的一圈（decisions.md D31）
+    public var hitGapMM = 2.5
+    public static let hitGapRange = 0.0...5.0
     /// `P.liftLookbackMs`
     public var liftLookbackMs = 60.0
     /// `P.panelDelayMs`

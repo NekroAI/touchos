@@ -96,19 +96,29 @@ public struct PanelGeometry: Equatable, Sendable {
     public let referenceCols: Int
     /// 面板在屏幕上的上限（pt）
     public let limit: CGSize
+    /// 触控板物理尺寸（毫米）；未知时为零
+    public let deviceMM: CGSize
 
-    public init(group: CGSize, mappingScale: Double, referenceRows: Int, referenceCols: Int, limit: CGSize) {
+    public init(group: CGSize, mappingScale: Double, referenceRows: Int, referenceCols: Int, limit: CGSize, deviceMM: CGSize = .zero) {
         self.group = group
         self.mappingScale = mappingScale
         self.referenceRows = max(referenceRows, 1)
         self.referenceCols = max(referenceCols, 1)
         self.limit = limit
+        self.deviceMM = deviceMM
     }
 
     public init(screen: CGSize, deviceMM: CGSize, tuning t: Tuning) {
         self.init(group: panelSize(screen: screen, deviceMM: deviceMM, scale: t.panelScale), mappingScale: t.mappingScale,
                   referenceRows: t.referenceRows, referenceCols: t.referenceCols,
-                  limit: CGSize(width: screen.width * t.panelMaxScale, height: screen.height * t.panelMaxScale))
+                  limit: CGSize(width: screen.width * t.panelMaxScale, height: screen.height * t.panelMaxScale), deviceMM: deviceMM)
+    }
+
+    /// 面板上每毫米手指移动对应多少 pt（两轴取平均）；触控板尺寸未知时为 0
+    public func pointsPerMM(of layout: Layout) -> Double {
+        let size = size(of: layout), mapping = mapping(of: layout)
+        guard deviceMM.width > 0, deviceMM.height > 0, mapping.width > 0, mapping.height > 0 else { return 0 }
+        return (size.width / (mapping.width * deviceMM.width) + size.height / (mapping.height * deviceMM.height)) / 2
     }
 
     /// 相对参考网格的宽、高倍数（超出上限时已整体缩小）
@@ -148,12 +158,15 @@ public struct HitTester: Sendable {
     public let slotGap: Double
     /// `P.hysteresis`：面板比例
     public let hysteresis: Double
+    /// 贴着面板外边的槽位是否延伸到面板边界（D9）；为 false 时外沿也留空隙（D31）
+    public let extendsEdges: Bool
 
-    public init(layout: Layout, panelSize: CGSize, slotGap: Double, hysteresis: Double) {
+    public init(layout: Layout, panelSize: CGSize, slotGap: Double, hysteresis: Double, extendsEdges: Bool = true) {
         self.layout = layout
         self.panelSize = panelSize
         self.slotGap = slotGap
         self.hysteresis = hysteresis
+        self.extendsEdges = extendsEdges
     }
 
     /// 扇区的圆心与单位半径（pt）：面板中心、短边的一半
@@ -172,6 +185,7 @@ public struct HitTester: Sendable {
     /// 使钳制到边缘的坐标仍能命中边缘槽位（decisions.md D9）
     public func rect(of slot: Slot) -> CGRect? {
         guard let n = layout.normalizedRect(of: slot), var r = visualRect(of: slot) else { return nil }
+        guard extendsEdges else { return r }
         if n.minX <= 0 { r = CGRect(x: 0, y: r.minY, width: r.maxX, height: r.height) }
         if n.minY <= 0 { r = CGRect(x: r.minX, y: 0, width: r.width, height: r.maxY) }
         if n.maxX >= 1 { r.size.width = panelSize.width - r.minX }
@@ -211,10 +225,13 @@ public struct HitTester: Sendable {
     }
 
     /// 带滞回的命中（FR-6.8）：只有离开"当前槽位外扩滞回量"的区域后才重新命中。
+    /// 有空隙时外扩不超过空隙的一半（D31），离开按钮后仍能停在空隙里
     public func hit(_ p: CGPoint, current: SlotID?) -> SlotID? {
-        if let current, let slot = layout.slot(current),
-           contains(slot, p, expandX: hysteresis * panelSize.width, expandY: hysteresis * panelSize.height) {
-            return current
+        if let current, let slot = layout.slot(current) {
+            let cap = slotGap > 0 ? slotGap / 2 : .infinity
+            if contains(slot, p, expandX: min(hysteresis * panelSize.width, cap), expandY: min(hysteresis * panelSize.height, cap)) {
+                return current
+            }
         }
         return hit(p)
     }

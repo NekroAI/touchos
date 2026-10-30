@@ -109,8 +109,28 @@ public struct AppConfig: Codable, Equatable, Sendable {
     public struct Sizes: Codable, Equatable, Sendable {
         public var panelScale = Tuning().panelScale
         public var mappingScale = Tuning().mappingScale
+        /// 按钮间隙（毫米，D31）
+        public var hitGapMM = Tuning().hitGapMM
 
         public init() {}
+
+        private enum Keys: String, CodingKey { case panelScale, mappingScale, hitGapMM }
+
+        /// 缺省的字段取默认值：旧版本写出的文件没有后来新增的字段
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: Keys.self)
+            let d = Sizes()
+            panelScale = try c.decodeIfPresent(Double.self, forKey: .panelScale) ?? d.panelScale
+            mappingScale = try c.decodeIfPresent(Double.self, forKey: .mappingScale) ?? d.mappingScale
+            hitGapMM = try c.decodeIfPresent(Double.self, forKey: .hitGapMM) ?? d.hitGapMM
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: Keys.self)
+            try c.encode(panelScale, forKey: .panelScale)
+            try c.encode(mappingScale, forKey: .mappingScale)
+            try c.encode(hitGapMM, forKey: .hitGapMM)
+        }
     }
 
     public struct Binding: Codable, Equatable, Sendable {
@@ -182,6 +202,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         t.stickyPanel = general.stickyPanel
         t.panelScale = min(max(sizes.panelScale, Tuning.panelScaleRange.lowerBound), Tuning.panelScaleRange.upperBound)
         t.mappingScale = min(max(sizes.mappingScale, Tuning.mappingScaleRange.lowerBound), Tuning.mappingScaleRange.upperBound)
+        t.hitGapMM = min(max(sizes.hitGapMM, Tuning.hitGapRange.lowerBound), Tuning.hitGapRange.upperBound)
     }
 
     // MARK: 编码

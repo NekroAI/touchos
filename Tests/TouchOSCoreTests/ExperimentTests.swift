@@ -90,7 +90,8 @@ private func activeLayout(_ h: Harness) -> String? {
     }
 
     @Test func sectorHysteresisWidensCurrentSlot() {
-        let p = CGPoint(x: 300 + 150 * sin(47 * Double.pi / 180), y: 200 - 150 * cos(47 * Double.pi / 180))
+        // 半径 150 处空隙 6 pt 约 2.3°，"上"可命中到 42.7°；外扩封顶为空隙一半（D31），到 43.9°
+        let p = CGPoint(x: 300 + 150 * sin(43.5 * Double.pi / 180), y: 200 - 150 * cos(43.5 * Double.pi / 180))
         #expect(tester.hit(p) == nil)
         #expect(tester.hit(p, current: "up") == "up")
     }
@@ -367,6 +368,34 @@ private func activeLayout(_ h: Harness) -> String? {
         let h2 = runSticky(cancel, until: 1.2)
         #expect(h2.ends == [.cancelSlot])
         #expect(h2.actions.isEmpty)
+    }
+
+    // 测试环境 1 mm ≈ 触控板宽 0.0067：右列从 x 0.65 开始，按钮间隙 2.5 mm 每侧 1.25 mm，判定区从 0.658 开始；
+    // 右外沿 0.95，判定区到 0.942 为止（D31）
+    @Test func liftInHitGapKeepsPanel() {
+        for x in [0.654, 0.946] {
+            let g = anchorThenLift().touch(id: 2, at: (x, Spot.close.1), t: 0.8).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
+            let h = runSticky(g, until: 1.3)
+            #expect(h.isActive && h.ends.isEmpty && h.actions.isEmpty)
+        }
+        // 间隙为 0：同一点命中"关闭"
+        var tight = Self.sticky
+        tight.hitGapMM = 0
+        var h = Harness(tuning: tight, environment: .test)
+        h.run(anchorThenLift().touch(id: 2, at: (0.654, Spot.close.1), t: 0.8).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
+            .frames(rate: rate), until: 1.3)
+        #expect(h.actions.map(\.action) == [closeTab])
+    }
+
+    @Test func liftFiresTheHighlightedSlot() {
+        // 从按钮滑进间隙的一小段仍保持高亮，抬起执行的就是高亮的那个（D31，修订 FR-6.11）
+        let g = anchorThenLift().touch(id: 2, at: Spot.close, t: 0.8).hold(id: 2, until: 1.0)
+            .move(id: 2, to: (0.656, Spot.close.1), over: 0.2).hold(id: 2, until: 1.4).lift(id: 2, t: 1.4)
+        let h = runSticky(g, until: 1.6)
+        #expect(h.actions.map(\.action) == [closeTab])
+        // 直接落在同一点：还在间隙里，不执行
+        let fresh = anchorThenLift().touch(id: 2, at: (0.656, Spot.close.1), t: 0.8).hold(id: 2, until: 1.4).lift(id: 2, t: 1.4)
+        #expect(runSticky(fresh, until: 1.6).actions.isEmpty)
     }
 
     @Test func idleTimeoutClosesOnlyWithoutFingers() {

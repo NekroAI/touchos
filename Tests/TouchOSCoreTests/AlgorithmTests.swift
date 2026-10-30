@@ -63,10 +63,13 @@ import Testing
 
     @Test func hysteresisKeepsCurrentSlotNearItsEdge() {
         let t = HitTester(layout: .test, panelSize: CGSize(width: 600, height: 400), slotGap: 6, hysteresis: 0.02)
-        // "关闭"槽位可命中区域为 x ≥ 406；外扩 12 pt 后为 x ≥ 394
-        #expect(t.hit(CGPoint(x: 398, y: 60), current: "close") == "close")
-        #expect(t.hit(CGPoint(x: 390, y: 60), current: "close") == nil)
-        #expect(t.hit(CGPoint(x: 398, y: 60), current: nil) == nil)
+        // "关闭"槽位可命中区域为 x ≥ 406；滞回 12 pt 封顶为空隙的一半 3 pt（D31），外扩后为 x ≥ 403
+        #expect(t.hit(CGPoint(x: 404, y: 60), current: "close") == "close")
+        #expect(t.hit(CGPoint(x: 401, y: 60), current: "close") == nil)
+        #expect(t.hit(CGPoint(x: 404, y: 60), current: nil) == nil)
+        // 没有空隙时滞回不封顶
+        let tight = HitTester(layout: .test, panelSize: CGSize(width: 600, height: 400), slotGap: 0, hysteresis: 0.02)
+        #expect(tight.hit(CGPoint(x: 392, y: 60), current: "close") == "close")
         #expect(t.hit(CGPoint(x: 500, y: 200), current: "close") == "vol")
     }
 

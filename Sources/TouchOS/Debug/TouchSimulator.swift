@@ -131,8 +131,8 @@ final class TouchSimulator {
             (2.0, [9: CGPoint(x: 0.74, y: 0.65)]),
             (2.01, [:]),
         ],
-        // 双指上推两次再下拉一次：面板 1 → 2 → 3 → 2（D23）
-        "navigate": tap + swipe(at: 1.0, up: true) + swipe(at: 2.0, up: true) + swipe(at: 3.0, up: false),
+        // 双指下拉两次再上推一次（自然滚动，D32）：面板 1 → 2 → 3 → 2
+        "navigate": tap + swipe(at: 1.0, up: false) + swipe(at: 2.0, up: false) + swipe(at: 3.0, up: true),
         // 双指捏合进入总览，再单指在左下缩略图上抬起选中（D23）
         "overview": tap + [
             (1.0, [:]),

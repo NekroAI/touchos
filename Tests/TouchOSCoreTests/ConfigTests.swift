@@ -92,6 +92,7 @@ private func temporaryStore() -> ConfigStore {
         config.general.stickyPanel = true
         config.sizes.panelScale = 5
         config.sizes.mappingScale = 0
+        config.sizes.hitGapMM = 9
         config.bindings = [.init(trigger: .threeFingerTap, panel: "media"), .init(trigger: .fourFingerTap, panel: "edit")]
         config.bindings.append(AppConfig.Binding(trigger: .hold(.topLeft), panel: "window"))
         var t = Tuning()
@@ -99,6 +100,10 @@ private func temporaryStore() -> ConfigStore {
         #expect(t.holdCorners == [.topRight] && t.doubleTapCorners == [.bottomLeft] && t.tapHold && !t.fourFingerTap)
         #expect(t.stickyPanel && !t.threeFingerTap)
         #expect(t.panelScale == Tuning.panelScaleRange.upperBound && t.mappingScale == Tuning.mappingScaleRange.lowerBound)
+        #expect(t.hitGapMM == Tuning.hitGapRange.upperBound)
+        // 旧文件没有按钮间隙：取默认值
+        let old = try? JSONDecoder().decode(AppConfig.Sizes.self, from: Data(#"{"panelScale":0.5,"mappingScale":0.4}"#.utf8))
+        #expect(old?.hitGapMM == Tuning().hitGapMM && old?.panelScale == 0.5)
         #expect(config.bindingMap == [.threeFingerTap: "media", .fourFingerTap: "edit", .hold(.topLeft): "window"])
     }
 
