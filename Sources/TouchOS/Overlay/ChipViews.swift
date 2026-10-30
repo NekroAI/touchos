@@ -45,7 +45,7 @@ struct ChipView: View {
                 SpringKeyframe(1, duration: PanelMetrics.pressRelease)
             }
             .scaleEffect(scale(face))
-            .opacity(opacity)
+            .opacity(opacity * (unavailable ? PanelMetrics.unavailableOpacity : 1))
             .offset(offset)
             .position(x: g.frame.midX, y: g.frame.midY)
             .animation(.spring(response: 0.22, dampingFraction: 0.72), value: hovered)
@@ -53,6 +53,9 @@ struct ChipView: View {
     }
 
     private var chosen: Bool { phase.chosen == slot.id }
+
+    /// 读不到实际值的滑杆（如外接屏不支持调亮度）：变淡并注明，手指移上去不高亮（D41）
+    private var unavailable: Bool { slot.slider != nil && value == nil }
 
     private var dissolving: Bool {
         if case .dissolving = phase { true } else { false }
@@ -124,7 +127,8 @@ private struct Face: View {
     @Environment(\.overlayStyle) private var style
 
     var body: some View {
-        let slider = SliderReading(value: value ?? 0, base: base)
+        let slider = SliderReading(value: value ?? 0, base: base,
+                                   unavailable: slot.slider == nil || value != nil ? nil : slot.slider == .brightness ? "此屏幕不支持" : "不可用")
         switch style.theme {
         case .orb: OrbFace(kind: kind, slot: slot, size: size, lit: lit, slider: slider, accent: style.accent)
         case .lens: LensFace(kind: kind, slot: slot, size: size, lit: lit, slider: slider, accent: style.accent)
@@ -157,6 +161,18 @@ private struct Glyph: View {
     }
 }
 
+/// 按钮名称：快捷键按钮在名称后用小一号、淡一些的字带上按键组合（D41），看得见实际按下的键
+private func titleText(_ slot: Slot, size: CGFloat) -> Text {
+    let title = Text(slot.title).font(.system(size: size, weight: .medium))
+    guard case .keyboardShortcut(let k) = slot.action, !k.displayLabel.isEmpty else { return title }
+    return title + Text("  " + k.displayLabel).font(.system(size: size * 0.85, weight: .regular)).foregroundColor(.white.opacity(0.6))
+}
+
+/// 名称图片缓存的键：名称与按键组合都可能单独改动
+private func titleKey(_ slot: Slot) -> String {
+    if case .keyboardShortcut(let k) = slot.action { "\(slot.title)|\(k.displayLabel)" } else { slot.title }
+}
+
 /// 竖向滑杆的上下端与同几行里的按钮对齐，不凸出到格子边缘（负责人反馈）：
 /// 按每行的高度与按钮实际画出的高度算出两端各收进多少。不是网格槽位时只留默认边距
 private func verticalSliderInset(_ slot: Slot, height: CGFloat, tile: CGFloat, minimum: CGFloat) -> CGFloat {
@@ -169,6 +185,8 @@ private func verticalSliderInset(_ slot: Slot, height: CGFloat, tile: CGFloat, m
 struct SliderReading: Equatable {
     let value: Double
     let base: Double?
+    /// 不可用时代替读数显示的说明
+    var unavailable: String?
 
     var percent: Int { Int((value * 100).rounded()) }
     /// 与调整前相差的百分点；没有调整时为 nil
@@ -178,7 +196,7 @@ struct SliderReading: Equatable {
         return d == 0 ? nil : d
     }
     var deltaText: String { delta.map { $0 > 0 ? "+\($0)" : "\($0)" } ?? "" }
-    var key: String { "\(percent)|\(deltaText)" }
+    var key: String { "\(percent)|\(deltaText)|\(unavailable ?? "")" }
 }
 
 /// 滑杆的读数文字：百分比，调整中在旁边（竖向在下方）用强调色标出差值
@@ -191,8 +209,12 @@ private struct SliderReadout: View {
     var body: some View {
         let layout = vertical ? AnyLayout(VStackLayout(spacing: 2)) : AnyLayout(HStackLayout(spacing: 5))
         layout {
-            text("\(reading.percent)%")
-            if reading.delta != nil { text(reading.deltaText).foregroundStyle(accent) }
+            if let note = reading.unavailable {
+                text(note)
+            } else {
+                text("\(reading.percent)%")
+                if reading.delta != nil { text(reading.deltaText).foregroundStyle(accent) }
+            }
         }
     }
 }
@@ -366,18 +388,17 @@ private struct OrbFace: View {
             let d = min(lit ? Self.orbLit : Self.orb, room)
             VStack(spacing: Self.labelSpacing) {
                 orb(d)
-                Text(slot.title)
-                    .font(.system(size: 11.5, weight: .medium))
+                titleText(slot, size: 11.5)
                     .foregroundStyle(.white.opacity(lit ? 0.98 : 0.68))
                     .lineLimit(1)
-                    .floatingLabel("orb.tile|\(slot.title)|\(lit)")
+                    .floatingLabel("orb.tile|\(titleKey(slot))|\(lit)")
                     .opacity(Glyph.isText(slot) ? 0 : 1)  // 占位：与同一行的按钮对齐
             }
         case .round:
             orb(min(size.width, size.height) * (lit ? 1.1 : 1))
                 .overlay(alignment: .bottom) {
-                    Text(slot.title).font(.system(size: 11.5, weight: .medium)).foregroundStyle(.white.opacity(lit ? 0.98 : 0.68))
-                        .fixedSize().floatingLabel("orb.round|\(slot.title)|\(lit)").offset(y: PanelMetrics.roundTitleOffset)
+                    titleText(slot, size: 11.5).foregroundStyle(.white.opacity(lit ? 0.98 : 0.68))
+                        .fixedSize().floatingLabel("orb.round|\(titleKey(slot))|\(lit)").offset(y: PanelMetrics.roundTitleOffset)
                         .opacity(Glyph.isText(slot) ? 0 : 1)
                 }
         case .slider:
@@ -469,21 +490,21 @@ private struct LensFace: View {
             VStack(spacing: 9) {
                 Glyph(slot: slot, size: 28, weight: .regular).foregroundStyle(.white.opacity(lit ? 1 : 0.86))
                     .background { Color.clear.frame(width: Self.glyphRing, height: Self.glyphRing).chipBody(.circle) }
-                Text(slot.title).font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(lit ? 0.96 : 0.55))
+                titleText(slot, size: 12).foregroundStyle(.white.opacity(lit ? 0.96 : 0.55))
                     .lineLimit(1)
                     .opacity(Glyph.isText(slot) ? 0 : 1)
             }
-            .floatingLabel("lens.tile|\(slot.symbol)|\(slot.title)|\(lit)")
+            .floatingLabel("lens.tile|\(slot.symbol)|\(titleKey(slot))|\(lit)")
         case .round:
             Glyph(slot: slot, size: 26, weight: .regular).foregroundStyle(.white.opacity(lit ? 1 : 0.86))
                 .frame(width: size.width, height: size.height)
                 .background { Color.clear.frame(width: Self.glyphRing, height: Self.glyphRing).chipBody(.circle) }
                 .overlay(alignment: .bottom) {
-                    Text(slot.title).font(.system(size: 11.5, weight: .medium)).foregroundStyle(.white.opacity(lit ? 0.96 : 0.6))
+                    titleText(slot, size: 11.5).foregroundStyle(.white.opacity(lit ? 0.96 : 0.6))
                         .fixedSize().offset(y: PanelMetrics.roundTitleOffset - 4)
                         .opacity(Glyph.isText(slot) ? 0 : 1)
                 }
-                .floatingLabel("lens.round|\(slot.symbol)|\(slot.title)|\(lit)")
+                .floatingLabel("lens.round|\(slot.symbol)|\(titleKey(slot))|\(lit)")
         case .slider:
             let vertical = size.height > size.width
             let track = Capsule().fill(Color.white.opacity(0.14))

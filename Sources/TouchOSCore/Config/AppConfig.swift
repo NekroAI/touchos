@@ -179,12 +179,13 @@ public struct AppConfig: Codable, Equatable, Sendable {
     public var sizes = Sizes()
     /// 第一个为默认面板（D23）
     public var panels: [Layout] = PresetPanels.all
-    public var bindings: [Binding] = []
+    /// 四指轻点默认打开「窗口」：轻点后手指已离开触控板，接着朝一个方向划一下，正合环形面板（D41）
+    public var bindings: [Binding] = [Binding(trigger: .fourFingerTap, panel: PresetPanels.window.id)]
     public var sync = Sync()
 
     public init() {}
 
-    /// 内置默认配置：预置四个面板，轻点后按住与四指轻点打开第一个
+    /// 内置默认配置：预置四个面板，轻点后按住打开第一个，四指轻点打开「窗口」
     public static let `default` = AppConfig()
 
     private enum Keys: String, CodingKey { case schemaVersion, general, appearance, triggers, sizes, panels, bindings, sync }

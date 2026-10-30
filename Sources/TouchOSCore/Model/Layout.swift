@@ -100,6 +100,11 @@ public struct Slot: Equatable, Sendable {
 /// 面板布局的别名：SwiftUI 也有 `Layout`，视图代码用这个名字避免歧义
 public typealias PanelLayout = Layout
 
+/// 面板在屏幕上的水平位置（D41）：输入类面板放在一侧，避免挡住正在输入的地方
+public enum PanelPlacement: String, Sendable, CaseIterable {
+    case center, left, right
+}
+
 public struct Layout: Equatable, Sendable {
     public var id: String
     public var name: String
@@ -110,14 +115,17 @@ public struct Layout: Equatable, Sendable {
     public var slots: [Slot]
     /// 停用的面板保留配置，但不参与唤起与切换（D37）
     public var isEnabled: Bool
+    public var placement: PanelPlacement
 
-    public init(id: String, name: String, rows: Int = 1, cols: Int = 1, slots: [Slot], isEnabled: Bool = true) {
+    public init(id: String, name: String, rows: Int = 1, cols: Int = 1, placement: PanelPlacement = .center, slots: [Slot],
+                isEnabled: Bool = true) {
         self.id = id
         self.name = name
         self.rows = rows
         self.cols = cols
         self.slots = slots
         self.isEnabled = isEnabled
+        self.placement = placement
     }
 
     /// 矩形类槽位的面板归一化矩形，原点左上（FR-10.5）；扇区为 nil

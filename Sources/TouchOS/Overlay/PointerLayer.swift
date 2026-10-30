@@ -1,9 +1,12 @@
 import SwiftUI
+import TouchOSCore
 
 /// 指示点与轨迹，按显示刷新率重绘并在触点帧之间插值（FR-8.9）。
 /// 落在按钮上时也照常显示：用户靠它判断手指的真实位置、预判移动距离（负责人反馈，D20）
 struct PointerLayer: View {
     let model: OverlayModel
+    /// 用于跟随面板的水平位置（D41）
+    let state: PanelState
     /// 按钮组在窗口中的位置；指示点坐标是按钮组 pt，绘制时加上偏移
     let groupRect: CGRect
     /// 指示点当前对应的范围（按钮组 pt）：当前面板，总览时为整个按钮组（D29）
@@ -11,6 +14,7 @@ struct PointerLayer: View {
     let overCancel: Bool
     let showTrail: Bool
     @Environment(\.overlayStyle) private var style
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// 画布只覆盖指示点周围这么大的方块（轨迹、光晕、全息读数都在其内），跟着指示点移动。
     /// 不铺满整个窗口：画布每帧由 CPU 重新栅格化，面积决定开销（性能实测，D28）
@@ -32,7 +36,8 @@ struct PointerLayer: View {
                         draw(&ctx, pointer: p, now: now)
                     }
                     .frame(width: Self.canvasSize, height: Self.canvasSize)
-                    .offset(x: groupRect.minX + anchor.x - half, y: groupRect.minY + anchor.y - half)
+                    .offset(x: groupRect.minX + model.placementShift(state, at: now, reduceMotion: reduceMotion) + anchor.x - half,
+                            y: groupRect.minY + anchor.y - half)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

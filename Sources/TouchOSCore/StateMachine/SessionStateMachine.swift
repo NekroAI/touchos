@@ -729,7 +729,10 @@ public struct SessionStateMachine: Sendable {
         guard m.contains(p), settled(ctx, at: now) else { return (nil, nil) }
         let point = m.panelPoint(p, panelSize: space(ctx))
         if showingOverview(ctx) { return (nil, OverviewGrid(count: ctx.panels.count, panelSize: ctx.geometry.group).index(at: point)) }
-        return (tester(ctx).hit(point, current: ctx.hovered), nil)
+        let id = tester(ctx).hit(point, current: ctx.hovered)
+        // 读不到实际值的滑杆（如外接屏不支持调亮度）不可用：不悬停，抬起按空白处理（D41，修订 D29 的"只预览，接受后才送出"）
+        if let id, ctx.layout.slot(id)?.slider != nil, ctx.sliderBase[id] == nil { return (nil, nil) }
+        return (id, nil)
     }
 
     /// 停稳后按指点指当前位置重新命中
@@ -905,7 +908,7 @@ public struct SessionStateMachine: Sendable {
     static func quantize(_ v: Double) -> Double { (v * 100).rounded() / 100 }
 
     /// 滑杆实时生效（D29）：指点指所在滑杆的预览值立即送给系统，其余滑杆回到基准值。
-    /// 不知道实际值（读取失败）的滑杆没有可恢复的基准，只预览，接受后才送出
+    /// 不知道实际值（读取失败）的滑杆不可用，不会悬停（D41）
     private func syncSliders(_ ctx: inout ActiveContext) -> [SessionEffect] {
         var desired: [SliderTarget: Double] = [:]
         for page in ctx.panels {

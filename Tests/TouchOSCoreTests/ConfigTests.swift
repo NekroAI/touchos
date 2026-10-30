@@ -18,7 +18,20 @@ private func temporaryStore() -> ConfigStore {
         let config = AppConfig.default
         #expect(try AppConfig.decode(try config.encoded()) == config)
         #expect(config.validate().isEmpty)
-        #expect(config.panels.map(\.id) == ["common", "numpad", "media", "window"])
+        #expect(config.panels.map(\.id) == ["common", "window", "media", "numpad"])
+        // 四指轻点默认打开「窗口」；数字面板默认在屏幕右侧，其余居中（D41）
+        #expect(config.binding(for: .fourFingerTap) == "window" && config.bindings.count == 1)
+        #expect(config.panels.map(\.placement) == [.center, .center, .center, .right])
+    }
+
+    @Test func placementRoundTripsAndDefaultsToCenter() throws {
+        var config = AppConfig.default
+        config.panels[0].placement = .left
+        let data = try config.encoded()
+        #expect(try AppConfig.decode(data).panels[0].placement == .left)
+        // 居中不写入文件，旧文件没有这个键时按居中读
+        let text = String(decoding: data, as: UTF8.self)
+        #expect(text.components(separatedBy: "\"placement\"").count - 1 == 2)
     }
 
     @Test func everyActionTypeRoundTrips() throws {
@@ -339,6 +352,12 @@ private func temporaryStore() -> ConfigStore {
         let fewer = ring.rebuiltRing(items: Array(ring.ringItems.prefix(3)))
         #expect(fewer.ringItems.count == 3 && fewer.ringCenter?.id == "window.close" && fewer.isRing)
         #expect(ring.rebuiltRing(items: ring.ringItems, center: .some(nil)).ringCenter == nil)
+        // 停用状态与屏幕位置跟着走（D37、D41）
+        var custom = ring
+        custom.isEnabled = false
+        custom.placement = .left
+        let rebuilt = custom.rebuiltRing(items: custom.ringItems)
+        #expect(!rebuilt.isEnabled && rebuilt.placement == .left)
     }
 
     @Test func resetRestoresTemplateAndKeepsIDAndBindings() {
@@ -374,7 +393,7 @@ private func temporaryStore() -> ConfigStore {
         #expect(config.validate().isEmpty)
         config.bind(.threeFingerTap, to: "common-2")
         config.bind(.threeFingerTap, to: "media")
-        #expect(config.binding(for: .threeFingerTap) == "media" && config.bindings.count == 1)
+        #expect(config.binding(for: .threeFingerTap) == "media" && config.bindings.count == 2)
         config.bind(.fourFingerTap, to: "common-2")
         config.removePanel("common-2")
         #expect(config.binding(for: .fourFingerTap) == nil && config.panels.count == PresetPanels.all.count)

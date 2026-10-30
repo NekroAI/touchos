@@ -95,7 +95,7 @@ extension Slot: Codable {
 }
 
 extension Layout: Codable {
-    private enum Keys: String, CodingKey { case id, name, grid, slots, disabled }
+    private enum Keys: String, CodingKey { case id, name, grid, slots, disabled, placement }
     private enum GridKeys: String, CodingKey { case rows, cols }
 
     public init(from decoder: Decoder) throws {
@@ -107,6 +107,8 @@ extension Layout: Codable {
             cols = try g.decode(Int.self, forKey: .cols)
         }
         self.init(id: try c.decode(String.self, forKey: .id), name: try c.decode(String.self, forKey: .name), rows: rows, cols: cols,
+                  // 写错的位置按居中
+                  placement: try c.decodeIfPresent(String.self, forKey: .placement).flatMap(PanelPlacement.init) ?? .center,
                   slots: try c.decode([Slot].self, forKey: .slots),
                   isEnabled: !(try c.decodeIfPresent(Bool.self, forKey: .disabled) ?? false))
     }
@@ -120,6 +122,7 @@ extension Layout: Codable {
         try g.encode(cols, forKey: .cols)
         try c.encode(slots, forKey: .slots)
         if !isEnabled { try c.encode(true, forKey: .disabled) }  // 只在停用时写出，旧文件不变
+        if placement != .center { try c.encode(placement.rawValue, forKey: .placement) }
     }
 }
 

@@ -174,6 +174,13 @@ private struct PanelHeader: View {
                     SizePicker(value: panel.cols, range: 1...AppConfig.maxCols, unit: "列") { resize(rows: panel.rows, cols: $0) }
                 }
             }
+            // 面板在屏幕上的位置（D41）：输入类面板放到一侧，不挡住正在输入的地方
+            Picker("位置", selection: makeBinding(get: { panel.placement }, set: { v in updatePanel(configs, panel.id) { $0.placement = v } })) {
+                ForEach(PanelPlacement.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            .labelsHidden()
+            .fixedSize()
+            .help("面板出现在屏幕上的位置")
             // 启用开关放在标题栏，一眼可见（D37、D38）：停用的面板保留配置，不参与唤起与切换
             Toggle("启用", isOn: makeBinding(get: { panel.isEnabled },
                                          set: { PanelCommands.setEnabled(panel.id, $0, configs: configs) }))
@@ -660,6 +667,16 @@ extension PanelTrigger {
         case .fourFingerTap: "四指轻点"
         case .threeFingerTap: "三指轻点"
         case .zoneTapHold(let z): "\(z.title)轻点后按住"
+        }
+    }
+}
+
+extension PanelPlacement {
+    var title: String {
+        switch self {
+        case .center: "屏幕中央"
+        case .left: "屏幕左侧"
+        case .right: "屏幕右侧"
         }
     }
 }

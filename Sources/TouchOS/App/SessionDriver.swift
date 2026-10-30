@@ -17,6 +17,8 @@ final class SessionDriver: @unchecked Sendable {
     /// 用户配置快照（K8）：参数、面板、绑定；改动在下一次会话生效（FR-10.3）
     private var config = AppConfig.default
     private var environment: SessionEnvironment
+    /// 光标所在屏幕：亮度滑杆读写的就是这块屏幕（D41），随环境一起刷新
+    private var cursorDisplay = CGMainDisplayID()
     /// 调试预演（TouchSimulator）用的当前会话环境与参数快照；不在 input.queue 上调用
     var environmentSnapshot: SessionEnvironment { queue.sync { environment } }
     var tuningSnapshot: Tuning { queue.sync { machine.tuning } }
@@ -130,7 +132,7 @@ final class SessionDriver: @unchecked Sendable {
         case .slider(let target, let value):
             switch target {
             case .volume: SystemVolume.set(value)
-            case .brightness: DisplayBrightness.set(value)
+            case .brightness: DisplayBrightness.set(value, display: cursorDisplay)
             case .demo: break
             }
         case .action(let request):
@@ -174,9 +176,11 @@ final class SessionDriver: @unchecked Sendable {
     /// 空闲时每次有手指落下：冻结光标所在屏幕决定面板尺寸（FR-8.5、8.6），并读取滑杆的实际值。
     /// 在进入激活之前送回状态机；三指 / 四指轻点（D19）不经过确认期，所以不能等到确认期开始再刷新
     private func refreshEnvironment() {
-        environment.screenSize = Self.cursorScreenSize()
+        let screen = Self.cursorScreen()
+        environment.screenSize = screen?.visibleFrame.size ?? SessionEnvironment().screenSize
+        cursorDisplay = screen?.displayID ?? CGMainDisplayID()
         environment.sliderValues[.volume] = SystemVolume.get()
-        environment.sliderValues[.brightness] = DisplayBrightness.get()
+        environment.sliderValues[.brightness] = DisplayBrightness.get(display: cursorDisplay)
         _ = machine.handle(.environment(environment))
     }
 
@@ -210,10 +214,9 @@ final class SessionDriver: @unchecked Sendable {
     }
 
     /// 光标所在屏幕的可见区域尺寸。NSScreen 的属性在后台线程只读访问是安全的。
-    private static func cursorScreenSize() -> CGSize {
+    private static func cursorScreen() -> NSScreen? {
         let mouse = NSEvent.mouseLocation
-        let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.screens.first
-        return screen?.visibleFrame.size ?? SessionEnvironment().screenSize
+        return NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.screens.first
     }
 }
 

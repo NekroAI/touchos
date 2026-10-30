@@ -222,21 +222,18 @@ private func activeLayout(_ h: Harness) -> String? {
 }
 
 @Suite struct SliderTests {
-    @Test func sliderPreviewsWhileMovingAndAppliesOnLift() {
+    @Test func sliderWithoutKnownValueIsUnavailable() {
+        // 读不到实际值（如外接屏不支持调亮度）：不悬停、不预览、不送值，抬起按空白处理即关闭（D41）
         let g = pointing(at: ExpSpot.sliderLeft, until: 0.5).move(id: 2, to: ExpSpot.sliderRight, over: 0.2)
             .hold(id: 2, until: 0.8).lift(id: 2, t: 0.8)
         let h = run(g, until: 1.0)
-        let applied = h.effects.compactMap { if case .slider(.volume, let v) = $0 { v } else { nil } }
-        #expect(applied.count == 1)
-        #expect(abs(applied[0] - 0.84) < 0.011)
-        let previews = h.effects.compactMap { if case .updatePanel(let s) = $0 { s.sliderValues["slider"] } else { nil } }
-        #expect(previews.count > 5 && previews == previews.sorted())
-        #expect(h.actions.isEmpty)
-        #expect(h.ends == [.committed("slider")])
-        // 滑杆的值在会话结束之前送出
-        let sliderAt = h.effects.firstIndex { if case .slider = $0 { true } else { false } }
-        let endAt = h.effects.firstIndex(of: .sessionEnded(.committed("slider")))
-        #expect(sliderAt != nil && endAt != nil && sliderAt! < endAt!)
+        #expect(!h.effects.contains { if case .slider = $0 { true } else { false } })
+        let hovered = h.effects.compactMap { if case .updatePanel(let s) = $0 { s.hovered } else { nil } }
+        #expect(hovered.isEmpty)
+        #expect(h.actions.isEmpty && h.ends == [.cancelSlot])
+        // 按压也不做任何事
+        let pressed = run(pointing(at: ExpSpot.sliderLeft, until: 0.8), events: [(0.6, .physicalPress)], until: 1.0)
+        #expect(!pressed.effects.contains { if case .slider = $0 { true } else { false } } && pressed.actions.isEmpty)
     }
 
     @Test func sliderAppliesLiveAndLeavingRestores() {

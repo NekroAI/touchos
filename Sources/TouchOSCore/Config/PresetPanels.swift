@@ -22,7 +22,8 @@ public enum PresetPanels {
         cell(panel, "close", col, row, "关闭", "xmark", .none)
     }
 
-    /// 默认面板（D29）：各应用通用的高频操作，不铺满。关闭正下方两格留空，手指下滑不会误触回车或锁屏；退出放在角上
+    /// 默认面板（D29、D41）：各应用通用的高频操作，不铺满。关闭正下方留空，手指下滑不会误触；退出放在角上。
+    /// 按钮上显示按键组合（刷新 ⌘R 在不同应用里含义不同，看得见实际按下的键）
     public static let common = Layout(id: "common", name: "常用", rows: rows, cols: cols, slots: [
         cell("common", "quit", 0, 0, "退出", "rectangle.portrait.and.arrow.right", key(12, [.command], "⌘Q")),
         cell("common", "closeWindow", 1, 0, "关闭窗口", "xmark.square", key(13, [.command], "⌘W")),
@@ -34,6 +35,7 @@ public enum PresetPanels {
         close("common"),
         cell("common", "paste", 3, 1, "粘贴", "doc.on.clipboard", key(9, [.command], "⌘V")),
         cell("common", "lock", 0, 2, "锁屏", "lock", .system(.lockScreen)),
+        cell("common", "shot", 1, 2, "截图", "camera.viewfinder", .system(.screenshotArea)),
         cell("common", "return", 3, 2, "回车", "return", key(36, [], "↩")),
     ])
 
@@ -42,8 +44,9 @@ public enum PresetPanels {
         cell(panel, id, col, row, text, "", .textSnippet(text))
     }
 
-    /// 数字键盘（D30）：4 × 4，没有小键盘时临时输入一串数字。按压连续输入，抬起关闭；关闭在左下角
-    public static let numpad = Layout(id: "numpad", name: "数字", rows: 4, cols: 4, slots:
+    /// 数字键盘（D30）：4 × 4，没有小键盘时临时输入一串数字。按压连续输入，抬起关闭；关闭在左下角。
+    /// 放在屏幕右侧，像键盘右边的小键盘，不挡住左侧正在输入的地方（D41）
+    public static let numpad = Layout(id: "numpad", name: "数字", rows: 4, cols: 4, placement: .right, slots:
         [("7", 0, 0), ("8", 1, 0), ("9", 2, 0), ("4", 0, 1), ("5", 1, 1), ("6", 2, 1), (",", 3, 1),
          ("1", 0, 2), ("2", 1, 2), ("3", 2, 2), ("0", 1, 3), (".", 2, 3)]
             .map { t, col, row in char("numpad", t == "," ? "comma" : t == "." ? "point" : "d\(t)", col, row, t) }
@@ -81,17 +84,15 @@ public enum PresetPanels {
         cell("browser", "shot", 4, 2, "截图", "camera.viewfinder", .system(.screenshotArea)),
     ])
 
+    /// 媒体（D41）：正在播放卡片本身就是播放 / 暂停，不再另设按钮；锁屏、截图在「常用」里
     public static let media = Layout(id: "media", name: "媒体", rows: rows, cols: cols, slots: [
         cell("media", "nowPlaying", 0, 0, w: 2, h: 2, "正在播放", "music.note", .system(.playPause), widget: .nowPlaying),
-        cell("media", "previous", 2, 0, "上一首", "backward.fill", .system(.previousTrack)),
-        cell("media", "playPause", 3, 0, "播放 / 暂停", "playpause.fill", .system(.playPause)),
+        cell("media", "previous", 3, 0, "上一首", "backward.fill", .system(.previousTrack)),
         cell("media", "next", 4, 0, "下一首", "forward.fill", .system(.nextTrack)),
         close("media"),
         cell("media", "volume", 3, 1, w: 2, "音量", "speaker.wave.2", .none, slider: .volume),
         cell("media", "mute", 0, 2, "静音", "speaker.slash", .system(.mute)),
         cell("media", "brightness", 1, 2, w: 2, "亮度", "sun.max", .none, slider: .brightness),
-        cell("media", "shot", 3, 2, "截图", "camera.viewfinder", .system(.screenshotArea)),
-        cell("media", "lock", 4, 2, "锁屏", "lock", .system(.lockScreen)),
     ])
 
     private static func ringItem(_ panel: String, _ id: String, _ title: String, _ symbol: String, _ action: Action) -> Slot {
@@ -111,8 +112,8 @@ public enum PresetPanels {
         ringItem("window", "center", "居中", "rectangle.center.inset.filled", .system(.windowCenter)),
     ], center: Slot(id: "window.close", shape: .rect(.zero), title: "关闭", symbol: "xmark", action: .none))
 
-    /// 首次启动写入的面板，第一个为默认面板（D38）
-    public static let all = [common, numpad, media, window]
+    /// 首次启动写入的面板，第一个为默认面板；双指切换按这个顺序，常用的挨着默认面板（D38、D41）
+    public static let all = [common, window, media, numpad]
     /// 新建面板可选的模板：默认面板之外还有符号、浏览器
     public static let templates = all + [symbols, browser]
 

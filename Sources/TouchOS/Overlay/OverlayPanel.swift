@@ -152,7 +152,31 @@ final class OverlayModel {
 }
 
 /// 按钮组视觉尺寸与动效参数（SRS 8.3，修订见 decisions.md D20、D23）。各主题的画法常量放在各自的视图里
+extension OverlayModel {
+    /// 面板的水平偏移（D41）：靠左或靠右的面板移到屏幕一侧，离边缘 `PanelMetrics.sideMargin`。
+    /// 切换中按进度在相邻面板之间插值，总览时回到居中；按钮组居中于整块屏幕，屏幕宽度由此反推
+    func placementShift(_ state: PanelState, at now: TimeInterval, reduceMotion: Bool) -> CGFloat {
+        guard !state.panels.isEmpty, state.frames.count == state.panels.count else { return 0 }
+        let screenWidth = groupOrigin.x * 2 + state.size.width
+        func shift(_ i: Int) -> CGFloat {
+            let reach = max(screenWidth / 2 - PanelMetrics.sideMargin - state.frames[i].width / 2, 0)
+            return switch state.panels[i].placement {
+            case .center: 0
+            case .left: -reach
+            case .right: reach
+            }
+        }
+        let nav = min(max(reduceMotion ? state.nav.target : state.nav.value(at: now), 0), Double(state.panels.count - 1))
+        let lower = Int(nav.rounded(.down)), upper = Int(nav.rounded(.up)), f = CGFloat(nav - Double(lower))
+        let x = shift(lower) * (1 - f) + shift(upper) * f
+        let overview = min(max(reduceMotion ? state.overview.target : state.overview.value(at: now), 0), 1)
+        return x * (1 - CGFloat(overview))
+    }
+}
+
 enum PanelMetrics {
+    /// 靠左、靠右的面板离屏幕边缘的距离（D41）
+    static let sideMargin: CGFloat = 72
     /// 按钮在槽位可见区域（已扣掉 `P.slotGap`）基础上每边再小的量
     static let chipInset: CGFloat = 2
     /// 环形布局的圆形按钮：直径取环宽与弦长中较小者的该比例，再限制在上下限之间
@@ -210,6 +234,8 @@ enum PanelMetrics {
     static let trailMaxOpacity = 0.45
     /// 指示点在映射区之外（此时抬起即取消，D21、D22）：按钮组轻微变淡，不另加标记（D39，负责人认为在面板外松手取消是自然预期）
     static let outsideGroupOpacity = 0.85
+    /// 不可用的滑杆整体变淡（D41）
+    static let unavailableOpacity = 0.4
     static let dimOpacity = 0.14
     /// 轨迹最长这么多 pt：手指移得快时只留一段彗尾，不画出绕回来的大弧
     static let trailMaxLength: CGFloat = 90
@@ -295,7 +321,9 @@ private struct OverlayRoot: View {
                 let until = model.animatingUntil
                 TimelineView(.animation(minimumInterval: nil, paused: ProcessInfo.processInfo.systemUptime > until)) { timeline in
                     let _ = timeline.date
-                    PanelStack(model: model, state: state, now: ProcessInfo.processInfo.systemUptime, reduceMotion: reduceMotion)
+                    let now = ProcessInfo.processInfo.systemUptime
+                    PanelStack(model: model, state: state, now: now, reduceMotion: reduceMotion)
+                        .offset(x: model.placementShift(state, at: now, reduceMotion: reduceMotion))
                 }
                 .frame(width: state.size.width, height: state.size.height, alignment: .topLeading)
                 .task(id: until) {
@@ -320,7 +348,7 @@ private struct PointerRoot: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             if let state = model.state, !model.phase.leaving {
-                PointerLayer(model: model, groupRect: CGRect(origin: model.groupOrigin, size: state.size), area: state.area,
+                PointerLayer(model: model, state: state, groupRect: CGRect(origin: model.groupOrigin, size: state.size), area: state.area,
                              overCancel: state.hovered.flatMap { state.layout.slot($0) }?.isCancel ?? false,
                              showTrail: model.showTrail && !reduceMotion)
             }

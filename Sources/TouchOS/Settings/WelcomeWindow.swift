@@ -36,6 +36,9 @@ private struct WelcomeView: View {
     let openSettings: () -> Void
     let close: () -> Void
     @State private var trusted = AXIsProcessTrusted()
+    /// 系统「轻点来点按」开着时多出一步（D41）：轻点后按住的第一下会先点一次鼠标。关掉后这一步打勾，不消失
+    @State private var tapToClick = TapToClick.isOn
+    @State private var showsTapStep = TapToClick.isOn
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -55,16 +58,20 @@ private struct WelcomeView: View {
                     }
                 }
             }
-            Step(number: 2, title: "轻点一下，紧接着按住", done: false) {
-                Text("第二下按住片刻，面板就出现在屏幕中央。不松手，手指在触控板上的位置直接对应面板上的按钮：滑到想要的按钮上，抬起即执行。")
-                Text("按下（物理按压）也会执行，面板保留，可以连按。在按钮之间、空格或面板外抬起则关闭。四指轻点同样可以打开面板，唤起方式可在设置里增减。")
-                if TapToClick.isOn {
-                    Label("系统的「轻点来点按」已开启，第一下轻点会先点一次鼠标，建议关闭。", systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                    Button("打开触控板设置") { NSWorkspace.shared.open(TapToClick.settingsURL) }
+            if showsTapStep {
+                Step(number: 2, title: "关闭系统的「轻点来点按」", done: !tapToClick) {
+                    Text("TouchOS 用「轻点一下，紧接着按住」唤起面板。系统的「轻点来点按」开着时，第一下轻点会先在光标处点一次鼠标，可能点到不该点的东西。")
+                    Text("关掉后改用按压来点按。关掉之前，可以先用四指轻点打开面板。")
+                    if tapToClick {
+                        Button("打开触控板设置") { NSWorkspace.shared.open(TapToClick.settingsURL) }
+                    }
                 }
             }
-            Step(number: 3, title: "切换与编辑", done: false) {
+            Step(number: showsTapStep ? 3 : 2, title: "轻点一下，紧接着按住", done: false) {
+                Text("第二下按住片刻，面板就出现在屏幕中央。不松手，手指在触控板上的位置直接对应面板上的按钮：滑到想要的按钮上，抬起即执行。")
+                Text("按下（物理按压）也会执行，面板保留，可以连按。在按钮之间、空格或面板外抬起则关闭。四指轻点打开「窗口」面板，唤起方式可在设置里增减。")
+            }
+            Step(number: showsTapStep ? 4 : 3, title: "切换与编辑", done: false) {
                 Text("双指上下滑动切换面板，双指捏合查看全部面板。")
                 Text("在正中的关闭按钮上按住，圆环充满后进入编辑。")
             }
@@ -76,7 +83,10 @@ private struct WelcomeView: View {
         }
         .padding(28)
         .frame(width: 520)
-        .onReceive(timer) { _ in trusted = AXIsProcessTrusted() }
+        .onReceive(timer) { _ in
+            trusted = AXIsProcessTrusted()
+            tapToClick = TapToClick.isOn
+        }
     }
 }
 

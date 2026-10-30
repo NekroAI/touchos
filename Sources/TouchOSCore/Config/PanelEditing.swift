@@ -71,9 +71,12 @@ extension Layout {
         if case .sector(let sector) = s.shape { sector.innerRadius == 0 && sector.isFullCircle } else { false }
     }
 
-    /// 按新的项目列表重建环形布局（保留 ID、名称与中心）
+    /// 按新的项目列表重建环形布局（保留 ID、名称、中心、启用状态与位置）
     public func rebuiltRing(items: [Slot], center: Slot?? = .none) -> Layout {
-        Layout.ring(id: id, name: name, items: items, center: center ?? ringCenter)
+        var ring = Layout.ring(id: id, name: name, items: items, center: center ?? ringCenter)
+        ring.isEnabled = isEnabled
+        ring.placement = placement
+        return ring
     }
 }
 
