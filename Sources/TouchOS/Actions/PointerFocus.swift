@@ -20,7 +20,7 @@ enum PointerFocus {
     /// 只有发往窗口的动作需要：快捷键与窗口摆放
     static func applies(to action: Action) -> Bool {
         switch action {
-        case .keyboardShortcut: true
+        case .keyboardShortcut, .textSnippet: true
         case .system(let c): [.windowLeftHalf, .windowRightHalf, .windowFill, .windowCenter, .windowNextDisplay].contains(c)
         default: false
         }

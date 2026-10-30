@@ -18,7 +18,7 @@ private func temporaryStore() -> ConfigStore {
         let config = AppConfig.default
         #expect(try AppConfig.decode(try config.encoded()) == config)
         #expect(config.validate().isEmpty)
-        #expect(config.panels.map(\.id) == ["common", "media", "window", "edit"])
+        #expect(config.panels.map(\.id) == ["common", "numpad", "symbols", "media", "window", "edit"])
     }
 
     @Test func everyActionTypeRoundTrips() throws {
@@ -28,6 +28,7 @@ private func temporaryStore() -> ConfigStore {
             .openApp(bundleID: "com.apple.Notes"),
             .openURL(url: URL(string: "https://example.com/a?b=1")!, browserBundleID: "com.apple.Safari"),
             .openURL(url: URL(string: "mailto:a@example.com")!, browserBundleID: nil),
+            .textSnippet("→ ✓ 😀"),
             .openFile(path: "~/Downloads"),
             .shell(command: "echo hi", timeoutSec: 5, notifyOutput: true),
             .appleScript(source: "beep", language: .appleScript),
@@ -314,15 +315,16 @@ private func temporaryStore() -> ConfigStore {
         var config = AppConfig()
         config.panels.append(config.duplicate(PresetPanels.common))
         config.bind(.tapHold, to: "common-2")
-        config.panels[4].name = "改过"
-        config.panels[4].slots.removeAll()
+        let n = PresetPanels.all.count
+        config.panels[n].name = "改过"
+        config.panels[n].slots.removeAll()
         config.resetPanel("common-2", to: PresetPanels.common)
-        let reset = config.panels[4]
+        let reset = config.panels[n]
         #expect(reset.id == "common-2" && reset.name == "常用" && reset.slots.count == PresetPanels.common.slots.count)
         #expect(reset.slots.allSatisfy { $0.id.raw.hasPrefix("common-2.") })
         #expect(config.binding(for: .tapHold) == "common-2" && config.validate().isEmpty)
         config.resetPanel("missing", to: PresetPanels.media)
-        #expect(config.panels.count == 5)
+        #expect(config.panels.count == n + 1)
     }
 
     @Test func presetOriginFollowsCopies() {
@@ -345,7 +347,7 @@ private func temporaryStore() -> ConfigStore {
         #expect(config.binding(for: .threeFingerTap) == "media" && config.bindings.count == 1)
         config.bind(.fourFingerTap, to: "common-2")
         config.removePanel("common-2")
-        #expect(config.binding(for: .fourFingerTap) == nil && config.panels.count == 4)
+        #expect(config.binding(for: .fourFingerTap) == nil && config.panels.count == PresetPanels.all.count)
         config.bind(.threeFingerTap, to: nil)
         #expect(config.bindings.isEmpty)
         var single = AppConfig()

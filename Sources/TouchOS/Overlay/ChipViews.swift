@@ -136,6 +136,27 @@ private struct Face: View {
 // MARK: 公用小件
 
 
+/// 按钮中间的图形：图标；没有图标时直接画名称（数字键、符号键，D30），名称越长字越小
+private struct Glyph: View {
+    let slot: Slot
+    let size: CGFloat
+    var weight: Font.Weight = .medium
+
+    /// 没有图标：名称画在按钮中间，下方不再重复显示名称
+    static func isText(_ slot: Slot) -> Bool { slot.symbol.isEmpty }
+
+    var body: some View {
+        if Self.isText(slot) {
+            let n = slot.title.count
+            Text(slot.title)
+                .font(.system(size: n <= 1 ? size * 1.15 : n <= 3 ? size * 0.85 : size * 0.6, weight: weight, design: .rounded))
+                .lineLimit(1).minimumScaleFactor(0.5)
+        } else {
+            Image(systemName: slot.symbol).font(.system(size: size, weight: weight))
+        }
+    }
+}
+
 /// 竖向滑杆的上下端与同几行里的按钮对齐，不凸出到格子边缘（负责人反馈）：
 /// 按每行的高度与按钮实际画出的高度算出两端各收进多少。不是网格槽位时只留默认边距
 private func verticalSliderInset(_ slot: Slot, height: CGFloat, tile: CGFloat, minimum: CGFloat) -> CGFloat {
@@ -348,12 +369,14 @@ private struct OrbFace: View {
                     .foregroundStyle(.white.opacity(lit ? 0.98 : 0.68))
                     .lineLimit(1)
                     .floatingLabel("orb.tile|\(slot.title)|\(lit)")
+                    .opacity(Glyph.isText(slot) ? 0 : 1)  // 占位：与同一行的按钮对齐
             }
         case .round:
             orb(min(size.width, size.height) * (lit ? 1.1 : 1))
                 .overlay(alignment: .bottom) {
                     Text(slot.title).font(.system(size: 11.5, weight: .medium)).foregroundStyle(.white.opacity(lit ? 0.98 : 0.68))
                         .fixedSize().floatingLabel("orb.round|\(slot.title)|\(lit)").offset(y: PanelMetrics.roundTitleOffset)
+                        .opacity(Glyph.isText(slot) ? 0 : 1)
                 }
         case .slider:
             let shape = Capsule()
@@ -409,7 +432,7 @@ private struct OrbFace: View {
 
     private func orb(_ d: CGFloat) -> some View {
         Circle().fill(lit ? accent.opacity(0.62) : Color.white.opacity(0.09))
-            .overlay(Image(systemName: slot.symbol).font(.system(size: 22, weight: .medium)).foregroundStyle(.white))
+            .overlay(Glyph(slot: slot, size: 22).foregroundStyle(.white))
             .glass(Circle(), tint: .clear, edge: lit ? 0.5 : 0.2, glow: lit ? accent : nil)
             .frame(width: d, height: d)
             .chipBody(.circle)
@@ -442,19 +465,21 @@ private struct LensFace: View {
                 .overlay(alignment: .bottom) { EditHint(visible: lit).offset(y: 24) }
         case .tile:
             VStack(spacing: 9) {
-                Image(systemName: slot.symbol).font(.system(size: 28, weight: .regular)).foregroundStyle(.white.opacity(lit ? 1 : 0.86))
+                Glyph(slot: slot, size: 28, weight: .regular).foregroundStyle(.white.opacity(lit ? 1 : 0.86))
                     .background { Color.clear.frame(width: Self.glyphRing, height: Self.glyphRing).chipBody(.circle) }
                 Text(slot.title).font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(lit ? 0.96 : 0.55))
                     .lineLimit(1)
+                    .opacity(Glyph.isText(slot) ? 0 : 1)
             }
             .floatingLabel("lens.tile|\(slot.symbol)|\(slot.title)|\(lit)")
         case .round:
-            Image(systemName: slot.symbol).font(.system(size: 26)).foregroundStyle(.white.opacity(lit ? 1 : 0.86))
+            Glyph(slot: slot, size: 26, weight: .regular).foregroundStyle(.white.opacity(lit ? 1 : 0.86))
                 .frame(width: size.width, height: size.height)
                 .background { Color.clear.frame(width: Self.glyphRing, height: Self.glyphRing).chipBody(.circle) }
                 .overlay(alignment: .bottom) {
                     Text(slot.title).font(.system(size: 11.5, weight: .medium)).foregroundStyle(.white.opacity(lit ? 0.96 : 0.6))
                         .fixedSize().offset(y: PanelMetrics.roundTitleOffset - 4)
+                        .opacity(Glyph.isText(slot) ? 0 : 1)
                 }
                 .floatingLabel("lens.round|\(slot.symbol)|\(slot.title)|\(lit)")
         case .slider:
@@ -532,9 +557,11 @@ private struct HoloFace: View {
                 .overlay(alignment: .bottom) { EditHint(visible: lit, mono: true).offset(y: 24) }
         case .round:
             Circle().fill(accent.opacity(lit ? 0.1 : 0)).strokeBorder(accent.opacity(lit ? 0.9 : 0.35), lineWidth: lit ? 1 : 0.5)
-                .overlay(Image(systemName: slot.symbol).font(.system(size: 22, weight: .light)).foregroundStyle(accent.opacity(lit ? 1 : 0.85)))
+                .overlay(Glyph(slot: slot, size: 22, weight: .light).foregroundStyle(accent.opacity(lit ? 1 : 0.85)))
                 .chipBody(.circle)
-                .overlay(alignment: .bottom) { label.fixedSize().offset(y: PanelMetrics.roundTitleOffset) }
+                .overlay(alignment: .bottom) {
+                    label.fixedSize().offset(y: PanelMetrics.roundTitleOffset).opacity(Glyph.isText(slot) ? 0 : 1)
+                }
         case .tile, .slider, .widget:
             ZStack(alignment: .topLeading) {
                 plate
@@ -609,8 +636,8 @@ private struct HoloFace: View {
             .padding(22)
         default:
             VStack(spacing: 10) {
-                Image(systemName: slot.symbol).font(.system(size: 26, weight: .light)).foregroundStyle(accent.opacity(lit ? 1 : 0.85))
-                label
+                Glyph(slot: slot, size: 26, weight: .light).foregroundStyle(accent.opacity(lit ? 1 : 0.85))
+                label.opacity(Glyph.isText(slot) ? 0 : 1)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }

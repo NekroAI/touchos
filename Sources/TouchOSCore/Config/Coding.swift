@@ -144,7 +144,7 @@ extension KeyCombo: Codable {
 extension Action: Codable {
     private enum Keys: String, CodingKey {
         case type, keyCode, modifiers, displayLabel, bundleID, url, browserBundleID, path, command, timeoutSec, notifyOutput
-        case source, language, name
+        case source, language, name, text
     }
 
     /// 编辑器与导入确认（FR-9.4、FR-9.5）用的类型名
@@ -159,6 +159,7 @@ extension Action: Codable {
         case .appleScript: "appleScript"
         case .shortcut: "shortcut"
         case .system: "system"
+        case .textSnippet: "textSnippet"
         }
     }
 
@@ -191,6 +192,7 @@ extension Action: Codable {
                                 language: try c.decodeIfPresent(ScriptLanguage.self, forKey: .language) ?? .appleScript)
         case "shortcut": self = .shortcut(name: try c.decode(String.self, forKey: .name))
         case "system": self = .system(try c.decode(SystemCommand.self, forKey: .command))
+        case "textSnippet": self = .textSnippet(try c.decode(String.self, forKey: .text))
         case let other:
             throw DecodingError.dataCorruptedError(forKey: .type, in: c, debugDescription: "未知动作类型 \(other)")
         }
@@ -216,6 +218,7 @@ extension Action: Codable {
             try c.encode(language, forKey: .language)
         case .shortcut(let name): try c.encode(name, forKey: .name)
         case .system(let command): try c.encode(command, forKey: .command)
+        case .textSnippet(let text): try c.encode(text, forKey: .text)
         }
     }
 }

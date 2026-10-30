@@ -67,13 +67,14 @@ private enum SlotKind: String, CaseIterable, Identifiable {
 
 /// 动作类型（编辑器里的选项）
 private enum ActionKind: String, CaseIterable, Identifiable {
-    case shortcut, system, app, url, file, shortcutsApp, shell, script
+    case shortcut, text, system, app, url, file, shortcutsApp, shell, script
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .shortcut: "快捷键"
+        case .text: "输入文字"
         case .system: "系统功能"
         case .app: "打开应用"
         case .url: "打开链接"
@@ -95,12 +96,14 @@ private enum ActionKind: String, CaseIterable, Identifiable {
         case .shortcut: self = .shortcutsApp
         case .shell: self = .shell
         case .appleScript: self = .script
+        case .textSnippet: self = .text
         }
     }
 
     var placeholder: Action {
         switch self {
         case .shortcut: .keyboardShortcut(KeyCombo(keyCode: 0, modifiers: [.command], displayLabel: "⌘A"))
+        case .text: .textSnippet("")
         case .system: .system(.playPause)
         case .app: .openApp(bundleID: "com.apple.finder")
         case .url: .openURL(url: URL(string: "https://")!, browserBundleID: nil)
@@ -220,6 +223,8 @@ private struct SlotForm: View {
             }
             TextEditor(text: Binding(get: { source }, set: { setAction(.appleScript(source: $0, language: language)) }))
                 .font(.system(.body, design: .monospaced)).frame(minHeight: 70)
+        case .textSnippet(let text):
+            TextField("文字", text: Binding(get: { text }, set: { setAction(.textSnippet($0)) }), prompt: Text("例如 → 或 2026-"))
         case .none:
             EmptyView()
         }

@@ -348,7 +348,7 @@ extension Action {
         case .shell: "Shell"
         case .appleScript: "脚本"
         case .shortcut(let name): name
-        case .system: nil
+        case .system, .textSnippet: nil
         }
     }
 }

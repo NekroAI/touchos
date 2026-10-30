@@ -37,6 +37,33 @@ public enum PresetPanels {
         cell("common", "return", 3, 2, "回车", "return", key(36, [], "↩")),
     ])
 
+    /// 输入一个字符的按钮：没有图标，按钮中间直接画这个字符（D30）
+    private static func char(_ panel: String, _ id: String, _ col: Int, _ row: Int, _ text: String) -> Slot {
+        cell(panel, id, col, row, text, "", .textSnippet(text))
+    }
+
+    /// 数字键盘（D30）：4 × 4，没有小键盘时临时输入一串数字。按压连续输入，抬起关闭；关闭在左下角
+    public static let numpad = Layout(id: "numpad", name: "数字", rows: 4, cols: 4, slots:
+        [("7", 0, 0), ("8", 1, 0), ("9", 2, 0), ("4", 0, 1), ("5", 1, 1), ("6", 2, 1), (",", 3, 1),
+         ("1", 0, 2), ("2", 1, 2), ("3", 2, 2), ("0", 1, 3), (".", 2, 3)]
+            .map { t, col, row in char("numpad", t == "," ? "comma" : t == "." ? "point" : "d\(t)", col, row, t) }
+        + [
+            cell("numpad", "delete", 3, 0, "删除", "delete.left", key(51, [], "⌫")),
+            cell("numpad", "return", 3, 2, "回车", "return", key(36, [], "↩")),
+            close("numpad", col: 0, row: 3),
+            cell("numpad", "tab", 3, 3, "Tab", "arrow.right.to.line", key(48, [], "⇥")),
+        ])
+
+    /// 符号（D30）：键盘上不好打的常用符号，内容按需修改
+    public static let symbols = Layout(id: "symbols", name: "符号", rows: rows, cols: cols, slots: [
+        char("symbols", "times", 0, 0, "×"), char("symbols", "divide", 1, 0, "÷"), char("symbols", "plusMinus", 2, 0, "±"),
+        char("symbols", "approx", 3, 0, "≈"), char("symbols", "notEqual", 4, 0, "≠"),
+        char("symbols", "lessEqual", 0, 1, "≤"), char("symbols", "greaterEqual", 1, 1, "≥"), close("symbols"),
+        char("symbols", "degree", 3, 1, "°"), char("symbols", "ellipsis", 4, 1, "……"),
+        char("symbols", "right", 0, 2, "→"), char("symbols", "left", 1, 2, "←"), char("symbols", "check", 2, 2, "✓"),
+        char("symbols", "dash", 3, 2, "——"), char("symbols", "dot", 4, 2, "·"),
+    ])
+
     public static let browser = Layout(id: "browser", name: "浏览器", rows: rows, cols: cols, slots: [
         cell("browser", "new", 0, 0, "新标签", "plus.square", key(17, [.command], "⌘T")),
         cell("browser", "closeTab", 1, 0, "关闭标签", "xmark.square", key(13, [.command], "⌘W")),
@@ -100,7 +127,7 @@ public enum PresetPanels {
     ], center: Slot(id: "edit.close", shape: .rect(.zero), title: "关闭", symbol: "xmark", action: .none))
 
     /// 首次启动写入的面板，第一个为默认面板
-    public static let all = [common, media, window, editing]
+    public static let all = [common, numpad, symbols, media, window, editing]
     /// 新建面板可选的模板：默认面板之外还有浏览器
     public static let templates = all + [browser]
 

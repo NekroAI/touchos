@@ -192,5 +192,7 @@ public enum Action: Equatable, Sendable {
     case appleScript(source: String, language: ScriptLanguage)
     case shortcut(name: String)                 // 系统"快捷指令"
     case system(SystemCommand)
-    // M2 预留：macro([Action])、textSnippet(String)、windowManagement(WindowCommand)、subPanel(LayoutID)
+    /// 输入一段文字（D30，SRS 预留的 M2 动作提前实现）：直接送字符，与键盘布局、输入法无关，任何符号都能输入
+    case textSnippet(String)
+    // M2 预留：macro([Action])、windowManagement(WindowCommand)、subPanel(LayoutID)
 }

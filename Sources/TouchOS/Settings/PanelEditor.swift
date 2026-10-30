@@ -665,6 +665,7 @@ extension Action {
         case .appleScript: "脚本"
         case .shortcut(let name): name
         case .system(let c): c.title
+        case .textSnippet(let text): "输入「\(text)」"
         }
     }
 }

@@ -86,6 +86,9 @@ final class ActionExecutor: @unchecked Sendable {
             _ = try ProcessRunner.run("/usr/bin/shortcuts", ["run", name], timeout: ProcessRunner.shortcutTimeout)
         case .system(let command):
             try SystemControl.run(command, frontmostBundleID: target ?? request.frontmostBundleID)
+        case .textSnippet(let text):
+            TextTyper.type(text)
+            log.info("text snippet")  // 不记录内容
         }
     }
 }
@@ -128,6 +131,32 @@ enum KeyboardShortcutExecutor {
         event.flags = flags
         event.setIntegerValueField(.eventSourceUserData, value: EventTapController.syntheticMarker)
         event.post(tap: .cghidEventTap)
+    }
+}
+
+/// 输入文字（D30）：按键事件携带 Unicode 字符串，不经过键码与键盘布局，输入法也不会拦截改写。
+/// 每个事件最多带 20 个 UTF-16 单元，长文本分段发送；事件带 FR-7.3 标记
+enum TextTyper {
+    static let chunk = 20
+
+    static func type(_ text: String) {
+        guard let source = CGEventSource(stateID: .hidSystemState) else { return }
+        source.userData = EventTapController.syntheticMarker
+        var units = Array(text.utf16)
+        while !units.isEmpty {
+            // 不把代理对拆到两段
+            var n = min(chunk, units.count)
+            if n < units.count, UTF16.isLeadSurrogate(units[n - 1]) { n -= 1 }
+            let part = Array(units.prefix(n))
+            units.removeFirst(n)
+            for down in [true, false] {
+                guard let event = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: down) else { return }
+                event.flags = []
+                event.keyboardSetUnicodeString(stringLength: part.count, unicodeString: part)
+                event.setIntegerValueField(.eventSourceUserData, value: EventTapController.syntheticMarker)
+                event.post(tap: .cghidEventTap)
+            }
+        }
     }
 }
 
