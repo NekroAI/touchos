@@ -128,7 +128,7 @@ private struct Face: View {
 
     var body: some View {
         let slider = SliderReading(value: value ?? 0, base: base,
-                                   unavailable: slot.slider == nil || value != nil ? nil : slot.slider == .brightness ? "此屏幕不支持" : "不可用")
+                                   unavailable: slot.slider == nil || value != nil ? nil : slot.slider == .brightness ? String(localized: "此屏幕不支持") : String(localized: "不可用"))
         switch style.theme {
         case .orb: OrbFace(kind: kind, slot: slot, size: size, lit: lit, slider: slider, accent: style.accent)
         case .lens: LensFace(kind: kind, slot: slot, size: size, lit: lit, slider: slider, accent: style.accent)
@@ -351,8 +351,8 @@ extension View {
 
 /// 正在播放卡片的占位内容（K9 接入系统正在播放信息之前）
 private enum NowPlaying {
-    static let title = "正在播放"
-    static let subtitle = "按下播放 / 暂停"
+    static let title = String(localized: "正在播放")
+    static let subtitle = String(localized: "按下播放 / 暂停")
 }
 
 // MARK: B · 玻璃圆钮
@@ -390,7 +390,7 @@ private struct OrbFace: View {
                 orb(d)
                 titleText(slot, size: 11.5)
                     .foregroundStyle(.white.opacity(lit ? 0.98 : 0.68))
-                    .lineLimit(1)
+                    .lineLimit(1).minimumScaleFactor(0.7)
                     .floatingLabel("orb.tile|\(titleKey(slot))|\(lit)")
                     .opacity(Glyph.isText(slot) ? 0 : 1)  // 占位：与同一行的按钮对齐
             }
@@ -415,7 +415,7 @@ private struct OrbFace: View {
                         SliderReadout(reading: slider, vertical: true, accent: .white).opacity(0.75)
                         Spacer(minLength: 4)
                         Image(systemName: slot.symbol).font(.system(size: 18, weight: .medium))
-                        Text(slot.title).font(.system(size: 11, weight: .medium)).lineLimit(1)
+                        Text(slot.title).font(.system(size: 11, weight: .medium)).lineLimit(1).minimumScaleFactor(0.7)
                     }
                     .foregroundStyle(.white)
                     .padding(.vertical, 20)
@@ -491,7 +491,7 @@ private struct LensFace: View {
                 Glyph(slot: slot, size: 28, weight: .regular).foregroundStyle(.white.opacity(lit ? 1 : 0.86))
                     .background { Color.clear.frame(width: Self.glyphRing, height: Self.glyphRing).chipBody(.circle) }
                 titleText(slot, size: 12).foregroundStyle(.white.opacity(lit ? 0.96 : 0.55))
-                    .lineLimit(1)
+                    .lineLimit(1).minimumScaleFactor(0.7)
                     .opacity(Glyph.isText(slot) ? 0 : 1)
             }
             .floatingLabel("lens.tile|\(slot.symbol)|\(titleKey(slot))|\(lit)")
@@ -515,7 +515,7 @@ private struct LensFace: View {
                         SliderReadout(reading: slider, vertical: true, accent: accent).opacity(lit ? 0.9 : 0.45)
                         track.frame(width: lit ? 6 : 4).frame(maxHeight: .infinity)
                         Image(systemName: slot.symbol).font(.system(size: 20))
-                        Text(slot.title).font(.system(size: 12, weight: .medium)).opacity(lit ? 0.96 : 0.6).lineLimit(1)
+                        Text(slot.title).font(.system(size: 12, weight: .medium)).opacity(lit ? 0.96 : 0.6).lineLimit(1).minimumScaleFactor(0.7)
                     }
                     .foregroundStyle(.white)
                     .padding(.horizontal, 14)
@@ -610,7 +610,7 @@ private struct HoloFace: View {
 
     private var label: some View {
         Text(slot.title.uppercased()).font(.system(size: 11, weight: .medium, design: .monospaced)).tracking(1.3)
-            .foregroundStyle(Self.ink.opacity(lit ? 1 : 0.8)).lineLimit(1)
+            .foregroundStyle(Self.ink.opacity(lit ? 1 : 0.8)).lineLimit(1).minimumScaleFactor(0.7)
             .floatingLabel("holo|\(slot.title)|\(lit)")
     }
 

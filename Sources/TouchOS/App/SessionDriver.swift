@@ -103,7 +103,7 @@ final class SessionDriver: @unchecked Sendable {
         switch effect {
         case .policy(let p):
             tap.publish(p)
-            onDebug?("状态：\(p.mode)")
+            onDebug?("状态：\(p.mode)")  // l10n-ignore
         case .cursor(let c):
             cursor.apply(c)
         case .armed:
@@ -141,10 +141,10 @@ final class SessionDriver: @unchecked Sendable {
             DispatchQueue.main.async { self.onOpenEditor?(panelID) }
         case .armFailed(let reason):
             log.info("arm failed: \(reason.rawValue, privacy: .public)")
-            onDebug?("确认失败：\(reason.rawValue)")
+            onDebug?("确认失败：\(reason.rawValue)")  // l10n-ignore
         case .sessionEnded(let end):
             log.info("session ended: \(String(describing: end), privacy: .public)")
-            onDebug?("会话结束：\(end)")
+            onDebug?("会话结束：\(end)")  // l10n-ignore
         }
     }
 
@@ -192,7 +192,7 @@ final class SessionDriver: @unchecked Sendable {
         t.repeatIntervalMs = NSEvent.keyRepeatInterval * 1000
         guard t != machine.tuning else { return }
         _ = machine.handle(.tuning(t))
-        onDebug?("面板 \(t.panelScale) · 映射区 \(t.mappingScale)")
+        onDebug?("面板 \(t.panelScale) · 映射区 \(t.mappingScale)")  // l10n-ignore
     }
 
     private func updateTimer() {

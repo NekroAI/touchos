@@ -15,7 +15,7 @@ struct SlotInspector: View {
             VStack(spacing: 0) {
                 HStack(spacing: 10) {
                     Image(systemName: Self.symbol(slot.symbol)).font(.title3).foregroundStyle(.tint).frame(width: 24)
-                    Text(slot.title.isEmpty ? "按钮" : slot.title).font(.headline).lineLimit(1)
+                    Text(slot.title.isEmpty ? String(localized: "按钮") : slot.title).font(.headline).lineLimit(1)
                     Spacer()
                     Button { navigation.selectedSlot = nil } label: {
                         Image(systemName: "xmark").font(.callout.weight(.semibold)).foregroundStyle(.secondary)
@@ -48,11 +48,11 @@ private enum SlotKind: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .action: "执行动作"
-        case .close: "关闭面板"
-        case .volume: "音量滑杆"
-        case .brightness: "亮度滑杆"
-        case .nowPlaying: "正在播放"
+        case .action: String(localized: "执行动作")
+        case .close: String(localized: "关闭面板")
+        case .volume: String(localized: "音量滑杆")
+        case .brightness: String(localized: "亮度滑杆")
+        case .nowPlaying: String(localized: "正在播放")
         }
     }
 
@@ -73,14 +73,14 @@ private enum ActionKind: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .shortcut: "快捷键"
-        case .text: "输入文字"
-        case .system: "系统功能"
-        case .app: "打开应用"
-        case .url: "打开链接"
-        case .file: "打开文件或文件夹"
-        case .shortcutsApp: "运行快捷指令"
-        case .shell: "Shell 命令"
+        case .shortcut: String(localized: "快捷键")
+        case .text: String(localized: "输入文字")
+        case .system: String(localized: "系统功能")
+        case .app: String(localized: "打开应用")
+        case .url: String(localized: "打开链接")
+        case .file: String(localized: "打开文件或文件夹")
+        case .shortcutsApp: String(localized: "运行快捷指令")
+        case .shell: String(localized: "Shell 命令")
         case .script: "AppleScript / JXA"
         }
     }
@@ -139,7 +139,7 @@ private struct SlotForm: View {
                     Text("按下或抬起时播放 / 暂停。").font(.caption).foregroundStyle(.secondary)
                 }
                 if SlotKind(slot) == .close {
-                    Text("抬起关闭面板；按住约 \(String(format: "%.1f", Tuning().editHoldMs / 1000)) 秒进入编辑。")
+                    Text("抬起关闭面板；按住约 \(editHoldSeconds) 秒进入编辑。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -150,7 +150,7 @@ private struct SlotForm: View {
                         if let testNote { Text(testNote).font(.caption).foregroundStyle(.secondary) }
                     }
                 } footer: {
-                    FormFooter("1 秒后执行，可以先切到目标应用。")
+                    FormFooter(String(localized: "1 秒后执行，可以先切到目标应用。"))
                 }
             }
             if panel.isRing, let index = panel.ringItems.firstIndex(where: { $0.id == slot.id }) {
@@ -295,12 +295,14 @@ private struct SlotForm: View {
         navigation.selectedSlot = nil
     }
 
+    private var editHoldSeconds: String { String(format: "%.1f", Tuning().editHoldMs / 1000) }
+
     private func test() {
-        testNote = "1 秒后执行…"
+        testNote = String(localized: "1 秒后执行…")
         let request = ActionRequest(action: slot.action, title: slot.title, frontmostBundleID: nil,
                                     notBefore: ProcessInfo.processInfo.systemUptime + Self.testDelay)
         executor.enqueue(request)
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.testDelay + 0.3) { testNote = "已执行" }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.testDelay + 0.3) { testNote = String(localized: "已执行") }
     }
 
     /// FR-11.7
@@ -372,7 +374,7 @@ struct ShortcutRecorder: View {
         Button {
             recording ? stop() : start()
         } label: {
-            Text(recording ? "请按下组合键…" : combo.displayLabel)
+            Text(recording ? String(localized: "请按下组合键…") : combo.displayLabel)
                 .font(.system(.body, design: .rounded).weight(.medium))
                 .frame(minWidth: 90)
         }

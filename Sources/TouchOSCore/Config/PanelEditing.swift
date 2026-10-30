@@ -100,7 +100,7 @@ extension AppConfig {
     /// 复制面板：新的面板 ID 与槽位 ID，名称加"副本"
     public func duplicate(_ panel: Layout) -> Layout {
         var copy = Self.instance(of: panel, id: Self.uniqueID(panel.id, existing: Set(panels.map(\.id))), used: allSlotIDs)
-        copy.name = panel.name + " 副本"
+        copy.name = String(localized: "\(panel.name) 副本")
         return copy
     }
 

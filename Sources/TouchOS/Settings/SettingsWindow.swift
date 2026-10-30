@@ -38,7 +38,7 @@ final class SettingsWindowController {
     private func makeWindow() -> NSWindow {
         let root = SettingsRoot(configs: configs, executor: executor, cloud: cloud, navigation: navigation)
         let window = NSWindow(contentViewController: NSHostingController(rootView: root))
-        window.title = "TouchOS 设置"
+        window.title = String(localized: "TouchOS 设置")
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.setContentSize(NSSize(width: 1120, height: 720))
         window.minSize = NSSize(width: 980, height: 620)
@@ -56,11 +56,11 @@ enum SettingsPage: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .panels: "面板"
-        case .triggers: "唤起与手感"
-        case .appearance: "外观"
-        case .general: "通用"
-        case .about: "关于"
+        case .panels: String(localized: "面板")
+        case .triggers: String(localized: "唤起与手感")
+        case .appearance: String(localized: "外观")
+        case .general: String(localized: "通用")
+        case .about: String(localized: "关于")
         }
     }
 
@@ -129,7 +129,7 @@ private struct SettingsRoot: View {
     }
 
     private var title: String {
-        navigation.page == .panels ? "面板" : navigation.page.title
+        navigation.page.title
     }
 }
 
@@ -298,7 +298,7 @@ private struct AppearancePage: View {
             }
             Section("强调色") {
                 HStack(spacing: 10) {
-                    AccentSwatch(color: .accentColor, label: "自动", selected: appearance.accentHex == nil) { set { $0.accentHex = nil } }
+                    AccentSwatch(color: .accentColor, label: String(localized: "自动"), selected: appearance.accentHex == nil) { set { $0.accentHex = nil } }
                     ForEach(Appearance.presets, id: \.hex) { preset in
                         let c = Appearance.rgb(preset.hex)!
                         AccentSwatch(color: Color(.sRGB, red: c.r, green: c.g, blue: c.b), label: preset.name,
@@ -349,7 +349,7 @@ private struct ThemeCard: View {
             }
             .frame(width: 180, height: 96)
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(selected ? accent : Color.secondary.opacity(0.3), lineWidth: selected ? 2 : 1))
-            Text(theme == .orb ? "\(theme.title)（默认）" : theme.title).font(.callout)
+            Text(theme == .orb ? String(localized: "\(theme.title)（默认）") : theme.title).font(.callout)
         }
         .contentShape(Rectangle())
     }
@@ -398,6 +398,9 @@ private struct GeneralPage: View {
     let configs: ConfigController
     let cloud: CloudSyncController
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var language = AppLanguage.selected
+    /// 这个进程启动时的选择，变了才需要重启
+    private let launchLanguage = AppLanguage.selected
     @State private var message: String?
     @State private var pendingImport: (config: AppConfig, risky: [(panel: String, slot: String, action: Action)])?
 
@@ -408,9 +411,24 @@ private struct GeneralPage: View {
                 Toggle("登录时启动", isOn: makeBinding(get: { launchAtLogin }, set: setLaunchAtLogin))
             }
             Section {
+                Picker(selection: makeBinding(get: { language }, set: { AppLanguage.select($0); language = $0 })) {
+                    ForEach(AppLanguage.allCases) { Text(verbatim: $0.nativeName).tag($0) }
+                } label: {
+                    Text("语言")
+                    Text("已有面板的名称不会跟着改变。")
+                }
+                if language != launchLanguage {
+                    Button("重启以应用") { AppLanguage.relaunch() }
+                }
+            }
+            Section {
                 Toggle(isOn: binding(configs, \.general.focusPointerWindow)) {
                     Text("动作发往指针下的窗口")
                     Text("快捷键与窗口摆放执行前，先把指针所在的窗口切到前台（相当于点了它一下）。关闭后发往唤起时的前台应用。")
+                }
+                Toggle(isOn: binding(configs, \.general.checkUpdates)) {
+                    Text("检查更新")
+                    Text("每天向 GitHub 查询一次最新版本，有新版本时在菜单中提示。不会自动下载或安装，也不发送任何触控或配置信息。")
                 }
             }
             Section {
@@ -434,7 +452,7 @@ private struct GeneralPage: View {
             } header: {
                 Text("排除的应用")
             } footer: {
-                FormFooter("这些应用在前台时不唤起面板（例如游戏、远程桌面）。")
+                FormFooter(String(localized: "这些应用在前台时不唤起面板（例如游戏、远程桌面）。"))
             }
             Section {
                 Toggle(isOn: makeBinding(get: { configs.config.sync.iCloud }, set: { cloud.setEnabled($0) })) {
@@ -451,8 +469,7 @@ private struct GeneralPage: View {
             } header: {
                 Text("iCloud 同步")
             } footer: {
-                FormFooter("面板、外观、唤起方式、排除的应用在各台 Mac 之间同步；面板大小、映射区、按钮间隙与「启用 TouchOS」只属于这台 Mac。"
-                           + "在另一台 Mac 上安装后打开这个开关即可接入。")
+                FormFooter(String(localized: "面板、外观、唤起方式、排除的应用在各台 Mac 之间同步；面板大小、映射区、按钮间隙与「启用 TouchOS」只属于这台 Mac。在另一台 Mac 上安装后打开这个开关即可接入。"))
             }
             Section("配置文件") {
                 HStack {
@@ -479,7 +496,7 @@ private struct GeneralPage: View {
                         var c = pending.config
                         c.sync = configs.config.sync  // 同步开关只属于这台 Mac（D35）
                         configs.replace(c)
-                        message = "已导入"
+                        message = String(localized: "已导入")
                     }
                     pendingImport = nil
                 }
@@ -489,10 +506,10 @@ private struct GeneralPage: View {
 
     private var cloudStatus: String {
         switch cloud.status {
-        case .off: cloud.isAvailable ? "未开启" : "这台 Mac 没有开启 iCloud 云盘（系统设置 → Apple 账户 → iCloud）"
-        case .unavailable: "这台 Mac 没有开启 iCloud 云盘（系统设置 → Apple 账户 → iCloud）"
-        case .downloading: "正在从 iCloud 下载配置…"
-        case .synced(let date): "已同步 · \(date.formatted(date: .omitted, time: .shortened))"
+        case .off: cloud.isAvailable ? String(localized: "未开启") : String(localized: "这台 Mac 没有开启 iCloud 云盘（系统设置 → Apple 账户 → iCloud）")
+        case .unavailable: String(localized: "这台 Mac 没有开启 iCloud 云盘（系统设置 → Apple 账户 → iCloud）")
+        case .downloading: String(localized: "正在从 iCloud 下载配置…")
+        case .synced(let date): String(localized: "已同步 · \(date.formatted(date: .omitted, time: .shortened))")
         case .blocked(let reason): reason
         }
     }
@@ -515,7 +532,7 @@ private struct GeneralPage: View {
             if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
             launchAtLogin = on
         } catch {
-            message = "无法更改登录项：\(error.localizedDescription)"
+            message = String(localized: "无法更改登录项：\(error.localizedDescription)")
         }
     }
 
@@ -525,9 +542,9 @@ private struct GeneralPage: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try configs.export(to: url)
-            message = "已导出到 \(url.lastPathComponent)"
+            message = String(localized: "已导出到 \(url.lastPathComponent)")
         } catch {
-            message = "导出失败：\(error.localizedDescription)"
+            message = String(localized: "导出失败：\(error.localizedDescription)")
         }
     }
 
@@ -541,21 +558,21 @@ private struct GeneralPage: View {
                 var c = result.config
                 c.sync = configs.config.sync  // 同步开关只属于这台 Mac（D35）
                 configs.replace(c)
-                message = "已导入"
+                message = String(localized: "已导入")
             } else {
                 pendingImport = result  // FR-9.5：先逐条确认
             }
         } catch {
-            message = "导入失败：文件不是有效的 TouchOS 配置"
+            message = String(localized: "导入失败：文件不是有效的 TouchOS 配置")
         }
     }
 
     private func restore(_ url: URL) {
         do {
             try configs.restore(url)
-            message = "已从备份恢复"
+            message = String(localized: "已从备份恢复")
         } catch {
-            message = "该备份无法读取"
+            message = String(localized: "该备份无法读取")
         }
     }
 }

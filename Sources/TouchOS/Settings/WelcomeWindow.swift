@@ -23,7 +23,7 @@ final class WelcomeWindowController {
         let view = WelcomeView(openSettings: { [weak self] in self?.onOpenSettings?() },
                                close: { [weak self] in self?.window?.close() })
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))
-        window.title = "欢迎使用 TouchOS"
+        window.title = String(localized: "欢迎使用 TouchOS")
         window.styleMask = [.titled, .closable, .fullSizeContentView]
         window.titlebarAppearsTransparent = true
         window.isReleasedWhenClosed = false
@@ -50,7 +50,7 @@ private struct WelcomeView: View {
                     Text("看着选，不用记手势。").foregroundStyle(.secondary)
                 }
             }
-            Step(number: 1, title: "允许辅助功能", done: trusted) {
+            Step(number: 1, title: String(localized: "允许辅助功能"), done: trusted) {
                 Text("TouchOS 需要辅助功能权限来暂停光标、发送快捷键。触点只在内存中处理，从不记录或上传。")
                 if !trusted {
                     Button("打开系统设置") {
@@ -59,7 +59,7 @@ private struct WelcomeView: View {
                 }
             }
             if showsTapStep {
-                Step(number: 2, title: "关闭系统的「轻点来点按」", done: !tapToClick) {
+                Step(number: 2, title: String(localized: "关闭系统的「轻点来点按」"), done: !tapToClick) {
                     Text("TouchOS 用「轻点一下，紧接着按住」唤起面板。系统的「轻点来点按」开着时，第一下轻点会先在光标处点一次鼠标，可能点到不该点的东西。")
                     Text("关掉后改用按压来点按。关掉之前，可以先用四指轻点打开面板。")
                     if tapToClick {
@@ -67,11 +67,11 @@ private struct WelcomeView: View {
                     }
                 }
             }
-            Step(number: showsTapStep ? 3 : 2, title: "轻点一下，紧接着按住", done: false) {
+            Step(number: showsTapStep ? 3 : 2, title: String(localized: "轻点一下，紧接着按住"), done: false) {
                 Text("第二下按住片刻，面板就出现在屏幕中央。不松手，手指在触控板上的位置直接对应面板上的按钮：滑到想要的按钮上，抬起即执行。")
                 Text("按下（物理按压）也会执行，面板保留，可以连按。在按钮之间、空格或面板外抬起则关闭。四指轻点打开「窗口」面板，唤起方式可在设置里增减。")
             }
-            Step(number: showsTapStep ? 4 : 3, title: "切换与编辑", done: false) {
+            Step(number: showsTapStep ? 4 : 3, title: String(localized: "切换与编辑"), done: false) {
                 Text("双指上下滑动切换面板，双指捏合查看全部面板。")
                 Text("在正中的关闭按钮上按住，圆环充满后进入编辑。")
             }

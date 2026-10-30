@@ -422,3 +422,37 @@ private func temporaryStore() -> ConfigStore {
         #expect(c.activePanels.map(\.id) == [c.panels[0].id])
     }
 }
+
+// D44：更新提示
+@Suite struct UpdateCheckTests {
+    private func json(tag: String = "v0.2.0", url: String = "https://github.com/NekroAI/touchos/releases/tag/v0.2.0",
+                      prerelease: Bool = false, draft: Bool = false) -> Data {
+        Data(#"{"tag_name":"\#(tag)","html_url":"\#(url)","prerelease":\#(prerelease),"draft":\#(draft)}"#.utf8)
+    }
+
+    @Test func comparesNumerically() throws {
+        #expect(try #require(AppVersion("v0.10.0")) > #require(AppVersion("0.9.9")))
+        #expect(try #require(AppVersion("1.0")) == #require(AppVersion("1.0.0")))
+        #expect(try #require(AppVersion("0.1.0")) < #require(AppVersion("0.1.1")))
+        for bad in ["dev", "", "1.0.0-beta", "1..0", "v", "-1.0"] { #expect(AppVersion(bad) == nil) }
+    }
+
+    @Test func parsesOnlyFormalReleasesOfThisRepository() throws {
+        let release = try #require(ReleaseInfo.parse(json: json()))
+        #expect(release.tag == "v0.2.0" && release.url.host == "github.com")
+        #expect(release.isNewer(than: "0.1.0") && !release.isNewer(than: "0.2.0") && !release.isNewer(than: "0.3.0"))
+        #expect(!release.isNewer(than: "dev"))
+        #expect(ReleaseInfo.parse(json: json(prerelease: true)) == nil)
+        #expect(ReleaseInfo.parse(json: json(draft: true)) == nil)
+        #expect(ReleaseInfo.parse(json: json(tag: "nightly")) == nil)
+        #expect(ReleaseInfo.parse(json: json(url: "https://evil.example/NekroAI/touchos/x")) == nil)
+        #expect(ReleaseInfo.parse(json: json(url: "http://github.com/NekroAI/touchos/x")) == nil)
+        #expect(ReleaseInfo.parse(json: json(url: "https://github.com/other/repo/x")) == nil)
+        #expect(ReleaseInfo.parse(json: Data("not json".utf8)) == nil)
+    }
+
+    @Test func checkUpdatesDefaultsOnForOldFiles() throws {
+        let general = try JSONDecoder().decode(AppConfig.General.self, from: Data("{}".utf8))
+        #expect(general.checkUpdates)
+    }
+}

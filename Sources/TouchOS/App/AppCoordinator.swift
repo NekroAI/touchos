@@ -14,6 +14,7 @@ final class AppCoordinator {
     private let log = Logger(subsystem: TouchOSCore.logSubsystem, category: "app")
     private let tuning = Tuning()  // K8 起从配置读取
     private let menuBar = MenuBarController()
+    private let updates = UpdateChecker()
     private let configs = ConfigController()
     private var appearanceMenu: AppearanceMenu!
     private var settings: SettingsWindowController!
@@ -53,6 +54,8 @@ final class AppCoordinator {
         menuBar.appearanceItem = appearanceMenu.item
         settings = SettingsWindowController(configs: configs, executor: executor, cloud: cloud)
         menuBar.onOpenSettings = { [weak self] in self?.settings.show() }
+        updates.onChange = { [weak self] release in self?.menuBar.availableUpdate = release }
+        updates.enabled = configs.config.general.checkUpdates
         menuBar.onToggleEnabled = { configs.update { $0.general.enabled.toggle() } }
         driver.onOpenEditor = { [weak self] panelID in self?.settings.show(editing: panelID) }
         configs.observe { [weak self] c in
@@ -63,6 +66,7 @@ final class AppCoordinator {
             overlay.showTrail = c.general.showTrail
             self?.appearanceMenu?.rebuild()
             self?.menuBar.enabled = c.general.enabled
+            self?.updates.enabled = c.general.checkUpdates
             self?.refreshStatus()
         }
 
@@ -70,7 +74,7 @@ final class AppCoordinator {
             queue: queue,
             onFrame: { frame in driver.handle(.frame(frame)) },
             onLayoutMismatch: { [weak self] in
-                DispatchQueue.main.async { self?.setInputUnavailable("触点数据格式与本机系统不符") }
+                DispatchQueue.main.async { self?.setInputUnavailable(String(localized: "触点数据格式与本机系统不符")) }
             })
 
         if DebugOverlayController.isAvailable {
@@ -89,7 +93,7 @@ final class AppCoordinator {
             }
             menuBar.onDebugStall = {
                 tap.scheduleDebugStall(after: Self.debugStallDelay)
-                debug.model.log("已预约：\(Int(Self.debugStallDelay)) 秒后阻塞拦截")
+                debug.model.log("已预约：\(Int(Self.debugStallDelay)) 秒后阻塞拦截")  // l10n-ignore
             }
         }
 
@@ -196,25 +200,25 @@ final class AppCoordinator {
         log.error("input unavailable: \(reason, privacy: .public)")
         inputUnavailable = reason
         pipeline.setActiveDevices([])
-        debugOverlay?.model.status = "输入不可用：\(reason)"
+        debugOverlay?.model.status = "输入不可用：\(reason)"  // l10n-ignore
         refreshStatus()
     }
 
     private func refreshStatus() {
         let text: String?
         if let inputUnavailable {
-            text = "输入不可用（\(inputUnavailable)）"
+            text = String(localized: "输入不可用（\(inputUnavailable)）")
         } else {
             switch tapStatus {
             case .ok: text = nil
-            case .permissionMissing: text = "缺少辅助功能权限"
-            case .tapUnavailable: text = "拦截不可用"
+            case .permissionMissing: text = String(localized: "缺少辅助功能权限")
+            case .tapUnavailable: text = String(localized: "拦截不可用")
             }
         }
         let general = configs.config.general
         let paused = !general.enabled
         let blocked = frontmost.map { general.blacklist.contains($0) } ?? false
-        menuBar.setStatus(text ?? (paused ? "已暂停" : blocked ? "当前应用已排除" : "正常"), warning: text != nil)
+        menuBar.setStatus(text ?? (paused ? String(localized: "已暂停") : blocked ? String(localized: "当前应用已排除") : String(localized: "正常")), warning: text != nil, paused: text == nil && paused)
         let suspended = text != nil || paused || blocked
         driver.updateEnvironment { $0.suspended = suspended }
     }

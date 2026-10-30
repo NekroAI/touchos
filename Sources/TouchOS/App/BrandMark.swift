@@ -4,6 +4,8 @@ import AppKit
 enum BrandMark {
     /// 菜单栏图标边长（pt）
     static let menuBarSize: CGFloat = 18
+    /// 暂停时菜单栏图标的不透明度
+    static let pausedAlpha: CGFloat = 0.4
 
     private static var path: CGPath {
         let p = CGMutablePath()
@@ -20,7 +22,7 @@ enum BrandMark {
     }
 
     /// 单色模板图：系统按菜单栏深浅自动着色
-    static func menuBarImage(description: String) -> NSImage {
+    static func menuBarImage(description: String, alpha: CGFloat = 1) -> NSImage {
         let side = menuBarSize
         let image = NSImage(size: NSSize(width: side, height: side), flipped: true) { _ in
             guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
@@ -29,7 +31,7 @@ enum BrandMark {
             ctx.scaleBy(x: 1.24, y: 1.24)
             ctx.translateBy(x: -512, y: -530)
             ctx.addPath(path)
-            ctx.setFillColor(NSColor.black.cgColor)
+            ctx.setFillColor(NSColor.black.withAlphaComponent(alpha).cgColor)
             ctx.fillPath()
             return true
         }

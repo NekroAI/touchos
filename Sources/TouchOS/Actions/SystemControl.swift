@@ -48,7 +48,7 @@ enum SystemControl {
     private static func openSystemApp(_ names: [String]) throws {
         let url = names.lazy.map { URL(fileURLWithPath: "/System/Applications/\($0).app") }
             .first { FileManager.default.fileExists(atPath: $0.path) }
-        guard let url else { throw ActionFailure(reason: "本机系统没有该功能") }
+        guard let url else { throw ActionFailure(reason: String(localized: "本机系统没有该功能")) }
         NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
     }
 
@@ -73,15 +73,15 @@ enum WindowManager {
     static func apply(_ command: SystemCommand, bundleID: String?) throws {
         let app = bundleID.flatMap { NSRunningApplication.runningApplications(withBundleIdentifier: $0).first }
             ?? NSWorkspace.shared.frontmostApplication
-        guard let app else { throw ActionFailure(reason: "没有前台窗口") }
+        guard let app else { throw ActionFailure(reason: String(localized: "没有前台窗口")) }
         let axApp = AXUIElementCreateApplication(app.processIdentifier)
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(axApp, "AXFocusedWindow" as CFString, &value) == .success, let value,
               CFGetTypeID(value) == AXUIElementGetTypeID() else {
-            throw ActionFailure(reason: "\(app.localizedName ?? "前台应用")没有可调整的窗口")
+            throw ActionFailure(reason: "\(app.localizedName ?? String(localized: "前台应用"))没有可调整的窗口")
         }
         let window = value as! AXUIElement  // 上面已核对类型
-        guard let frame = Self.frame(of: window) else { throw ActionFailure(reason: "无法读取窗口位置") }
+        guard let frame = Self.frame(of: window) else { throw ActionFailure(reason: String(localized: "无法读取窗口位置")) }
         let screens = DispatchQueue.main.sync { Self.screenFrames() }
         guard let current = screens.firstIndex(where: { $0.full.contains(CGPoint(x: frame.midX, y: frame.midY)) }) ?? screens.indices.first
         else { return }
@@ -98,7 +98,7 @@ enum WindowManager {
             let w = area.width * centerFraction, h = area.height * centerFraction
             target = CGRect(x: area.midX - w / 2, y: area.midY - h / 2, width: w, height: h)
         default:
-            guard screens.count > 1 else { throw ActionFailure(reason: "只有一个显示器") }
+            guard screens.count > 1 else { throw ActionFailure(reason: String(localized: "只有一个显示器")) }
             // 按相对位置与比例移到下一个显示器
             let next = screens[(current + 1) % screens.count].visible
             let sx = next.width / area.width, sy = next.height / area.height

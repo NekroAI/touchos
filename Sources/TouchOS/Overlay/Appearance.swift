@@ -13,9 +13,9 @@ enum OverlayTheme: String, CaseIterable, Sendable {
 
     var title: String {
         switch self {
-        case .orb: "玻璃圆钮"
-        case .lens: "液态光斑"
-        case .holo: "全息线框"
+        case .orb: String(localized: "玻璃圆钮")
+        case .lens: String(localized: "液态光斑")
+        case .holo: String(localized: "全息线框")
         }
     }
 }
@@ -29,8 +29,8 @@ enum NavStyle: String, CaseIterable, Sendable {
 
     var title: String {
         switch self {
-        case .depth: "深度堆叠"
-        case .drum: "立体滚筒"
+        case .depth: String(localized: "深度堆叠")
+        case .drum: String(localized: "立体滚筒")
         }
     }
 }
@@ -39,7 +39,7 @@ enum NavStyle: String, CaseIterable, Sendable {
 struct Appearance: Equatable, Sendable {
     /// 强调色预设（名称、RRGGBB）
     static let presets: [(name: String, hex: String)] = [
-        ("蓝", "0A84FF"), ("紫", "BF5AF2"), ("粉", "FF375F"), ("橙", "FF9F0A"), ("绿", "30D158"), ("青", "5BE7FF"),
+        (String(localized: "蓝"), "0A84FF"), (String(localized: "紫"), "BF5AF2"), (String(localized: "粉"), "FF375F"), (String(localized: "橙"), "FF9F0A"), (String(localized: "绿"), "30D158"), (String(localized: "青"), "5BE7FF"),
     ]
     /// 全息主题在"自动"强调色下用青色
     static let holoAccent = "5BE7FF"
@@ -109,7 +109,7 @@ extension EnvironmentValues {
 /// 菜单栏"外观"子菜单：主题、切换动画、强调色（含系统取色器）
 @MainActor
 final class AppearanceMenu: NSObject {
-    let item = NSMenuItem(title: "外观", action: nil, keyEquivalent: "")
+    let item = NSMenuItem(title: String(localized: "外观"), action: nil, keyEquivalent: "")
     private let read: () -> Appearance
     private let write: (Appearance) -> Void
 
@@ -123,26 +123,26 @@ final class AppearanceMenu: NSObject {
     func rebuild() {
         let current = read()
         let menu = NSMenu()
-        menu.addItem(.sectionHeader(title: "主题"))
+        menu.addItem(.sectionHeader(title: String(localized: "主题")))
         for (i, theme) in OverlayTheme.allCases.enumerated() {
-            let title = theme == .orb ? "\(theme.title)（默认）" : theme.title
+            let title = theme == .orb ? String(localized: "\(theme.title)（默认）") : theme.title
             menu.addItem(entry(title, #selector(pickTheme(_:)), tag: i, on: current.theme == theme))
         }
         menu.addItem(.separator())
-        menu.addItem(.sectionHeader(title: "切换动画"))
+        menu.addItem(.sectionHeader(title: String(localized: "切换动画")))
         for (i, nav) in NavStyle.allCases.enumerated() {
             menu.addItem(entry(nav.title, #selector(pickNav(_:)), tag: i, on: current.nav == nav))
         }
         menu.addItem(.separator())
-        menu.addItem(.sectionHeader(title: "强调色"))
-        menu.addItem(entry("自动", #selector(pickAccent(_:)), tag: -1, on: current.accentHex == nil))
+        menu.addItem(.sectionHeader(title: String(localized: "强调色")))
+        menu.addItem(entry(String(localized: "自动"), #selector(pickAccent(_:)), tag: -1, on: current.accentHex == nil))
         for (i, preset) in Appearance.presets.enumerated() {
             let item = entry(preset.name, #selector(pickAccent(_:)), tag: i, on: current.accentHex == preset.hex)
             item.image = Self.swatch(preset.hex)
             menu.addItem(item)
         }
         let custom = current.accentHex.flatMap { hex in Appearance.presets.contains { $0.hex == hex } ? nil : hex }
-        let item = entry("自定义…", #selector(pickCustomAccent), tag: 0, on: custom != nil)
+        let item = entry(String(localized: "自定义…"), #selector(pickCustomAccent), tag: 0, on: custom != nil)
         item.image = custom.flatMap { Self.swatch($0) }
         menu.addItem(item)
         self.item.submenu = menu

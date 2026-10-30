@@ -60,4 +60,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --title "Nekro TouchOS $GITHUB_REF_NAME" \
             --notes-file docs/install.md \
-            --prerelease
+            $([[ "$GITHUB_REF_NAME" == *-* ]] && echo --prerelease)

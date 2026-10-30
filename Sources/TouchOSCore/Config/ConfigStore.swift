@@ -41,13 +41,13 @@ public struct ConfigStore: Sendable {
             return Loaded(config: try AppConfig.decode(data), problem: nil, isNew: false)
         } catch let error as ConfigError {
             let reason: String = switch error {
-            case .newerVersion(let v): "配置文件版本 \(v) 高于本程序支持的版本 \(AppConfig.currentVersion)"
-            case .notAnObject: "配置文件不是 JSON 对象"
-            case .invalid(let detail): "配置文件内容不合法：\(detail)"
+            case .newerVersion(let v): String(localized: "配置文件版本 \(v) 高于本程序支持的版本 \(AppConfig.currentVersion)")
+            case .notAnObject: String(localized: "配置文件不是 JSON 对象")
+            case .invalid(let detail): String(localized: "配置文件内容不合法：\(detail)")
             }
             return Loaded(config: .default, problem: .damaged(reason), isNew: false)
         } catch {
-            return Loaded(config: .default, problem: .damaged("配置文件无法解析"), isNew: false)
+            return Loaded(config: .default, problem: .damaged(String(localized: "配置文件无法解析")), isNew: false)
         }
     }
 

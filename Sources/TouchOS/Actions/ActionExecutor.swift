@@ -167,7 +167,7 @@ enum Launcher {
 
     static func openApp(_ bundleID: String) throws {
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
-            throw ActionFailure(reason: "未安装 \(bundleID)")
+            throw ActionFailure(reason: String(localized: "未安装 \(bundleID)"))
         }
         NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
     }
@@ -175,7 +175,7 @@ enum Launcher {
     static func openURL(_ url: URL, browserBundleID: String?) throws {
         guard let scheme = url.scheme?.lowercased(),
               allowedSchemes.contains(scheme) || NSWorkspace.shared.urlForApplication(toOpen: url) != nil else {
-            throw ActionFailure(reason: "无法打开链接 \(url.absoluteString)")
+            throw ActionFailure(reason: String(localized: "无法打开链接 \(url.absoluteString)"))
         }
         if let browserBundleID, let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: browserBundleID) {
             NSWorkspace.shared.open([url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
@@ -186,7 +186,7 @@ enum Launcher {
 
     static func openFile(_ path: String) throws {
         let expanded = (path as NSString).expandingTildeInPath
-        guard FileManager.default.fileExists(atPath: expanded) else { throw ActionFailure(reason: "找不到 \(path)") }
+        guard FileManager.default.fileExists(atPath: expanded) else { throw ActionFailure(reason: String(localized: "找不到 \(path)")) }
         NSWorkspace.shared.open(URL(fileURLWithPath: expanded))
     }
 }
@@ -212,18 +212,18 @@ enum ProcessRunner {
         do {
             try process.run()
         } catch {
-            throw ActionFailure(reason: "无法启动 \(executable)")
+            throw ActionFailure(reason: String(localized: "无法启动 \(executable)"))
         }
         if done.wait(timeout: .now() + timeout) == .timedOut {
             process.terminate()
-            throw ActionFailure(reason: "超过 \(Int(timeout)) 秒未完成，已终止")
+            throw ActionFailure(reason: String(localized: "超过 \(Int(timeout)) 秒未完成，已终止"))
         }
         let output = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard process.terminationStatus == 0 else {
             let message = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            throw ActionFailure(reason: message.isEmpty ? "退出码 \(process.terminationStatus)" : String(message.prefix(notifyLimit)))
+            throw ActionFailure(reason: message.isEmpty ? String(localized: "退出码 \(process.terminationStatus)") : String(message.prefix(notifyLimit)))
         }
         return output
     }

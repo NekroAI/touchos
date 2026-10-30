@@ -69,7 +69,7 @@ extension Slot: Codable {
         } else if let sector = try c.decodeIfPresent(Sector.self, forKey: .sector) {
             shape = .sector(sector)
         } else {
-            throw DecodingError.dataCorruptedError(forKey: .cell, in: c, debugDescription: "槽位缺少 cell / rect / sector")
+            throw DecodingError.dataCorruptedError(forKey: .cell, in: c, debugDescription: String(localized: "槽位缺少 cell / rect / sector"))
         }
         self.init(id: try c.decode(SlotID.self, forKey: .id), shape: shape, title: try c.decode(String.self, forKey: .title),
                   symbol: try c.decodeIfPresent(String.self, forKey: .symbol) ?? "circle",
@@ -183,7 +183,7 @@ extension Action: Codable {
         case "openApp": self = .openApp(bundleID: try c.decode(String.self, forKey: .bundleID))
         case "openURL":
             guard let url = URL(string: try c.decode(String.self, forKey: .url)) else {
-                throw DecodingError.dataCorruptedError(forKey: .url, in: c, debugDescription: "链接不合法")
+                throw DecodingError.dataCorruptedError(forKey: .url, in: c, debugDescription: String(localized: "链接不合法"))
             }
             self = .openURL(url: url, browserBundleID: try c.decodeIfPresent(String.self, forKey: .browserBundleID))
         case "openFile": self = .openFile(path: try c.decode(String.self, forKey: .path))
@@ -198,7 +198,7 @@ extension Action: Codable {
         case "system": self = .system(try c.decode(SystemCommand.self, forKey: .command))
         case "textSnippet": self = .textSnippet(try c.decode(String.self, forKey: .text))
         case let other:
-            throw DecodingError.dataCorruptedError(forKey: .type, in: c, debugDescription: "未知动作类型 \(other)")
+            throw DecodingError.dataCorruptedError(forKey: .type, in: c, debugDescription: String(localized: "未知动作类型 \(other)"))
         }
     }
 

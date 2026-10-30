@@ -101,15 +101,16 @@ final class CloudSyncController {
         guard isAvailable, hasCloudConfig, !configs.config.sync.iCloud else { return }
         NSApp.activate()
         let alert = NSAlert()
-        alert.messageText = "在 iCloud 云盘中找到了 TouchOS 配置"
-        var info = "可能来自你的另一台 Mac。开启 iCloud 同步后，两台 Mac 用同一份配置：要用哪一份？另一份会放进这台 Mac 的配置备份，可以随时恢复。"
+        alert.messageText = String(localized: "在 iCloud 云盘中找到了 TouchOS 配置")
+        var lines = [String(localized: "可能来自你的另一台 Mac。开启 iCloud 同步后，两台 Mac 用同一份配置：要用哪一份？另一份会放进这台 Mac 的配置备份，可以随时恢复。")]
         if let date = Self.modifiedAt(Self.fileURL) {
-            info += "\niCloud 中的配置修改于 \(date.formatted(date: .abbreviated, time: .shortened))。"
+            lines.append(String(localized: "iCloud 中的配置修改于 \(date.formatted(date: .abbreviated, time: .shortened))。"))
         }
-        alert.informativeText = info + "\n面板大小、映射区、按钮间隙只属于这台 Mac，不受影响。"
-        alert.addButton(withTitle: "使用 iCloud 中的配置")
-        alert.addButton(withTitle: "使用这台 Mac 的配置")
-        alert.addButton(withTitle: "暂不同步")
+        lines.append(String(localized: "面板大小、映射区、按钮间隙只属于这台 Mac，不受影响。"))
+        alert.informativeText = lines.joined(separator: "\n")
+        alert.addButton(withTitle: String(localized: "使用 iCloud 中的配置"))
+        alert.addButton(withTitle: String(localized: "使用这台 Mac 的配置"))
+        alert.addButton(withTitle: String(localized: "暂不同步"))
         let useCloud: Bool
         switch alert.runModal() {
         case .alertFirstButtonReturn: useCloud = true
@@ -144,15 +145,15 @@ final class CloudSyncController {
             return false
         }
         let alert = NSAlert()
-        alert.messageText = "iCloud 云盘中已有 TouchOS 配置"
-        var info = "要用哪一份？另一份会放进这台 Mac 的配置备份，可以随时恢复。"
+        alert.messageText = String(localized: "iCloud 云盘中已有 TouchOS 配置")
         if let date = Self.modifiedAt(Self.fileURL) {
-            info = "iCloud 中的配置修改于 \(date.formatted(date: .abbreviated, time: .shortened))。" + info
+            alert.informativeText = String(localized: "iCloud 中的配置修改于 \(date.formatted(date: .abbreviated, time: .shortened))。要用哪一份？另一份会放进这台 Mac 的配置备份，可以随时恢复。")
+        } else {
+            alert.informativeText = String(localized: "要用哪一份？另一份会放进这台 Mac 的配置备份，可以随时恢复。")
         }
-        alert.informativeText = info
-        alert.addButton(withTitle: "使用 iCloud 中的配置")
-        alert.addButton(withTitle: "使用这台 Mac 的配置")
-        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: String(localized: "使用 iCloud 中的配置"))
+        alert.addButton(withTitle: String(localized: "使用这台 Mac 的配置"))
+        alert.addButton(withTitle: String(localized: "取消"))
         switch alert.runModal() {
         case .alertFirstButtonReturn: return true
         case .alertSecondButtonReturn: return false
@@ -228,7 +229,7 @@ final class CloudSyncController {
             markSynced(local)
         } catch {
             log.error("icloud upload failed: \(error.localizedDescription, privacy: .public)")
-            status = .blocked("无法写入 iCloud 云盘：\(error.localizedDescription)")
+            status = .blocked(String(localized: "无法写入 iCloud 云盘：\(error.localizedDescription)"))
         }
     }
 
@@ -237,10 +238,10 @@ final class CloudSyncController {
         do {
             incoming = try AppConfig.decode(cloud)
         } catch ConfigError.newerVersion {
-            status = .blocked("iCloud 中的配置来自更新版本的 TouchOS，这台 Mac 升级后才能同步")
+            status = .blocked(String(localized: "iCloud 中的配置来自更新版本的 TouchOS，这台 Mac 升级后才能同步"))
             return
         } catch {
-            status = .blocked("iCloud 中的配置无法读取，已保留这台 Mac 的配置")
+            status = .blocked(String(localized: "iCloud 中的配置无法读取，已保留这台 Mac 的配置"))
             return
         }
         let risky = CloudSync.newRiskyActions(cloud: incoming, local: configs.config)
@@ -258,12 +259,13 @@ final class CloudSyncController {
     private func confirm(_ risky: [(panel: String, slot: String, action: Action)]) -> Bool {
         NSApp.activate()
         let alert = NSAlert()
-        alert.messageText = "iCloud 同步带来了会运行命令的按钮"
-        alert.informativeText = risky.prefix(8).map { "「\($0.panel)」的「\($0.slot)」" }.joined(separator: "\n")
-            + (risky.count > 8 ? "\n等 \(risky.count) 个" : "")
-            + "\n\n如果不是你在另一台 Mac 上添加的，请选择保留这台 Mac 的配置。"
-        alert.addButton(withTitle: "保留这台 Mac 的配置")
-        alert.addButton(withTitle: "接受")
+        alert.messageText = String(localized: "iCloud 同步带来了会运行命令的按钮")
+        var lines = risky.prefix(8).map { String(localized: "「\($0.panel)」的「\($0.slot)」") }
+        if risky.count > 8 { lines.append(String(localized: "等 \(risky.count) 个")) }
+        lines += ["", String(localized: "如果不是你在另一台 Mac 上添加的，请选择保留这台 Mac 的配置。")]
+        alert.informativeText = lines.joined(separator: "\n")
+        alert.addButton(withTitle: String(localized: "保留这台 Mac 的配置"))
+        alert.addButton(withTitle: String(localized: "接受"))
         return alert.runModal() == .alertSecondButtonReturn
     }
 

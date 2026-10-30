@@ -5,6 +5,8 @@
 	<key>CFBundleIdentifier</key><string>ai.nekro.touchos</string>
 	<key>CFBundleName</key><string>TouchOS</string>
 	<key>CFBundleDisplayName</key><string>Nekro TouchOS</string>
+	<key>CFBundleDevelopmentRegion</key><string>en</string>
+	<key>CFBundleLocalizations</key><array><string>en</string><string>zh-Hans</string></array>
 	<key>CFBundleExecutable</key><string>TouchOS</string>
 	<key>CFBundleIconFile</key><string>AppIcon</string>
 	<key>CFBundlePackageType</key><string>APPL</string>

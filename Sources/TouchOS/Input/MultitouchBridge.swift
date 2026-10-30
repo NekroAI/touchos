@@ -20,8 +20,8 @@ final class MultitouchBridge: Sendable {
 
         var description: String {
             switch self {
-            case .frameworkMissing: "无法加载 MultitouchSupport 私有框架"
-            case .symbolMissing(let name): "私有框架缺少符号 \(name)"
+            case .frameworkMissing: String(localized: "无法加载 MultitouchSupport 私有框架")
+            case .symbolMissing(let name): String(localized: "私有框架缺少符号 \(name)")
             }
         }
     }
@@ -122,7 +122,7 @@ final class MultitouchBridge: Sendable {
                 size = CGSize(width: Double(w) / 100, height: Double(h) / 100)
             }
         }
-        return TrackpadDevice(id: id, isBuiltIn: builtIn, displayName: builtIn ? "内置触控板" : "妙控板", surfaceSizeMM: size)
+        return TrackpadDevice(id: id, isBuiltIn: builtIn, displayName: builtIn ? String(localized: "内置触控板") : String(localized: "妙控板"), surfaceSizeMM: size)
     }
 
     /// 尺寸接口缺失时的默认值：妙控板第二代的感应区尺寸（实测值）。

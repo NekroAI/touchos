@@ -1,4 +1,5 @@
 import AppKit
+import TouchOSCore
 
 /// 菜单栏图标与菜单（SRS FR-11.1）
 @MainActor
@@ -6,6 +7,10 @@ final class MenuBarController: NSObject {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let statusLine = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private var debugItem: NSMenuItem?
+    /// 有新版本时菜单中显示下载入口（D44）
+    var availableUpdate: ReleaseInfo? {
+        didSet { rebuildMenu() }
+    }
     private let warningDot = NSView()
     private static let warningDotSize: CGFloat = 7
 
@@ -47,15 +52,16 @@ final class MenuBarController: NSObject {
         super.init()
         statusLine.isEnabled = false
         rebuildMenu()
-        setStatus("正常", warning: false)
+        setStatus(String(localized: "正常"), warning: false)
     }
 
     /// FR-11.1 当前状态：正常 / 输入不可用 / 拦截不可用 / 缺少权限
-    func setStatus(_ text: String, warning: Bool) {
-        statusLine.title = "状态：\(text)"
-        // 品牌标志（D43）；异常时右下角加一个橙点，文字说明在菜单的状态行
+    func setStatus(_ text: String, warning: Bool, paused: Bool = false) {
+        statusLine.title = String(localized: "状态：\(text)")
+        // 品牌标志（D43）；暂停时变淡，异常时右下角加一个橙点，文字说明在菜单的状态行
         guard let button = statusItem.button else { return }
-        button.image = BrandMark.menuBarImage(description: warning ? "TouchOS：\(text)" : "TouchOS")
+        button.image = BrandMark.menuBarImage(description: warning || paused ? "TouchOS：\(text)" : "TouchOS",
+                                              alpha: paused ? BrandMark.pausedAlpha : 1)
         warningDot.isHidden = !warning
         if warningDot.superview == nil {
             warningDot.wantsLayer = true
@@ -79,16 +85,21 @@ final class MenuBarController: NSObject {
         // 菜单项只能属于一个菜单，重建前先从旧菜单移除；否则 AppKit 抛出的异常会在启动回调里被静默吞掉
         statusLine.menu?.removeItem(statusLine)
         menu.addItem(statusLine)
+        if let availableUpdate {
+            let item = NSMenuItem(title: String(localized: "有新版本 \(availableUpdate.tag)，前往下载…"), action: #selector(openUpdate), keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
         menu.addItem(.separator())
         if onToggleEnabled != nil {
-            let item = NSMenuItem(title: "启用 TouchOS", action: #selector(toggleEnabled), keyEquivalent: "")
+            let item = NSMenuItem(title: String(localized: "启用 TouchOS"), action: #selector(toggleEnabled), keyEquivalent: "")
             item.target = self
             item.state = enabled ? .on : .off
             enabledItem = item
             menu.addItem(item)
         }
         if onOpenSettings != nil {
-            let item = NSMenuItem(title: "设置…", action: #selector(openSettings), keyEquivalent: ",")
+            let item = NSMenuItem(title: String(localized: "设置…"), action: #selector(openSettings), keyEquivalent: ",")
             item.target = self
             menu.addItem(item)
         }
@@ -98,20 +109,24 @@ final class MenuBarController: NSObject {
             menu.addItem(.separator())
         }
         if onToggleDebugOverlay != nil {
-            let item = NSMenuItem(title: "调试叠层", action: #selector(toggleDebugOverlay), keyEquivalent: "d")
+            let item = NSMenuItem(title: "调试叠层", action: #selector(toggleDebugOverlay), keyEquivalent: "d")  // l10n-ignore
             item.target = self
             item.state = debugOverlayVisible ? .on : .off
             debugItem = item
             menu.addItem(item)
             if onDebugStall != nil {
-                let stall = NSMenuItem(title: "5 秒后阻塞拦截（AC-17）", action: #selector(debugStall), keyEquivalent: "")
+                let stall = NSMenuItem(title: "5 秒后阻塞拦截（AC-17）", action: #selector(debugStall), keyEquivalent: "")  // l10n-ignore
                 stall.target = self
                 menu.addItem(stall)
             }
             menu.addItem(.separator())
         }
-        menu.addItem(NSMenuItem(title: "退出 TouchOS", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: String(localized: "退出 TouchOS"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         statusItem.menu = menu
+    }
+
+    @objc private func openUpdate() {
+        if let url = availableUpdate?.url { NSWorkspace.shared.open(url) }
     }
 
     @objc private func toggleEnabled() {

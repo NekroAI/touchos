@@ -368,11 +368,11 @@ extension Action {
         switch self {
         case .none: nil
         case .keyboardShortcut(let k): k.displayLabel
-        case .openApp: "打开应用"
-        case .openURL(let url, _): url.host ?? "打开链接"
-        case .openFile: "打开文件"
+        case .openApp: String(localized: "打开应用")
+        case .openURL(let url, _): url.host ?? String(localized: "打开链接")
+        case .openFile: String(localized: "打开文件")
         case .shell: "Shell"
-        case .appleScript: "脚本"
+        case .appleScript: String(localized: "脚本")
         case .shortcut(let name): name
         case .system, .textSnippet: nil
         }

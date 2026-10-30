@@ -15,12 +15,12 @@ struct TriggersPage: View {
         HStack(spacing: 0) {
             Form {
                 Section {
-                    row(.tapHold, detail: "单指轻点一下，紧接着在附近按住片刻：面板出现，滑到按钮上抬起即执行")
+                    row(.tapHold, detail: String(localized: "单指轻点一下，紧接着在附近按住片刻：面板出现，滑到按钮上抬起即执行"))
                     if tapToClick && configs.config.triggers.isOn(.tapHold) { TapToClickWarning() }
-                    row(.fourFingerTap, detail: "四指同时轻点；面板开着时再轻点一次关闭")
-                    row(.threeFingerTap, detail: "三指同时轻点；会占用系统的三指查询手势")
+                    row(.fourFingerTap, detail: String(localized: "四指同时轻点；面板开着时再轻点一次关闭"))
+                    row(.threeFingerTap, detail: String(localized: "三指同时轻点；会占用系统的三指查询手势"))
                 } header: {
-                    SectionHeader(title: "唤起方式", note: "可以同时开启多种，每种打开不同的面板；面板之间用双指上下滑动切换，双指捏合查看全部。")
+                    SectionHeader(title: String(localized: "唤起方式"), note: String(localized: "可以同时开启多种，每种打开不同的面板；面板之间用双指上下滑动切换，双指捏合查看全部。"))
                     if configs.config.triggers.list.isEmpty {
                         Label("没有开启任何唤起方式，面板无法唤起。", systemImage: "exclamationmark.triangle.fill")
                             .font(.callout)
@@ -30,15 +30,15 @@ struct TriggersPage: View {
                 Section {
                     ForEach(PanelTrigger.zones, id: \.self) { row(.zoneTapHold($0), title: $0.title) }
                 } header: {
-                    SectionHeader(title: "在边角轻点后按住",
-                                  note: "第一下轻点落在开启的角或边上，接着按住，打开为这个方位选择的面板；落在别处仍是普通的轻点后按住。")
+                    SectionHeader(title: String(localized: "在边角轻点后按住"),
+                                  note: String(localized: "第一下轻点落在开启的角或边上，接着按住，打开为这个方位选择的面板；落在别处仍是普通的轻点后按住。"))
                 }
                 Section("手感") {
-                    LabeledSlider(title: "面板大小（占屏幕）", value: binding(configs, \.sizes.panelScale), range: Tuning.panelScaleRange)
+                    LabeledSlider(title: String(localized: "面板大小（占屏幕）"), value: binding(configs, \.sizes.panelScale), range: Tuning.panelScaleRange)
                         .onHover { hover(.panel, $0) }
-                    LabeledSlider(title: "映射区大小（占触控板）", value: binding(configs, \.sizes.mappingScale), range: Tuning.mappingScaleRange)
+                    LabeledSlider(title: String(localized: "映射区大小（占触控板）"), value: binding(configs, \.sizes.mappingScale), range: Tuning.mappingScaleRange)
                         .onHover { hover(.mapping, $0) }
-                    LabeledSlider(title: "按钮间隙", value: binding(configs, \.sizes.hitGapMM), range: Tuning.hitGapRange,
+                    LabeledSlider(title: String(localized: "按钮间隙"), value: binding(configs, \.sizes.hitGapMM), range: Tuning.hitGapRange,
                                   step: 0.5, format: { String(format: "%.1f mm", $0) })
                         .onHover { hover(.gap, $0) }
                     Toggle("触觉反馈", isOn: binding(configs, \.general.haptics))
@@ -94,6 +94,7 @@ private struct TriggerRow: View {
 
     var body: some View {
         let on = configs.config.triggers.isOn(trigger)
+        let defaultName = configs.config.defaultPanel?.name ?? "—"
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
@@ -101,9 +102,9 @@ private struct TriggerRow: View {
             }
             Spacer(minLength: 8)
             Picker("打开", selection: panel) {
-                Text("默认面板（\(configs.config.defaultPanel?.name ?? "—")）").tag(String?.none)
+                Text(String(localized: "默认面板（\(defaultName)）")).tag(String?.none)
                 // 停用的面板仍可选，但唤起时打开默认面板（D37）
-                ForEach(configs.config.panels, id: \.id) { Text($0.isEnabled ? $0.name : "\($0.name)（已停用）").tag(Optional($0.id)) }
+                ForEach(configs.config.panels, id: \.id) { Text($0.isEnabled ? $0.name : String(localized: "\($0.name)（已停用）")).tag(Optional($0.id)) }
             }
             .labelsHidden()
             .fixedSize()
@@ -163,6 +164,8 @@ struct TriggerPreview: View {
 
     private var device: CGSize { MultitouchBridge.fallbackSurfaceMM }
 
+    private var panelPercent: Int { Int((tuning.panelScale * 100).rounded()) }
+
     private var tuning: Tuning {
         var t = Tuning()
         config.apply(to: &t)
@@ -189,7 +192,7 @@ struct TriggerPreview: View {
             Divider()
             VStack(alignment: .leading, spacing: 2) {
                 Text("屏幕").font(.headline)
-                Text("面板占屏幕 \(Int((tuning.panelScale * 100).rounded()))%，总在屏幕中央").font(.caption).foregroundStyle(.secondary)
+                Text("面板占屏幕 \(panelPercent)%，总在屏幕中央").font(.caption).foregroundStyle(.secondary)
             }
             ScreenPreview(panel: shownPanel, tuning: tuning, device: device, emphasized: focus == .panel)
                 .frame(width: Self.width)
@@ -199,19 +202,22 @@ struct TriggerPreview: View {
 
     private var caption: String {
         if case .trigger(let t) = focus, let panel = shownPanel {
-            return "「\(t.title)」打开「\(panel.name)」" + (config.triggers.isOn(t) ? "" : "（未开启）")
+            return config.triggers.isOn(t)
+                ? String(localized: "「\(t.title)」打开「\(panel.name)」")
+                : String(localized: "「\(t.title)」打开「\(panel.name)」（未开启）")
         }
-        return "按妙控板比例绘制，\(Int(device.width.rounded())) × \(Int(device.height.rounded())) mm"
+        let (width, height) = (Int(device.width.rounded()), Int(device.height.rounded()))
+        return String(localized: "按妙控板比例绘制，\(width) × \(height) mm")
     }
 
     private var legend: some View {
         let reach = Int(tuning.tapHoldReachMM.rounded())
         return VStack(alignment: .leading, spacing: 6) {
-            LegendItem(color: .accentColor, text: "映射区：手指位置对应面板上的按钮，在区外抬起即取消")
+            LegendItem(color: .accentColor, text: String(localized: "映射区：手指位置对应面板上的按钮，在区外抬起即取消"))
             if config.triggers.isOn(.tapHold) {
-                LegendItem(color: Self.tapHoldColor, text: "轻点后按住：第二下落在第一下 \(reach) mm 以内，板上任意位置都可以")
+                LegendItem(color: Self.tapHoldColor, text: String(localized: "轻点后按住：第二下落在第一下 \(reach) mm 以内，板上任意位置都可以"))
             }
-            if !tuning.zoneTapHold.isEmpty { LegendItem(color: Self.zoneColor, text: "边角：第一下落在这里，按住后打开该方位的面板") }
+            if !tuning.zoneTapHold.isEmpty { LegendItem(color: Self.zoneColor, text: String(localized: "边角：第一下落在这里，按住后打开该方位的面板")) }
         }
     }
 

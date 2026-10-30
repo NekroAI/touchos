@@ -14,13 +14,15 @@ public struct AppConfig: Codable, Equatable, Sendable {
         public var dimBackground = false
         /// 这些应用在前台时不接受唤起
         public var blacklist: [String] = []
+        /// 每天查询一次 GitHub Releases，有新版本时在菜单中提示（D44）
+        public var checkUpdates = true
         /// 快捷键与窗口动作执行前，先把焦点切到指针下的窗口（D27）
         public var focusPointerWindow = true
 
         public init() {}
 
         private enum Keys: String, CodingKey {
-            case enabled, haptics, showTrail, dimBackground, blacklist, focusPointerWindow
+            case enabled, haptics, showTrail, dimBackground, blacklist, focusPointerWindow, checkUpdates
         }
 
         /// 缺省的字段取默认值：旧版本写出的文件没有后来新增的字段
@@ -33,6 +35,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
             dimBackground = try c.decodeIfPresent(Bool.self, forKey: .dimBackground) ?? d.dimBackground
             blacklist = try c.decodeIfPresent([String].self, forKey: .blacklist) ?? d.blacklist
             focusPointerWindow = try c.decodeIfPresent(Bool.self, forKey: .focusPointerWindow) ?? d.focusPointerWindow
+            checkUpdates = try c.decodeIfPresent(Bool.self, forKey: .checkUpdates) ?? d.checkUpdates
         }
 
         public func encode(to encoder: Encoder) throws {
@@ -43,6 +46,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
             try c.encode(dimBackground, forKey: .dimBackground)
             try c.encode(blacklist, forKey: .blacklist)
             try c.encode(focusPointerWindow, forKey: .focusPointerWindow)
+            try c.encode(checkUpdates, forKey: .checkUpdates)
         }
     }
 
@@ -292,7 +296,7 @@ public enum ConfigMigrator {
         var version = json["schemaVersion"] as? Int ?? 0
         guard version <= target else { throw ConfigError.newerVersion(version) }
         while version < target {
-            guard let step = steps[version] else { throw ConfigError.invalid("缺少从版本 \(version) 迁移的步骤") }
+            guard let step = steps[version] else { throw ConfigError.invalid(String(localized: "缺少从版本 \(version) 迁移的步骤")) }
             json = step(json)
             version += 1
             json["schemaVersion"] = version
@@ -318,15 +322,16 @@ public struct ConfigIssue: Equatable, Sendable, CustomStringConvertible {
     public let kind: Kind
 
     public var description: String {
-        switch kind {
-        case .noPanels: "没有任何面板"
-        case .duplicatePanel(let id): "面板 ID 重复：\(id)"
-        case .duplicateSlot(let id): "按钮 ID 重复：\(id)"
-        case .gridSize(let p): "面板 \(p) 的网格行列数超出范围（1–\(AppConfig.maxRows) 行、1–\(AppConfig.maxCols) 列）"
-        case .outsideGrid(let p, let s): "面板 \(p) 的按钮 \(s) 越出网格"
-        case .overlap(let p, let s): "面板 \(p) 的按钮重叠：\(s.joined(separator: "、"))"
-        case .unknownBinding(let t): "无法识别的唤起方式：\(t)"
-        case .unknownPanel(let t, let p): "唤起方式 \(t) 绑定的面板 \(p) 不存在"
+        let separator = String(localized: "、")
+        return switch kind {
+        case .noPanels: String(localized: "没有任何面板")
+        case .duplicatePanel(let id): String(localized: "面板 ID 重复：\(id)")
+        case .duplicateSlot(let id): String(localized: "按钮 ID 重复：\(id)")
+        case .gridSize(let p): String(localized: "面板 \(p) 的网格行列数超出范围（1–\(AppConfig.maxRows) 行、1–\(AppConfig.maxCols) 列）")
+        case .outsideGrid(let p, let s): String(localized: "面板 \(p) 的按钮 \(s) 越出网格")
+        case .overlap(let p, let s): String(localized: "面板 \(p) 的按钮重叠：\(s.joined(separator: separator))")
+        case .unknownBinding(let t): String(localized: "无法识别的唤起方式：\(t)")
+        case .unknownPanel(let t, let p): String(localized: "唤起方式 \(t) 绑定的面板 \(p) 不存在")
         }
     }
 }

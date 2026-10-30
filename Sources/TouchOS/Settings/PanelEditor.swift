@@ -44,10 +44,10 @@ func updatePanel(_ configs: ConfigController, _ id: String, _ change: (inout Pan
 
 @MainActor
 enum PanelCommands {
-    static let blankGrid = PanelLayout(id: "panel", name: "新面板", rows: PresetPanels.rows, cols: PresetPanels.cols,
+    static let blankGrid = PanelLayout(id: "panel", name: String(localized: "新面板"), rows: PresetPanels.rows, cols: PresetPanels.cols,
                                        slots: [PresetPanels.close("panel")])
-    static let blankRing = PanelLayout.ring(id: "ring", name: "新环形面板", items: [],
-                                            center: Slot(id: "ring.close", shape: .rect(.zero), title: "关闭", symbol: "xmark", action: .none))
+    static let blankRing = PanelLayout.ring(id: "ring", name: String(localized: "新环形面板"), items: [],
+                                            center: Slot(id: "ring.close", shape: .rect(.zero), title: String(localized: "关闭"), symbol: "xmark", action: .none))
 
     static func add(_ template: PanelLayout, configs: ConfigController, navigation: SettingsNavigation) {
         var c = configs.config
@@ -169,9 +169,9 @@ private struct PanelHeader: View {
             }
             if !panel.isRing {
                 HStack(spacing: 4) {
-                    SizePicker(value: panel.rows, range: 1...AppConfig.maxRows, unit: "行") { resize(rows: $0, cols: panel.cols) }
+                    SizePicker(value: panel.rows, range: 1...AppConfig.maxRows, isRows: true) { resize(rows: $0, cols: panel.cols) }
                     Text("×").foregroundStyle(.tertiary)
-                    SizePicker(value: panel.cols, range: 1...AppConfig.maxCols, unit: "列") { resize(rows: panel.rows, cols: $0) }
+                    SizePicker(value: panel.cols, range: 1...AppConfig.maxCols, isRows: false) { resize(rows: panel.rows, cols: $0) }
                 }
             }
             // 面板在屏幕上的位置（D41）：输入类面板放到一侧，不挡住正在输入的地方
@@ -217,7 +217,11 @@ private struct PanelHeader: View {
                 configs.update { $0.resetPanel(panel.id, to: resetTemplate) }
             }
         } message: {
-            Text("「\(panel.name)」的名称、行列和全部按钮都会换成\(PresetPanels.origin(of: panel.id).map { "预置的「\($0.name)」" } ?? "空白面板")，唤起方式的绑定保留。可以在 通用 › 配置文件 里从备份恢复。")
+            if let origin = PresetPanels.origin(of: panel.id) {
+                Text(verbatim: String(localized: "「\(panel.name)」的名称、行列和全部按钮都会换成预置的「\(origin.name)」，唤起方式的绑定保留。可以在 通用 › 配置文件 里从备份恢复。"))
+            } else {
+                Text(verbatim: String(localized: "「\(panel.name)」的名称、行列和全部按钮都会换成空白面板，唤起方式的绑定保留。可以在 通用 › 配置文件 里从备份恢复。"))
+            }
         }
     }
 
@@ -226,27 +230,32 @@ private struct PanelHeader: View {
         PresetPanels.origin(of: panel.id) ?? (panel.isRing ? PanelCommands.blankRing : PanelCommands.blankGrid)
     }
 
-    private var resetTitle: String { PresetPanels.origin(of: panel.id) == nil ? "清空面板" : "重置面板" }
+    private var resetTitle: String { PresetPanels.origin(of: panel.id) == nil ? String(localized: "清空面板") : String(localized: "重置面板") }
 
     private var isDefault: Bool { configs.config.defaultPanel?.id == panel.id }
 
     /// 哪些唤起方式会打开这个面板
     private var subtitle: String {
         let config = configs.config
-        guard panel.isEnabled else { return "已停用 · 配置保留，不参与唤起和切换" }
+        guard panel.isEnabled else { return String(localized: "已停用 · 配置保留，不参与唤起和切换") }
         let active = Set(config.activePanels.map(\.id))
         let opens = config.enabledTriggers.filter {
             (config.binding(for: $0.trigger).flatMap { active.contains($0) ? $0 : nil } ?? config.defaultPanel?.id) == panel.id
         }
         var parts: [String] = []
-        if isDefault { parts.append("默认面板") }
-        parts.append(opens.isEmpty ? "双指上下滑动切换到这里" : opens.map(\.title).joined(separator: "、") + "打开")
+        if isDefault { parts.append(String(localized: "默认面板")) }
+        if opens.isEmpty {
+            parts.append(String(localized: "双指上下滑动切换到这里"))
+        } else {
+            let names = opens.map(\.title).joined(separator: String(localized: "、"))
+            parts.append(String(localized: "\(names)打开"))
+        }
         return parts.joined(separator: " · ")
     }
 
     private func resize(rows: Int, cols: Int) {
         guard let resized = panel.resized(rows: rows, cols: cols) else {
-            note = "有按钮会超出新网格，先移动或删除它们"
+            note = String(localized: "有按钮会超出新网格，先移动或删除它们")
             return
         }
         note = nil
@@ -257,19 +266,21 @@ private struct PanelHeader: View {
 private struct SizePicker: View {
     let value: Int
     let range: ClosedRange<Int>
-    let unit: String
+    let isRows: Bool
     let set: (Int) -> Void
 
+    private func label(_ n: Int) -> String { isRows ? String(localized: "\(n) 行") : String(localized: "\(n) 列") }
+
     var body: some View {
-        Menu("\(value) \(unit)") {
+        Menu(label(value)) {
             ForEach(Array(range), id: \.self) { n in
                 Button { set(n) } label: {
-                    if n == value { Label("\(n) \(unit)", systemImage: "checkmark") } else { Text("\(n) \(unit)") }
+                    if n == value { Label(label(n), systemImage: "checkmark") } else { Text(label(n)) }
                 }
             }
         }
         .fixedSize()
-        .help(unit == "行" ? "行数" : "列数")
+        .help(isRows ? String(localized: "行数") : String(localized: "列数"))
     }
 }
 
@@ -343,8 +354,8 @@ private struct PanelStage: View {
     }
 
     private var hint: String {
-        panel.isRing ? "点按钮编辑 · 拖动外圈按钮调整顺序"
-            : "点空位添加 · 拖动移动，拖到别的按钮上互换 · 拖右下角调整大小 · 位置与触控板一一对应"
+        panel.isRing ? String(localized: "点按钮编辑 · 拖动外圈按钮调整顺序")
+            : String(localized: "点空位添加 · 拖动移动，拖到别的按钮上互换 · 拖右下角调整大小 · 位置与触控板一一对应")
     }
 
     /// 唤起时各面板在主屏上的实际尺寸（FR-6.4；随网格伸缩，D29）
@@ -556,7 +567,7 @@ private struct GridCanvas: View {
 
     private func addSlot(row: Int, col: Int) {
         let id = SlotID(AppConfig.uniqueID("\(panel.id).slot", existing: configs.config.allSlotIDs))
-        let slot = Slot(id: id, shape: .cell(GridCell(row: row, col: col)), title: "新按钮", symbol: "star",
+        let slot = Slot(id: id, shape: .cell(GridCell(row: row, col: col)), title: String(localized: "新按钮"), symbol: "star",
                         action: .keyboardShortcut(KeyCombo(keyCode: 0, modifiers: [.command], displayLabel: "⌘A")))
         updatePanel(configs, panel.id) { $0.slots.append(slot) }
         navigation.selectedSlot = id
@@ -644,7 +655,7 @@ private struct RingCanvas: View {
 
     private func addItem() {
         let id = SlotID(AppConfig.uniqueID("\(panel.id).item", existing: configs.config.allSlotIDs))
-        let item = Slot(id: id, shape: .rect(.zero), title: "新按钮", symbol: "star",
+        let item = Slot(id: id, shape: .rect(.zero), title: String(localized: "新按钮"), symbol: "star",
                         action: .keyboardShortcut(KeyCombo(keyCode: 0, modifiers: [.command], displayLabel: "⌘A")))
         updatePanel(configs, panel.id) { $0 = $0.rebuiltRing(items: $0.ringItems + [item]) }
         navigation.selectedSlot = id
@@ -663,10 +674,10 @@ extension AppConfig {
 extension PanelTrigger {
     var title: String {
         switch self {
-        case .tapHold: "轻点后按住"
-        case .fourFingerTap: "四指轻点"
-        case .threeFingerTap: "三指轻点"
-        case .zoneTapHold(let z): "\(z.title)轻点后按住"
+        case .tapHold: String(localized: "轻点后按住")
+        case .fourFingerTap: String(localized: "四指轻点")
+        case .threeFingerTap: String(localized: "三指轻点")
+        case .zoneTapHold(let z): String(localized: "\(z.title)轻点后按住")
         }
     }
 }
@@ -674,9 +685,9 @@ extension PanelTrigger {
 extension PanelPlacement {
     var title: String {
         switch self {
-        case .center: "屏幕中央"
-        case .left: "屏幕左侧"
-        case .right: "屏幕右侧"
+        case .center: String(localized: "屏幕中央")
+        case .left: String(localized: "屏幕左侧")
+        case .right: String(localized: "屏幕右侧")
         }
     }
 }
@@ -684,14 +695,14 @@ extension PanelPlacement {
 extension TriggerZone {
     var title: String {
         switch self {
-        case .topLeft: "左上角"
-        case .top: "上边"
-        case .topRight: "右上角"
-        case .left: "左边"
-        case .right: "右边"
-        case .bottomLeft: "左下角"
-        case .bottom: "下边"
-        case .bottomRight: "右下角"
+        case .topLeft: String(localized: "左上角")
+        case .top: String(localized: "上边")
+        case .topRight: String(localized: "右上角")
+        case .left: String(localized: "左边")
+        case .right: String(localized: "右边")
+        case .bottomLeft: String(localized: "左下角")
+        case .bottom: String(localized: "下边")
+        case .bottomRight: String(localized: "右下角")
         }
     }
 }
@@ -700,16 +711,16 @@ extension Action {
     /// 编辑器里的一句话说明
     var summary: String {
         switch self {
-        case .none: "关闭"
+        case .none: String(localized: "关闭")
         case .keyboardShortcut(let k): k.displayLabel
         case .openApp(let id): NSWorkspace.shared.urlForApplication(withBundleIdentifier: id)?.deletingPathExtension().lastPathComponent ?? id
         case .openURL(let url, _): url.host ?? url.absoluteString
         case .openFile(let path): (path as NSString).lastPathComponent
         case .shell: "Shell"
-        case .appleScript: "脚本"
+        case .appleScript: String(localized: "脚本")
         case .shortcut(let name): name
         case .system(let c): c.title
-        case .textSnippet(let text): "输入「\(text)」"
+        case .textSnippet(let text): String(localized: "输入「\(text)」")
         }
     }
 }
@@ -717,27 +728,27 @@ extension Action {
 extension SystemCommand {
     var title: String {
         switch self {
-        case .volumeUp: "音量 +"
-        case .volumeDown: "音量 −"
-        case .mute: "静音"
-        case .brightnessUp: "亮度 +"
-        case .brightnessDown: "亮度 −"
-        case .playPause: "播放 / 暂停"
-        case .nextTrack: "下一首"
-        case .previousTrack: "上一首"
-        case .lockScreen: "锁屏"
-        case .missionControl: "调度中心"
-        case .showDesktop: "显示桌面"
-        case .launchpad: "启动台"
-        case .screenshotArea: "截取区域"
-        case .screenshotWindow: "截取窗口"
-        case .windowLeftHalf: "窗口：左半屏"
-        case .windowRightHalf: "窗口：右半屏"
-        case .windowTopHalf: "窗口：上半屏"
-        case .windowBottomHalf: "窗口：下半屏"
-        case .windowFill: "窗口：填满"
-        case .windowCenter: "窗口：居中"
-        case .windowNextDisplay: "窗口：下一个显示器"
+        case .volumeUp: String(localized: "音量 +")
+        case .volumeDown: String(localized: "音量 −")
+        case .mute: String(localized: "静音")
+        case .brightnessUp: String(localized: "亮度 +")
+        case .brightnessDown: String(localized: "亮度 −")
+        case .playPause: String(localized: "播放 / 暂停")
+        case .nextTrack: String(localized: "下一首")
+        case .previousTrack: String(localized: "上一首")
+        case .lockScreen: String(localized: "锁屏")
+        case .missionControl: String(localized: "调度中心")
+        case .showDesktop: String(localized: "显示桌面")
+        case .launchpad: String(localized: "启动台")
+        case .screenshotArea: String(localized: "截取区域")
+        case .screenshotWindow: String(localized: "截取窗口")
+        case .windowLeftHalf: String(localized: "窗口：左半屏")
+        case .windowRightHalf: String(localized: "窗口：右半屏")
+        case .windowTopHalf: String(localized: "窗口：上半屏")
+        case .windowBottomHalf: String(localized: "窗口：下半屏")
+        case .windowFill: String(localized: "窗口：填满")
+        case .windowCenter: String(localized: "窗口：居中")
+        case .windowNextDisplay: String(localized: "窗口：下一个显示器")
         }
     }
 }
