@@ -374,6 +374,12 @@ private struct GeneralPage: View {
                 Toggle("登录时启动", isOn: Binding(get: { launchAtLogin }, set: setLaunchAtLogin))
             }
             Section {
+                Toggle(isOn: binding(configs, \.general.focusPointerWindow)) {
+                    Text("动作发往指针下的窗口")
+                    Text("快捷键与窗口摆放执行前，先把指针所在的窗口切到前台（相当于点了它一下）。关闭后发往唤起时的前台应用。")
+                }
+            }
+            Section {
                 ForEach(configs.config.general.blacklist, id: \.self) { id in
                     HStack {
                         AppLabel(bundleID: id)

@@ -13,6 +13,13 @@ final class ActionExecutor: @unchecked Sendable {
     private let queue = DispatchQueue(label: "ai.nekro.touchos.actions", qos: .userInitiated)
     private let lock = NSLock()
     private var pending: [ActionRequest] = []
+    private var focusPointer = AppConfig.General().focusPointerWindow
+
+    /// 快捷键与窗口动作执行前是否先把焦点切到指针下的窗口（D27），随配置更新
+    var focusesPointerWindow: Bool {
+        get { lock.withLock { focusPointer } }
+        set { lock.withLock { focusPointer = newValue } }
+    }
 
     func enqueue(_ request: ActionRequest) {
         lock.lock()
@@ -46,14 +53,21 @@ final class ActionExecutor: @unchecked Sendable {
         }
     }
 
+    /// 快捷键与窗口动作发往指针下的窗口（D27）：返回切换后的目标应用；未开启、指针下没有其他应用的窗口时为 nil
+    private func focusPointerWindow(for action: Action) -> String? {
+        guard focusesPointerWindow, PointerFocus.applies(to: action) else { return nil }
+        return PointerFocus.focusWindowUnderPointer()
+    }
+
     private func run(_ request: ActionRequest) throws {
+        let target = focusPointerWindow(for: request.action)
         switch request.action {
         case .none:
             break
         case .keyboardShortcut(let combo):
             // FR-9.3：前台应用变了仍执行，只记录（不含坐标）
             let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-            if front != request.frontmostBundleID { log.info("frontmost changed before shortcut") }
+            if target == nil, front != request.frontmostBundleID { log.info("frontmost changed before shortcut") }
             KeyboardShortcutExecutor.post(combo)
             log.info("shortcut \(combo.displayLabel, privacy: .public)")
         case .openApp(let bundleID):
@@ -71,7 +85,7 @@ final class ActionExecutor: @unchecked Sendable {
         case .shortcut(let name):
             _ = try ProcessRunner.run("/usr/bin/shortcuts", ["run", name], timeout: ProcessRunner.shortcutTimeout)
         case .system(let command):
-            try SystemControl.run(command, frontmostBundleID: request.frontmostBundleID)
+            try SystemControl.run(command, frontmostBundleID: target ?? request.frontmostBundleID)
         }
     }
 }

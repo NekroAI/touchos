@@ -16,8 +16,38 @@ public struct AppConfig: Codable, Equatable, Sendable {
         public var dimBackground = false
         /// 这些应用在前台时不接受唤起
         public var blacklist: [String] = []
+        /// 快捷键与窗口动作执行前，先把焦点切到指针下的窗口（D27）
+        public var focusPointerWindow = true
 
         public init() {}
+
+        private enum Keys: String, CodingKey {
+            case enabled, haptics, showTrail, stickyPanel, dimBackground, blacklist, focusPointerWindow
+        }
+
+        /// 缺省的字段取默认值：旧版本写出的文件没有后来新增的字段
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: Keys.self)
+            let d = General()
+            enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? d.enabled
+            haptics = try c.decodeIfPresent(Bool.self, forKey: .haptics) ?? d.haptics
+            showTrail = try c.decodeIfPresent(Bool.self, forKey: .showTrail) ?? d.showTrail
+            stickyPanel = try c.decodeIfPresent(Bool.self, forKey: .stickyPanel) ?? d.stickyPanel
+            dimBackground = try c.decodeIfPresent(Bool.self, forKey: .dimBackground) ?? d.dimBackground
+            blacklist = try c.decodeIfPresent([String].self, forKey: .blacklist) ?? d.blacklist
+            focusPointerWindow = try c.decodeIfPresent(Bool.self, forKey: .focusPointerWindow) ?? d.focusPointerWindow
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: Keys.self)
+            try c.encode(enabled, forKey: .enabled)
+            try c.encode(haptics, forKey: .haptics)
+            try c.encode(showTrail, forKey: .showTrail)
+            try c.encode(stickyPanel, forKey: .stickyPanel)
+            try c.encode(dimBackground, forKey: .dimBackground)
+            try c.encode(blacklist, forKey: .blacklist)
+            try c.encode(focusPointerWindow, forKey: .focusPointerWindow)
+        }
     }
 
     public struct Appearance: Codable, Equatable, Sendable {

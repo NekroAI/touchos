@@ -56,6 +56,7 @@ final class AppCoordinator {
         driver.onOpenEditor = { [weak self] panelID in self?.settings.show(editing: panelID) }
         configs.observe { [weak self] c in
             driver.apply(c)
+            executor.focusesPointerWindow = c.general.focusPointerWindow
             overlay.appearance = Appearance(c.appearance)
             overlay.dim = c.general.dimBackground
             overlay.showTrail = c.general.showTrail

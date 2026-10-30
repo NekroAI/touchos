@@ -101,6 +101,14 @@ private func temporaryStore() -> ConfigStore {
         #expect(config.bindingMap == [.threeFingerTap: "media", .fourFingerTap: "edit", .hold(.topLeft): "window"])
     }
 
+    @Test func generalFieldsAddedLaterDefaultWhenMissing() throws {
+        let config = try AppConfig.decode(Data(#"{"schemaVersion":1,"general":{"haptics":false}}"#.utf8))
+        #expect(!config.general.haptics && config.general.enabled && config.general.focusPointerWindow)
+        var changed = AppConfig()
+        changed.general.focusPointerWindow = false
+        #expect(try AppConfig.decode(try changed.encoded()).general == changed.general)
+    }
+
     @Test func defaultTriggersAreTapHoldAndFourFingerTap() {
         #expect(AppConfig().triggers.list == [.tapHold, .fourFingerTap])
     }
