@@ -22,9 +22,18 @@ struct ChipView: View {
         let face = FaceKind(slot: slot, geometry: g)
         Face(kind: face, slot: slot, size: g.frame.size, lit: hovered || chosen, value: value)
             .frame(width: g.frame.width, height: g.frame.height)
-            .overlay { Ripple(trigger: pulse, size: g.frame.size, kind: face) }
-            .overlay(alignment: .topTrailing) {
-                if presses >= 2 { PressBadge(count: presses).offset(x: face == .tile ? -6 : 6, y: face == .tile ? 4 : -6) }
+            // 波纹与连按计数贴着各主题实际画出来的按钮轮廓（`chipBody`），不按单元格估算
+            .overlayPreferenceValue(ChipBodyKey.self) { body in
+                if let body {
+                    GeometryReader { proxy in
+                        let r = proxy[body.bounds]
+                        Ripple(trigger: pulse, shape: body.shape, size: r.size)
+                            .position(x: r.midX, y: r.midY)
+                        if presses >= 2 {
+                            PressBadge(count: presses).position(body.shape.badgePoint(in: r))
+                        }
+                    }
+                }
             }
             .keyframeAnimator(initialValue: CGFloat(1), trigger: pulse) { content, k in
                 content.scaleEffect(k)
@@ -206,6 +215,7 @@ private struct OrbFace: View {
                 .overlay(Circle().strokeBorder(Color.white.opacity(lit ? 0.6 : 0.3), lineWidth: 0.5))
                 .overlay(Image(systemName: "xmark").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white))
                 .frame(width: PanelMetrics.cancelChipSize, height: PanelMetrics.cancelChipSize)
+                .chipBody(.circle)
                 .overlay(alignment: .bottom) { EditHint(visible: lit).offset(y: 24) }
         case .tile:
             let room = min(size.width, size.height - Self.labelRoom)
@@ -239,6 +249,7 @@ private struct OrbFace: View {
             }
             .glass(shape, tint: Color.white.opacity(0.09), edge: lit ? 0.45 : 0.2, glow: lit ? accent : nil)
             .frame(width: max(size.width - 16, 0), height: min(Self.sliderHeight, max(size.height - 16, 0)))
+            .chipBody(.capsule)
         case .widget:
             let shape = RoundedRectangle(cornerRadius: 30, style: .continuous)
             let art = min(92, max(size.height * 0.36, 40))
@@ -254,6 +265,7 @@ private struct OrbFace: View {
             .padding(20)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .glass(shape, tint: Color.white.opacity(0.08), edge: lit ? 0.45 : 0.18, glow: lit ? accent : nil)
+            .chipBody(.rounded(30))
             .padding(6)
         }
     }
@@ -263,6 +275,7 @@ private struct OrbFace: View {
             .overlay(Image(systemName: slot.symbol).font(.system(size: 22, weight: .medium)).foregroundStyle(.white))
             .glass(Circle(), tint: .clear, edge: lit ? 0.5 : 0.2, glow: lit ? accent : nil)
             .frame(width: d, height: d)
+            .chipBody(.circle)
     }
 }
 
@@ -276,6 +289,9 @@ private struct LensFace: View {
     let value: Double
     let accent: Color
 
+    /// 液态光斑只画图标，波纹与连按计数围着图标这么大的圆
+    static let glyphRing: CGFloat = 54
+
     var body: some View {
         switch kind {
         case .close:
@@ -283,10 +299,12 @@ private struct LensFace: View {
                 .background(Circle().fill(Color.black.opacity(lit ? 0.3 : 0.15)))
                 .overlay(Image(systemName: "xmark").font(.system(size: 15, weight: .medium)).foregroundStyle(.white.opacity(0.9)))
                 .frame(width: 38, height: 38)
+                .chipBody(.circle)
                 .overlay(alignment: .bottom) { EditHint(visible: lit).offset(y: 24) }
         case .tile:
             VStack(spacing: 9) {
                 Image(systemName: slot.symbol).font(.system(size: 28, weight: .regular)).foregroundStyle(.white.opacity(lit ? 1 : 0.86))
+                    .background { Color.clear.frame(width: Self.glyphRing, height: Self.glyphRing).chipBody(.circle) }
                 Text(slot.title).font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(lit ? 0.96 : 0.55))
                     .lineLimit(1)
             }
@@ -294,6 +312,7 @@ private struct LensFace: View {
         case .round:
             Image(systemName: slot.symbol).font(.system(size: 26)).foregroundStyle(.white.opacity(lit ? 1 : 0.86))
                 .frame(width: size.width, height: size.height)
+                .background { Color.clear.frame(width: Self.glyphRing, height: Self.glyphRing).chipBody(.circle) }
                 .overlay(alignment: .bottom) {
                     Text(slot.title).font(.system(size: 11.5, weight: .medium)).foregroundStyle(.white.opacity(lit ? 0.96 : 0.6))
                         .fixedSize().offset(y: PanelMetrics.roundTitleOffset - 4)
@@ -314,6 +333,7 @@ private struct LensFace: View {
                     .frame(height: lit ? 6 : 4)
             }
             .padding(.horizontal, 20).padding(.vertical, 22)
+            .chipBody(.rounded(20))
             .floatingLabel()
         case .widget:
             let art = min(96, max(size.height * 0.38, 40))
@@ -329,6 +349,7 @@ private struct LensFace: View {
             }
             .padding(20)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .chipBody(.rounded(20))
             .floatingLabel()
         }
     }
@@ -353,10 +374,12 @@ private struct HoloFace: View {
             Circle().strokeBorder(accent.opacity(lit ? 1 : 0.55), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
                 .overlay(Image(systemName: "xmark").font(.system(size: 14, weight: .light)).foregroundStyle(accent))
                 .frame(width: 40, height: 40)
+                .chipBody(.circle)
                 .overlay(alignment: .bottom) { EditHint(visible: lit, mono: true).offset(y: 24) }
         case .round:
             Circle().fill(accent.opacity(lit ? 0.1 : 0)).strokeBorder(accent.opacity(lit ? 0.9 : 0.35), lineWidth: lit ? 1 : 0.5)
                 .overlay(Image(systemName: slot.symbol).font(.system(size: 22, weight: .light)).foregroundStyle(accent.opacity(lit ? 1 : 0.85)))
+                .chipBody(.circle)
                 .overlay(alignment: .bottom) { label.fixedSize().offset(y: PanelMetrics.roundTitleOffset) }
         case .tile, .slider, .widget:
             ZStack(alignment: .topLeading) {
@@ -377,6 +400,7 @@ private struct HoloFace: View {
             .overlay(shape.strokeBorder(accent.opacity(lit ? 0 : 0.12), lineWidth: 0.5))
             .overlay(shape.stroke(accent.opacity(lit ? 0.35 : 0), lineWidth: 10).blur(radius: 10).clipShape(shape))
             .overlay(CornerBrackets(length: 12, inset: lit ? 0 : 6).stroke(accent.opacity(lit ? 1 : 0.42), lineWidth: 1.5))
+            .chipBody(.rounded(2))
             .padding(4)
     }
 
@@ -456,33 +480,71 @@ private struct PressBadge: View {
     }
 }
 
-/// 提交与按压执行的波纹：强调色描边从按钮中心向外扩散并淡出
+/// 按钮看得见的轮廓（波纹与连按计数据此定位）
+enum ChipBodyShape: Equatable {
+    case circle, capsule
+    case rounded(CGFloat)
+
+    /// 连按计数的位置：圆形在右上 45° 的边上，其余在右上角内侧
+    func badgePoint(in r: CGRect) -> CGPoint {
+        switch self {
+        case .circle:
+            let k = 0.5.squareRoot() * r.width / 2
+            return CGPoint(x: r.midX + k, y: r.midY - k)
+        case .capsule:
+            return CGPoint(x: r.maxX - r.height * 0.2, y: r.minY + r.height * 0.1)
+        case .rounded(let c):
+            return CGPoint(x: r.maxX - c * 0.3, y: r.minY + c * 0.3)
+        }
+    }
+}
+
+struct ChipBody {
+    let bounds: Anchor<CGRect>
+    let shape: ChipBodyShape
+}
+
+struct ChipBodyKey: PreferenceKey {
+    static var defaultValue: ChipBody? { nil }
+    static func reduce(value: inout ChipBody?, nextValue: () -> ChipBody?) { value = value ?? nextValue() }
+}
+
+extension View {
+    /// 标出按钮看得见的部分：每种主题、每类按钮各标一处
+    func chipBody(_ shape: ChipBodyShape) -> some View {
+        anchorPreference(key: ChipBodyKey.self, value: .bounds) { ChipBody(bounds: $0, shape: shape) }
+    }
+}
+
+/// 提交与按压执行的波纹：强调色描边从按钮轮廓向外扩散并淡出
 private struct Ripple: View {
     let trigger: Int
+    let shape: ChipBodyShape
     let size: CGSize
-    let kind: FaceKind
     @Environment(\.overlayStyle) private var style
 
-    /// 从按钮可见轮廓的 `rippleStart` 倍扩散到 `rippleEnd` 倍：贴着按钮，不越出太远
-    static let rippleStart = 0.9
-    static let rippleEnd = 1.3
+    /// 轮廓向外扩出的距离（pt）：从略小于按钮到按钮外一圈，宽的滑杆不会被放大成巨大的框
+    static let outsetStart: CGFloat = -2
+    static let outsetEnd: CGFloat = 14
 
     var body: some View {
-        let accent = style.accent, shape = outline, start = Self.rippleStart, end = Self.rippleEnd
+        let accent = style.accent, shape = shape, size = size, start = Self.outsetStart, end = Self.outsetEnd
         Color.clear
-            .keyframeAnimator(initialValue: 1.0, trigger: trigger) { _, raw in
+            .frame(width: size.width, height: size.height)
+            .keyframeAnimator(initialValue: 1.0, trigger: trigger) { content, raw in
                 let p = min(max(raw, 0), 1)
-                Group {
-                    if let corner = shape.corner {
-                        RoundedRectangle(cornerRadius: corner, style: .continuous).stroke(accent, lineWidth: 2)
-                    } else {
-                        Circle().stroke(accent, lineWidth: 2)
+                let o = start + p * (end - start)
+                content.overlay {
+                    Group {
+                        switch shape {
+                        case .circle: Circle().stroke(accent, lineWidth: 2)
+                        case .capsule: Capsule().stroke(accent, lineWidth: 2)
+                        case .rounded(let c): RoundedRectangle(cornerRadius: c + o, style: .continuous).stroke(accent, lineWidth: 2)
+                        }
                     }
+                    .frame(width: size.width + 2 * o, height: size.height + 2 * o)
+                    .opacity(p < 1 ? (1 - p) * 0.85 : 0)
                 }
-                .frame(width: shape.size.width, height: shape.size.height)
-                .offset(y: shape.dy)
-                .scaleEffect(start + p * (end - start))
-                .opacity(p < 1 ? (1 - p) * 0.85 : 0)
             } keyframes: { _ in
                 // 从 0 走到 1；初值为 1 表示没有在播放。第二段不能用 CubicKeyframe：它沿用上一段的速度，
                 // 1 ms 内从 1 跳到 0 的速度会把进度甩到约 -25，波纹被翻转放大成满屏的粗圆环（负责人反馈的"大圈"）
@@ -490,23 +552,5 @@ private struct Ripple: View {
                 LinearKeyframe(1.0, duration: PanelMetrics.rippleDuration, timingCurve: .easeOut)
             }
             .allowsHitTesting(false)
-    }
-
-    /// 按钮看得见的轮廓：玻璃圆钮的卡片只画中间的圆钮，不是整个单元格；圆角为 nil 表示圆形
-    private var outline: (size: CGSize, corner: CGFloat?, dy: CGFloat) {
-        switch kind {
-        case .slider, .widget:
-            return (CGSize(width: size.width * 0.92, height: size.height * 0.92), 24, 0)
-        case .round, .close:
-            let d = kind == .close ? PanelMetrics.cancelChipSize : min(size.width, size.height)
-            return (CGSize(width: d, height: d), nil, 0)
-        case .tile:
-            if style.theme == .orb {
-                // 圆钮在名称上方，圆心比单元格中心偏上半个"间距 + 名称"
-                let d = min(OrbFace.orbLit, min(size.width, size.height - OrbFace.labelRoom))
-                return (CGSize(width: d, height: d), nil, -OrbFace.labelRoom / 2)
-            }
-            return (CGSize(width: size.width * 0.92, height: size.height * 0.92), 24, 0)
-        }
     }
 }
