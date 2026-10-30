@@ -21,12 +21,13 @@ struct PanelStack: View {
     let reduceMotion: Bool
     @Environment(\.overlayStyle) private var style
 
-    /// 深度堆叠：每深一层缩小、上移、模糊的量；翻过去的面板放大、下移、快速淡出
+    /// 深度堆叠：每深一层缩小、下移、模糊的量；翻过去的面板放大、上移、快速淡出。
+    /// 后面的面板排在下方，与右侧刻度从上到下的顺序一致；双指上推时整摞面板跟着手指上移（D32）
     static let depthShrink = 0.1
-    static let depthRise: CGFloat = 36
+    static let depthDrop: CGFloat = 36
     static let depthBlur = 4.0
     static let passedGrow = 0.2
-    static let passedDrop: CGFloat = 30
+    static let passedRise: CGFloat = 30
     static let passedFade = 1.7
     /// 立体滚筒：相邻面板之间的角度、滚筒半径（面板高度的倍数）
     static let drumAngle = 40.0
@@ -160,19 +161,20 @@ struct StackFrame {
         switch style {
         case .drum:
             let a = d * PanelStack.drumAngle * .pi / 180
-            t.tilt = -d * PanelStack.drumAngle
-            t.offset.height = -sin(a) * state.size.height * PanelStack.drumRadius
+            // 后面的面板在滚筒下方（D32）
+            t.tilt = d * PanelStack.drumAngle
+            t.offset.height = sin(a) * state.size.height * PanelStack.drumRadius
             t.scale = 1 - (1 - cos(a)) * 0.6
             t.opacity = min(max(1 - abs(d) * PanelStack.drumFade, 0), 1) * reveal
         case .depth:
             if d >= 0 {
                 t.scale = 1 - PanelStack.depthShrink * d
-                t.offset.height = -PanelStack.depthRise * d
+                t.offset.height = PanelStack.depthDrop * d
                 t.blur = PanelStack.depthBlur * d
                 t.opacity = (d < 1 ? 1 - 0.55 * d : max(0, 0.45 - 0.3 * (d - 1))) * reveal
             } else {
                 t.scale = 1 + PanelStack.passedGrow * -d
-                t.offset.height = PanelStack.passedDrop * -d
+                t.offset.height = -PanelStack.passedRise * -d
                 t.blur = 3 * -d
                 t.opacity = max(0, 1 + d * PanelStack.passedFade)
             }
@@ -426,10 +428,12 @@ private struct DepthIndicator: View {
                     }
                     .frame(width: d, height: d)
                     .frame(width: 8)
+                    // 与按钮名称同样的预渲染深色衬底（D28），不用实时阴影
                     Text(layout.name)
-                        .font(style.theme == .holo ? .system(size: 11.5, design: .monospaced) : .system(size: 12))
-                        .foregroundStyle(.white.opacity(0.5 + 0.45 * near))
-                        .shadow(color: .black.opacity(PanelMetrics.labelShadowOpacity), radius: 4)
+                        .font(style.theme == .holo ? .system(size: 11.5, design: .monospaced) : .system(size: 12, weight: .medium))
+                        .foregroundStyle(.white)
+                        .floatingLabel("indicator|\(style.theme == .holo)|\(layout.name)")
+                        .opacity(0.6 + 0.4 * near)
                         .opacity(names)
                         .fixedSize()
                 }

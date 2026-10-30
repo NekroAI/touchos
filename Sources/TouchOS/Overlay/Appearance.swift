@@ -22,7 +22,7 @@ enum OverlayTheme: String, CaseIterable, Sendable {
 
 /// 面板之间的切换动画（D23）
 enum NavStyle: String, CaseIterable, Sendable {
-    /// 深度堆叠：后面的面板缩小、上移、模糊，翻过去的面板放大淡出
+    /// 深度堆叠：后面的面板缩小、下移、模糊，翻过去的面板放大、上移淡出
     case depth
     /// 立体滚筒：面板排在一个水平轴的滚筒上翻转
     case drum

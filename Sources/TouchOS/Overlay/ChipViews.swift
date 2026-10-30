@@ -317,7 +317,9 @@ private extension View {
     func glass<S: InsettableShape>(_ shape: S, tint: Color, edge: Double, glow: Color? = nil) -> some View {
         modifier(Glass(shape: shape, tint: tint, edge: edge, glow: glow))
     }
+}
 
+extension View {
     /// 直接浮在桌面上的文字：身后衬一层模糊的深色字形，只贴着笔画，没有底框（负责人反馈：被桌面干扰，但不要框）。
     /// `key` 标识这段文字的内容与状态（名称、点亮与否、数值），预渲染的衬底按它缓存
     func floatingLabel(_ key: String) -> some View {

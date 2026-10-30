@@ -674,8 +674,8 @@ public struct SessionStateMachine: Sendable {
         let value: Double
         switch g.kind {
         case .navigate(let base):
-            // 自然滚动：后面的面板排在上方，双指往下拽把它拉下来，面板跟着手指走（D32）
-            value = rubberBand(base - dy / tuning.navDistanceMM, in: navRange(ctx))
+            // 双指上推切到下一个面板；下一个面板排在下方，上推时整摞面板跟着手指上移（自然滚动，D32）
+            value = rubberBand(base + dy / tuning.navDistanceMM, in: navRange(ctx))
             ctx.nav = .at(value)
         case .pinch(let base):
             value = rubberBand(base - ds / tuning.pinchDistanceMM, in: 0...1)
