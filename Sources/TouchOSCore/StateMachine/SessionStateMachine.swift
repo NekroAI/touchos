@@ -99,8 +99,13 @@ public enum CursorCommand: Equatable, Sendable {
 public struct PanelState: Equatable, Sendable {
     /// 当前面板（导航停稳后的目标面板）
     public let layout: Layout
+    /// 参考大小（pt）：面板堆栈、总览与以下坐标的基准（D29）
     public let size: CGSize
-    /// 指示点（面板 pt，原点左上）；没有指点指时为 nil。不钳制：映射区以外落在面板之外（D15），命中仍按钳制后的坐标
+    /// 各面板在参考坐标里的位置（随网格伸缩，中心重合，D29）
+    public var frames: [CGRect] = []
+    /// 指示点当前对应的范围（参考坐标）：当前面板，总览时为整个参考大小。越出即"松手取消"
+    public var area: CGRect = .zero
+    /// 指示点（参考坐标 pt，原点左上）；没有指点指时为 nil。不钳制：映射区以外落在面板之外（D15），命中仍按钳制后的坐标
     public var pointer: CGPoint?
     /// 整块触控板对应的显示范围相对面板每边多出的宽度（pt），浮层窗口据此留出指示点越界的空间
     public var overscan: CGSize = .zero
@@ -118,7 +123,7 @@ public struct PanelState: Equatable, Sendable {
     public var holdDuration: TimeInterval = 0
     /// 常驻模式下锚指已抬起
     public var sticky = false
-    /// 唤起位置（面板 pt，不钳制）：轻点的中心或锚指落点。按钮从这里弹开（D20）
+    /// 唤起位置（参考坐标 pt，不钳制）：轻点的中心或锚指落点。按钮从这里弹开（D20）
     public var origin: CGPoint?
     /// 滑杆槽位当前显示的值：指点指在滑杆上时为预览值，否则为基准值
     public var sliderValues: [SlotID: Double] = [:]
@@ -236,7 +241,10 @@ public struct ActiveContext: Equatable, Sendable {
     public var nav = Motion.at(0)
     public var overview = Motion.at(0)
     public var overviewHover: Int?
-    public let panelSize: CGSize
+    /// 各面板的大小与映射区（D29）
+    public let geometry: PanelGeometry
+    /// 当前面板的大小（pt）
+    public var panelSize: CGSize { geometry.size(of: layout) }
     public let frontmostBundleID: String?
     public var pointer: PointerTrack?
     public var hovered: SlotID?
@@ -481,9 +489,9 @@ public struct SessionStateMachine: Sendable {
                                       panel: Int, now: TimeInterval, pointer: Contact? = nil) -> [SessionEffect] {
         let panels = environment.panels
         guard panels.indices.contains(panel), let device = environment.devices[id] else { return [] }
-        let size = panelSize(screen: environment.screenSize, deviceMM: device.surfaceSizeMM, scale: tuning.panelScale)
+        let geometry = PanelGeometry(screen: environment.screenSize, deviceMM: device.surfaceSizeMM, tuning: tuning)
         var active = ActiveContext(device: id, anchorID: anchorID ?? -1, enteredAt: now, corner: corner, panels: panels,
-                                   panelSize: size, frontmostBundleID: environment.frontmostBundleID, lastFrameAt: now)
+                                   geometry: geometry, frontmostBundleID: environment.frontmostBundleID, lastFrameAt: now)
         active.panelIndex = panel
         active.nav = .at(Double(panel))
         for page in panels {
@@ -507,7 +515,7 @@ public struct SessionStateMachine: Sendable {
             let h = hover(active, c.position, now: now)
             active.hovered = h.slot
             active.overviewHover = h.overview
-            updateSliderPreview(&active, point: mapper().panelPoint(c.position, panelSize: size))
+            updateSliderPreview(&active, point: mapper(active).panelPoint(c.position, panelSize: active.panelSize))
             effects += syncSliders(&active)
         }
         if tuning.panelDelayMs <= 0 || anchorID == nil {
@@ -715,7 +723,15 @@ public struct SessionStateMachine: Sendable {
 
     // MARK: 指点指
 
-    private func mapper() -> Mapper { Mapper(margin: tuning.mappingMargin, scale: tuning.mappingScale) }
+    /// 当前面板的映射区（D29：随网格伸缩）；总览时为参考映射区，对应整个参考大小
+    private func mapper(_ ctx: ActiveContext) -> Mapper {
+        let size = showingOverview(ctx) ? CGSize(width: tuning.mappingScale, height: tuning.mappingScale)
+            : ctx.geometry.mapping(of: ctx.layout)
+        return Mapper(margin: tuning.mappingMargin, size: size)
+    }
+
+    /// 映射区对应的显示范围：当前面板，总览时为参考大小
+    private func space(_ ctx: ActiveContext) -> CGSize { showingOverview(ctx) ? ctx.geometry.group : ctx.panelSize }
 
     /// 命中不留空隙：网格单元之间的缝只是视觉（D23）
     private func tester(_ ctx: ActiveContext) -> HitTester {
@@ -726,10 +742,10 @@ public struct SessionStateMachine: Sendable {
 
     /// 指点指当前位置对应的悬停（停稳之前一律不命中）
     private func hover(_ ctx: ActiveContext, _ p: CGPoint, now: TimeInterval) -> (slot: SlotID?, overview: Int?) {
-        let m = mapper()
+        let m = mapper(ctx)
         guard m.contains(p), settled(ctx, at: now) else { return (nil, nil) }
-        let point = m.panelPoint(p, panelSize: ctx.panelSize)
-        if showingOverview(ctx) { return (nil, OverviewGrid(count: ctx.panels.count, panelSize: ctx.panelSize).index(at: point)) }
+        let point = m.panelPoint(p, panelSize: space(ctx))
+        if showingOverview(ctx) { return (nil, OverviewGrid(count: ctx.panels.count, panelSize: ctx.geometry.group).index(at: point)) }
         return (tester(ctx).hit(point, current: ctx.hovered), nil)
     }
 
@@ -741,12 +757,12 @@ public struct SessionStateMachine: Sendable {
         ctx.hovered = h.slot
         ctx.overviewHover = h.overview
         ctx.pressConsumed = false
-        updateSliderPreview(&ctx, point: mapper().panelPoint(pointer.latest, panelSize: ctx.panelSize))
+        updateSliderPreview(&ctx, point: mapper(ctx).panelPoint(pointer.latest, panelSize: ctx.panelSize))
         return [.haptic] + syncSliders(&ctx) + (ctx.panelVisible ? [.updatePanel(panelState(ctx))] : [])
     }
 
     private mutating func pointerFrame(_ ctx: inout ActiveContext, _ frame: TouchFrame) -> [SessionEffect] {
-        let mapper = mapper()
+        let mapper = mapper(ctx)
         var effects: [SessionEffect] = []
 
         if var pointer = ctx.pointer {
@@ -796,12 +812,12 @@ public struct SessionStateMachine: Sendable {
         if let after = ctx.releaseAfter, liftAt < after {
             return exit(ctx, now: liftAt, end: .earlyLift)  // D25：停留不足
         }
-        let mapper = mapper()
+        let mapper = mapper(ctx)
         let point = pointer.commitPoint(liftAt: liftAt, lookback: tuning.liftLookbackMs / 1000)
         guard mapper.contains(point) else { return exit(ctx, now: liftAt, end: .liftOutside) }  // D21
-        let panelPoint = mapper.panelPoint(point, panelSize: ctx.panelSize)
+        let panelPoint = mapper.panelPoint(point, panelSize: space(ctx))
         if showingOverview(ctx) {
-            if settled(ctx, at: liftAt), let index = OverviewGrid(count: ctx.panels.count, panelSize: ctx.panelSize).index(at: panelPoint) {
+            if settled(ctx, at: liftAt), let index = OverviewGrid(count: ctx.panels.count, panelSize: ctx.geometry.group).index(at: panelPoint) {
                 return selectPanel(&ctx, index, now: liftAt)
             }
             return stay(&ctx)
@@ -970,10 +986,17 @@ public struct SessionStateMachine: Sendable {
     }
 
     private func panelState(_ ctx: ActiveContext) -> PanelState {
-        let mapper = mapper()
-        var s = PanelState(layout: ctx.layout, size: ctx.panelSize,
-                           pointer: ctx.pointer.map { mapper.unclampedPanelPoint($0.latest, panelSize: ctx.panelSize) },
-                           overscan: mapper.overscan(panelSize: ctx.panelSize), hovered: ctx.hovered)
+        // 坐标统一换成参考坐标（各面板中心重合，D29）
+        let mapper = mapper(ctx)
+        let area = showingOverview(ctx) ? CGRect(origin: .zero, size: ctx.geometry.group) : ctx.geometry.frame(of: ctx.layout)
+        func shown(_ p: CGPoint) -> CGPoint {
+            let q = mapper.unclampedPanelPoint(p, panelSize: area.size)
+            return CGPoint(x: q.x + area.minX, y: q.y + area.minY)
+        }
+        var s = PanelState(layout: ctx.layout, size: ctx.geometry.group, pointer: ctx.pointer.map { shown($0.latest) },
+                           overscan: mapper.overscan(panelSize: area.size), hovered: ctx.hovered)
+        s.frames = ctx.panels.map(ctx.geometry.frame(of:))
+        s.area = area
         s.panels = ctx.panels
         s.panelIndex = ctx.panelIndex
         s.nav = ctx.nav
@@ -982,7 +1005,7 @@ public struct SessionStateMachine: Sendable {
         s.holdStartedAt = ctx.holdStartedAt
         s.holdDuration = tuning.editHoldMs / 1000
         s.sticky = ctx.anchorLifted
-        s.origin = ctx.entryPoint.map { mapper.unclampedPanelPoint($0, panelSize: ctx.panelSize) }
+        s.origin = ctx.entryPoint.map(shown)
         s.sliderValues = ctx.sliderValues
         s.sliderBase = ctx.sliderBase
         return s

@@ -269,8 +269,10 @@ private struct PanelStage: View {
 
     var body: some View {
         GeometryReader { geo in
-            let real = realSize
-            let size = displaySize(in: CGSize(width: geo.size.width, height: geo.size.height - Self.hintHeight), real: real)
+            let panels = panelGeometry
+            let real = panels.size(of: panel)
+            let size = displaySize(in: CGSize(width: geo.size.width, height: geo.size.height - Self.hintHeight), real: real,
+                                   reference: panels.group)
             let geometry = StageGeometry(display: size, real: real)
             VStack(spacing: 0) {
                 ZStack {
@@ -312,16 +314,22 @@ private struct PanelStage: View {
             : "点空位添加 · 拖动移动，拖到别的按钮上互换 · 拖右下角调整大小 · 位置与触控板一一对应"
     }
 
-    /// 唤起时面板在主屏上的实际尺寸（FR-6.4）
-    private var realSize: CGSize {
+    /// 唤起时各面板在主屏上的实际尺寸（FR-6.4；随网格伸缩，D29）
+    private var panelGeometry: PanelGeometry {
         let screen = NSScreen.main?.visibleFrame.size ?? CGSize(width: 1440, height: 900)
-        return panelSize(screen: screen, deviceMM: MultitouchBridge.fallbackSurfaceMM, scale: configs.config.sizes.panelScale)
+        var t = Tuning()
+        configs.config.apply(to: &t)
+        return PanelGeometry(screen: screen, deviceMM: MultitouchBridge.fallbackSurfaceMM, tuning: t)
     }
 
-    /// 舞台上显示的尺寸：按实际尺寸整体缩小放进舞台，不放大
-    private func displaySize(in area: CGSize, real: CGSize) -> CGSize {
-        let fitted = panelSize(screen: area, deviceMM: real, scale: Self.fill)
-        return fitted.width < real.width ? fitted : real
+    /// 舞台上显示的尺寸：与参考大小的面板用同一比例缩小，行列少的面板看起来更小；放不下时再缩小，不放大
+    private func displaySize(in area: CGSize, real: CGSize, reference: CGSize) -> CGSize {
+        func fit(_ s: CGSize) -> CGFloat {
+            guard s.width > 0, s.height > 0 else { return 1 }
+            return min(1, area.width * Self.fill / s.width, area.height * Self.fill / s.height)
+        }
+        let k = min(fit(reference), fit(real))
+        return CGSize(width: real.width * k, height: real.height * k)
     }
 }
 

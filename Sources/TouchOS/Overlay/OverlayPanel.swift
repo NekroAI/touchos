@@ -326,7 +326,7 @@ private struct PointerRoot: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             if let state = model.state, !model.phase.leaving {
-                PointerLayer(model: model, groupRect: CGRect(origin: model.groupOrigin, size: state.size),
+                PointerLayer(model: model, groupRect: CGRect(origin: model.groupOrigin, size: state.size), area: state.area,
                              overCancel: state.hovered.flatMap { state.layout.slot($0) }?.isCancel ?? false,
                              showTrail: model.showTrail && !reduceMotion)
             }

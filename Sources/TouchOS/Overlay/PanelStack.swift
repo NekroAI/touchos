@@ -47,7 +47,8 @@ struct PanelStack: View {
                 if f.mounted(k) {
                     let t = f.transform(k, nav: style.nav)
                     let current = k == state.panelIndex
-                    PanelView(layout: layout, size: state.size, slotGap: model.slotGap, current: current,
+                    // 各面板按自己的网格大小画（D29），与参考大小同中心
+                    PanelView(layout: layout, size: f.frame(k).size, slotGap: model.slotGap, current: current,
                               hovered: current && f.overview < 0.5 ? state.hovered : nil,
                               phase: current ? model.phase : .shown,
                               sliderValues: state.sliderValues, sliderBase: state.sliderBase,
@@ -56,6 +57,7 @@ struct PanelStack: View {
                         .equatable()
                         // 后面的面板本来就模糊、半透明：不用毛玻璃（每块毛玻璃都要系统逐帧模糊背后的内容）
                         .environment(\.backdropGlass, current)
+                        .frame(width: state.size.width, height: state.size.height)
                         .scaleEffect(t.scale)
                         .rotation3DEffect(.degrees(t.tilt), axis: (x: 1, y: 0, z: 0), perspective: 0.6)
                         .blur(radius: t.blur)
@@ -65,7 +67,8 @@ struct PanelStack: View {
                 }
             }
             if f.overview > 0.05 {
-                OverviewMarks(panels: state.panels, size: state.size, hovered: state.overviewHover)
+                OverviewMarks(panels: state.panels, frames: state.panels.indices.map(f.frame), size: state.size,
+                              hovered: state.overviewHover)
                     .opacity(min(f.overview, 1) * f.stay)
                     .zIndex(50)
             }
@@ -77,13 +80,13 @@ struct PanelStack: View {
             if state.panels.count > 1 {
                 DepthIndicator(panels: state.panels, nav: f.nav, names: f.peek)
                     .opacity(f.chrome * (0.4 + 0.6 * f.peek))
-                    .offset(x: state.size.width + Self.indicatorGap,
+                    .offset(x: (state.frames.map(\.maxX).max() ?? state.size.width) + Self.indicatorGap,
                             y: state.size.height / 2 - Double(state.panels.count) * Self.indicatorRow / 2)
                     .zIndex(70)
             }
             PanelTitle(name: state.layout.name, index: state.panelIndex, count: state.panels.count)
                 .opacity(f.chrome * max(f.peek, f.titleFresh))
-                .position(x: state.size.width / 2, y: -PanelMetrics.titleOffset)
+                .position(x: state.size.width / 2, y: frame.frame(state.panelIndex).minY - PanelMetrics.titleOffset)
                 .zIndex(70)
         }
         .frame(width: state.size.width, height: state.size.height, alignment: .topLeading)
@@ -97,8 +100,9 @@ struct PanelStack: View {
     /// 在关闭上按住时圆环的位置（当前面板，此时导航已停稳）
     private var holdCenter: CGPoint? {
         guard let id = state.hovered, let slot = state.layout.slot(id) else { return nil }
-        let tester = HitTester(layout: state.layout, panelSize: state.size, slotGap: model.slotGap, hysteresis: 0)
-        return ChipGeometry.of(slot, tester: tester).map { CGPoint(x: $0.frame.midX, y: $0.frame.midY) }
+        let panel = frame.frame(state.panelIndex)
+        let tester = HitTester(layout: state.layout, panelSize: panel.size, slotGap: model.slotGap, hysteresis: 0)
+        return ChipGeometry.of(slot, tester: tester).map { CGPoint(x: panel.minX + $0.frame.midX, y: panel.minY + $0.frame.midY) }
     }
 }
 
@@ -133,7 +137,12 @@ struct StackFrame {
         stay = 1 - leave * leave
         enter = min(max((now - shownAt - PanelStack.neighborDelay) / PanelStack.neighborFadeIn, 0), 1)
         titleFresh = min(max(PanelMetrics.titleDuration - (now - shownAt), 0), 1)
-        outside = state.pointer.map { !CGRect(origin: .zero, size: state.size).contains($0) } ?? false
+        outside = state.pointer.map { !state.area.contains($0) } ?? false
+    }
+
+    /// 第 `k` 个面板在参考坐标里的位置（D29）
+    func frame(_ k: Int) -> CGRect {
+        state.frames.indices.contains(k) ? state.frames[k] : CGRect(origin: .zero, size: state.size)
     }
 
     /// 只创建看得见的面板：当前面板一直在；邻近面板唤起一会儿后才创建；总览时全部创建
@@ -176,7 +185,10 @@ struct StackFrame {
             let c = grid.center(of: k)
             let gx = c.x - state.size.width / 2, gy = c.y - state.size.height / 2
             t.offset = CGSize(width: t.offset.width * (1 - o) + gx * o, height: t.offset.height * (1 - o) + gy * o)
-            t.scale = t.scale * (1 - o) + grid.scale * o - max(overview - 1, 0) * 0.1
+            // 比参考大小大的面板在格子里再缩小，不压到相邻的缩略图
+            let own = frame(k).size
+            let fit = min(1, state.size.width / max(own.width, 1), state.size.height / max(own.height, 1))
+            t.scale = t.scale * (1 - o) + grid.scale * fit * o - max(overview - 1, 0) * 0.1
             t.opacity = t.opacity * (1 - o) + o
             t.blur *= 1 - o
             t.tilt *= 1 - o
@@ -341,19 +353,23 @@ struct CornerBrackets: Shape {
 /// 总览：每个缩略图外的选择框与面板名
 private struct OverviewMarks: View {
     let panels: [PanelLayout]
+    /// 各面板的实际大小（D29）：框按面板本身的大小画，与缩略图一致
+    let frames: [CGRect]
     let size: CGSize
     let hovered: Int?
     @Environment(\.overlayStyle) private var style
 
     var body: some View {
         let grid = OverviewGrid(count: panels.count, panelSize: size)
-        let w = size.width * grid.scale, h = size.height * grid.scale
+        let h = size.height * grid.scale
         ZStack(alignment: .topLeading) {
             ForEach(Array(panels.enumerated()), id: \.element.id) { k, layout in
                 let c = grid.center(of: k), lit = hovered == k
+                let own = frames[k].size
+                let fit = min(1, size.width / max(own.width, 1), size.height / max(own.height, 1)) * grid.scale
                 let shape = RoundedRectangle(cornerRadius: style.theme == .holo ? 4 : 16, style: .continuous)
                 shape.strokeBorder(lit ? style.accent : Color.white.opacity(0.18), lineWidth: lit ? 2 : 1)
-                    .frame(width: w + 20, height: h + 20)
+                    .frame(width: own.width * fit + 20, height: own.height * fit + 20)
                     .position(c)
                     .animation(.easeOut(duration: 0.15), value: lit)
                 Text(style.theme == .holo ? layout.name.uppercased() : layout.name)

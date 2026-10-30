@@ -192,7 +192,7 @@ struct TriggerPreview: View {
                 Text("屏幕").font(.headline)
                 Text("面板占屏幕 \(Int((tuning.panelScale * 100).rounded()))%，总在屏幕中央").font(.caption).foregroundStyle(.secondary)
             }
-            ScreenPreview(panel: shownPanel, scale: tuning.panelScale, device: device, emphasized: focus == .panel)
+            ScreenPreview(panel: shownPanel, tuning: tuning, device: device, emphasized: focus == .panel)
                 .frame(width: Self.width)
         }
         .frame(width: Self.width, alignment: .leading)
@@ -231,8 +231,11 @@ struct TriggerPreview: View {
         ctx.fill(Path(roundedRect: pad, cornerRadius: corner), with: .color(.secondary.opacity(0.12)))
         ctx.stroke(Path(roundedRect: pad.insetBy(dx: 0.5, dy: 0.5), cornerRadius: corner), with: .color(.secondary.opacity(0.4)), lineWidth: 1)
 
-        // 映射区与其中的面板
-        let mapping = view(Mapper(margin: t.mappingMargin, scale: t.mappingScale).mappingRect)
+        // 映射区与其中的面板：映射区随面板的网格伸缩（D29）
+        let screen = NSScreen.main?.visibleFrame.size ?? CGSize(width: 1440, height: 900)
+        let scale = shownPanel.map { PanelGeometry(screen: screen, deviceMM: device, tuning: t).mapping(of: $0) }
+            ?? CGSize(width: t.mappingScale, height: t.mappingScale)
+        let mapping = view(Mapper(margin: t.mappingMargin, size: scale).mappingRect)
         var m = ctx
         m.opacity = dimmed(focus == .mapping || focus == .panel || { if case .trigger = focus { true } else { false } }())
         m.fill(Path(roundedRect: mapping, cornerRadius: 6), with: .color(.accentColor.opacity(focus == .mapping ? 0.22 : 0.12)))
@@ -300,7 +303,7 @@ private struct LegendItem: View {
 /// 屏幕与面板的相对大小
 private struct ScreenPreview: View {
     let panel: PanelLayout?
-    let scale: Double
+    let tuning: Tuning
     let device: CGSize
     let emphasized: Bool
 
@@ -310,7 +313,8 @@ private struct ScreenPreview: View {
             let rect = CGRect(origin: .zero, size: size)
             ctx.fill(Path(roundedRect: rect, cornerRadius: 6), with: .color(.secondary.opacity(0.12)))
             ctx.stroke(Path(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), cornerRadius: 6), with: .color(.secondary.opacity(0.4)), lineWidth: 1)
-            let real = panelSize(screen: screen, deviceMM: device, scale: scale)
+            let geometry = PanelGeometry(screen: screen, deviceMM: device, tuning: tuning)
+            let real = panel.map(geometry.size(of:)) ?? geometry.group
             let k = size.width / screen.width
             let p = CGRect(x: (size.width - real.width * k) / 2, y: (size.height - real.height * k) / 2,
                            width: real.width * k, height: real.height * k)

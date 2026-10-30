@@ -23,11 +23,16 @@ func closedContains(_ rect: CGRect, _ p: CGPoint) -> Bool {
 /// 在那里抬起即关闭面板（D21）；指示点照常画在面板之外（D15）。指点指可以落在四周 `margin` 宽的边缘以内的任何位置。
 public struct Mapper: Sendable {
     public let margin: Double
-    public let scale: Double
+    /// 映射区占触控板的宽、高比例
+    public let scale: CGSize
 
     public init(margin: Double, scale: Double) {
+        self.init(margin: margin, size: CGSize(width: scale, height: scale))
+    }
+
+    public init(margin: Double, size: CGSize) {
         self.margin = margin
-        self.scale = scale
+        self.scale = size
     }
 
     /// 新接触可以成为指点指的区域（锚定区另行排除，FR-6.5）
@@ -37,7 +42,7 @@ public struct Mapper: Sendable {
 
     /// 映射区（触控板归一化坐标，原点左下）
     public var mappingRect: CGRect {
-        CGRect(x: (1 - scale) / 2, y: (1 - scale) / 2, width: scale, height: scale)
+        CGRect(x: (1 - scale.width) / 2, y: (1 - scale.height) / 2, width: scale.width, height: scale.height)
     }
 
     /// 点是否在映射区内（含边界）
@@ -61,7 +66,8 @@ public struct Mapper: Sendable {
 
     /// 整块触控板对应的显示范围相对面板每边多出的宽度（pt）
     public func overscan(panelSize: CGSize) -> CGSize {
-        CGSize(width: (1 - scale) / 2 / scale * panelSize.width, height: (1 - scale) / 2 / scale * panelSize.height)
+        CGSize(width: (1 - scale.width) / 2 / scale.width * panelSize.width,
+               height: (1 - scale.height) / 2 / scale.height * panelSize.height)
     }
 
     /// 面板坐标（pt，原点左上）
@@ -77,6 +83,61 @@ public func panelSize(screen: CGSize, deviceMM: CGSize, scale: Double) -> CGSize
     let aspect = deviceMM.width / deviceMM.height
     let maxW = screen.width * scale, maxH = screen.height * scale
     return maxW / maxH > aspect ? CGSize(width: maxH * aspect, height: maxH) : CGSize(width: maxW, height: maxW / aspect)
+}
+
+/// 面板随网格伸缩（D29，修订 FR-6.4、FR-8.6）：格子在屏幕上和触控板上的大小固定，行列多的面板更大、映射区更大，
+/// 行列少的更小。参考网格占满 `group`（即原来按 `panelScale` 算出的面板）与 `mappingScale`；
+/// 环形与自由矩形布局没有格子，按参考大小。各面板中心重合，坐标原点为参考大小的左上角
+public struct PanelGeometry: Equatable, Sendable {
+    /// 参考大小（pt）：面板堆栈与总览以它为基准
+    public let group: CGSize
+    public let mappingScale: Double
+    public let referenceRows: Int
+    public let referenceCols: Int
+    /// 面板在屏幕上的上限（pt）
+    public let limit: CGSize
+
+    public init(group: CGSize, mappingScale: Double, referenceRows: Int, referenceCols: Int, limit: CGSize) {
+        self.group = group
+        self.mappingScale = mappingScale
+        self.referenceRows = max(referenceRows, 1)
+        self.referenceCols = max(referenceCols, 1)
+        self.limit = limit
+    }
+
+    public init(screen: CGSize, deviceMM: CGSize, tuning t: Tuning) {
+        self.init(group: panelSize(screen: screen, deviceMM: deviceMM, scale: t.panelScale), mappingScale: t.mappingScale,
+                  referenceRows: t.referenceRows, referenceCols: t.referenceCols,
+                  limit: CGSize(width: screen.width * t.panelMaxScale, height: screen.height * t.panelMaxScale))
+    }
+
+    /// 相对参考网格的宽、高倍数（超出上限时已整体缩小）
+    public func factor(of layout: Layout) -> CGSize {
+        let grid = layout.slots.contains { if case .cell = $0.shape { true } else { false } }
+        guard grid else { return CGSize(width: 1, height: 1) }
+        let rx = Double(layout.cols) / Double(referenceCols), ry = Double(layout.rows) / Double(referenceRows)
+        let fit = min(1, 1 / (mappingScale * rx), 1 / (mappingScale * ry),
+                      limit.width / (group.width * rx), limit.height / (group.height * ry))
+        return CGSize(width: rx * fit, height: ry * fit)
+    }
+
+    /// 面板大小（pt）
+    public func size(of layout: Layout) -> CGSize {
+        let f = factor(of: layout)
+        return CGSize(width: group.width * f.width, height: group.height * f.height)
+    }
+
+    /// 映射区占触控板的宽、高比例
+    public func mapping(of layout: Layout) -> CGSize {
+        let f = factor(of: layout)
+        return CGSize(width: mappingScale * f.width, height: mappingScale * f.height)
+    }
+
+    /// 面板在参考坐标里的位置（与参考大小同中心）
+    public func frame(of layout: Layout) -> CGRect {
+        let s = size(of: layout)
+        return CGRect(x: (group.width - s.width) / 2, y: (group.height - s.height) / 2, width: s.width, height: s.height)
+    }
 }
 
 /// 命中与滞回（SRS 6.3）。坐标为面板 pt，原点左上。

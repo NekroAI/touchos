@@ -87,6 +87,9 @@ extension Tuning {
         var t = Tuning()
         t.mappingScale = 0.9
         t.panelScale = 0.6
+        // 参考网格与测试布局（3×3）一致：映射区仍为 0.05–0.95，面板大小不变（D29）
+        t.referenceRows = 3
+        t.referenceCols = 3
         return t
     }
 }

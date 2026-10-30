@@ -6,6 +6,8 @@ struct PointerLayer: View {
     let model: OverlayModel
     /// 按钮组在窗口中的位置；指示点坐标是按钮组 pt，绘制时加上偏移
     let groupRect: CGRect
+    /// 指示点当前对应的范围（按钮组 pt）：当前面板，总览时为整个按钮组（D29）
+    let area: CGRect
     let overCancel: Bool
     let showTrail: Bool
     @Environment(\.overlayStyle) private var style
@@ -22,14 +24,14 @@ struct PointerLayer: View {
             let _ = timeline.date
             let now = ProcessInfo.processInfo.systemUptime
             let p = model.displayedPointer(at: now)
-            let local = CGRect(origin: .zero, size: groupRect.size)
+            let local = area
             ZStack(alignment: .topLeading) {
                 // 指示点在映射区之外：抬起即取消。显示按钮组范围的轮廓（提示要移回多远，D15）
                 if let p, !local.contains(p) {
                     RoundedRectangle(cornerRadius: style.theme == .holo ? 6 : 26)
                         .stroke(.white.opacity(PanelMetrics.boundsOpacity), style: StrokeStyle(lineWidth: 1.5, dash: [6, 6]))
                         .frame(width: local.width + 20, height: local.height + 20)
-                        .offset(x: groupRect.minX - 10, y: groupRect.minY - 10)
+                        .offset(x: groupRect.minX + local.minX - 10, y: groupRect.minY + local.minY - 10)
                 }
                 if let anchor = p ?? model.samples.last?.p {
                     let half = Self.canvasSize / 2
@@ -62,7 +64,7 @@ struct PointerLayer: View {
             return
         }
         if style.theme == .holo {
-            drawCrosshair(&ctx, at: p, color: color, size: groupRect.size)
+            drawCrosshair(&ctx, at: p, color: color, area: area)
         } else {
             let halo = PanelMetrics.pointerHalo, core = PanelMetrics.pointerCore
             ctx.fill(Path(ellipseIn: CGRect(x: p.x - halo / 2, y: p.y - halo / 2, width: halo, height: halo)),
@@ -77,7 +79,7 @@ struct PointerLayer: View {
     }
 
     /// 全息主题：圆圈加十字准星，右下角显示面板内的归一化坐标
-    private func drawCrosshair(_ ctx: inout GraphicsContext, at p: CGPoint, color: Color, size: CGSize) {
+    private func drawCrosshair(_ ctx: inout GraphicsContext, at p: CGPoint, color: Color, area: CGRect) {
         let c = color.opacity(0.9)
         ctx.stroke(Path(ellipseIn: CGRect(x: p.x - 7, y: p.y - 7, width: 14, height: 14)), with: .color(c), lineWidth: 1.5)
         var cross = Path()
@@ -90,7 +92,7 @@ struct PointerLayer: View {
         cross.move(to: CGPoint(x: p.x, y: p.y + 9))
         cross.addLine(to: CGPoint(x: p.x, y: p.y + 16))
         ctx.stroke(cross, with: .color(c), lineWidth: 1)
-        let readout = String(format: "X %.2f  Y %.2f", p.x / max(size.width, 1), p.y / max(size.height, 1))
+        let readout = String(format: "X %.2f  Y %.2f", (p.x - area.minX) / max(area.width, 1), (p.y - area.minY) / max(area.height, 1))
         let text = ctx.resolve(Text(readout).font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(color.opacity(0.85)))
         ctx.draw(text, at: CGPoint(x: p.x + 14, y: p.y + 12), anchor: .topLeading)
     }

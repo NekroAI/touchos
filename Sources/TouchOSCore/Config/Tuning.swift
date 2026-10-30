@@ -84,6 +84,12 @@ public struct Tuning: Equatable, Sendable {
     /// `P.panelScale`（修订：0.6 → 0.4，见 decisions.md D20）：按钮组画小、排紧凑。
     /// 触控板到面板是归一化映射，面板在屏幕上的大小不影响手指的移动距离与精度
     public var panelScale = 0.4
+    /// 参考网格（D29）：这个行列数的面板占满 `panelScale` 与 `mappingScale`；其他行列数的面板格子大小不变，
+    /// 面板在屏幕上与映射区在触控板上按行列数同比伸缩
+    public var referenceRows = 3
+    public var referenceCols = 5
+    /// 面板伸缩的上限：不超过屏幕的这个比例（映射区另以整块触控板为上限），超出时整体缩小
+    public var panelMaxScale = 0.9
     /// `P.trailMs`
     public var trailMs = 300.0
     /// `P.slotGap`（pt）

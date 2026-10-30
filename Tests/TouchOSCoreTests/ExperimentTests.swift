@@ -167,6 +167,59 @@ private func activeLayout(_ h: Harness) -> String? {
     }
 }
 
+/// 面板随网格伸缩（D29）
+@Suite struct PanelGeometryTests {
+    let geometry = PanelGeometry(group: CGSize(width: 600, height: 400), mappingScale: 0.6, referenceRows: 3, referenceCols: 5,
+                                 limit: CGSize(width: 900, height: 900))
+
+    private func grid(rows: Int, cols: Int) -> Layout {
+        Layout(id: "g", name: "g", rows: rows, cols: cols, slots: [
+            Slot(id: "g.a", cell: GridCell(row: 0, col: 0), title: "A", symbol: "", action: .none),
+        ])
+    }
+
+    @Test func cellsKeepTheirSize() {
+        #expect(geometry.size(of: grid(rows: 3, cols: 5)) == CGSize(width: 600, height: 400))
+        #expect(geometry.mapping(of: grid(rows: 3, cols: 5)) == CGSize(width: 0.6, height: 0.6))
+        let narrow = grid(rows: 3, cols: 3)
+        #expect(abs(geometry.size(of: narrow).width - 360) < 1e-9 && geometry.size(of: narrow).height == 400)
+        #expect(abs(geometry.mapping(of: narrow).width - 0.36) < 1e-9)
+        #expect(abs(geometry.frame(of: narrow).minX - 120) < 1e-9 && geometry.frame(of: narrow).minY == 0)
+        // 没有格子的布局按参考大小
+        #expect(geometry.size(of: PresetPanels.editing) == CGSize(width: 600, height: 400))
+    }
+
+    @Test func oversizedGridShrinksToTheLimit() {
+        // 宽 2 倍：屏幕上限 900 pt 先到，整体缩到 0.75
+        let wide = grid(rows: 3, cols: 10)
+        #expect(abs(geometry.size(of: wide).width - 900) < 1e-9 && abs(geometry.size(of: wide).height - 300) < 1e-9)
+        #expect(abs(geometry.mapping(of: wide).width - 0.9) < 1e-9 && abs(geometry.mapping(of: wide).height - 0.45) < 1e-9)
+        // 映射区不超过整块触控板
+        let big = PanelGeometry(group: CGSize(width: 600, height: 400), mappingScale: 0.9, referenceRows: 3, referenceCols: 5,
+                                limit: CGSize(width: 5000, height: 5000))
+        #expect(abs(big.mapping(of: grid(rows: 3, cols: 10)).width - 1) < 1e-9)
+    }
+
+    @Test func narrowPanelHasNarrowerMapping() {
+        // 参考 3×3、映射区 0.9；2 列面板的映射区宽 0.6（0.2–0.8）。x = 0.1 在 3×3 面板里有效，这里落在映射区之外
+        let narrow = Layout(id: "n", name: "n", rows: 3, cols: 2, slots: [
+            Slot(id: "n.a", cell: GridCell(row: 0, col: 0), title: "A", symbol: "", action: selectAll),
+            Slot(id: "n.b", cell: GridCell(row: 0, col: 1), title: "B", symbol: "", action: closeTab),
+        ])
+        let outside = anchored().touch(id: 2, at: (0.1, 0.85), t: 0.5).hold(id: 2, until: 0.9).lift(id: 2, t: 0.9)
+        let h = run(outside, environment: environment([narrow]), until: 1.0)
+        #expect(h.ends == [.liftOutside] && h.actions.isEmpty)
+        // 映射区左半对应左边一列
+        let inside = anchored().touch(id: 2, at: (0.3, 0.85), t: 0.5).hold(id: 2, until: 0.9).lift(id: 2, t: 0.9)
+        let k = run(inside, environment: environment([narrow]), until: 1.0)
+        #expect(k.actions.map(\.action) == [selectAll])
+        // 面板在参考坐标里居中
+        let shown = k.effects.compactMap { if case .updatePanel(let s) = $0 { s } else { nil } }.last
+        #expect(shown.map { abs($0.area.midX - $0.size.width / 2) < 1e-9 && $0.area.width < $0.size.width } == true)
+        #expect(shown.map { $0.frames.count == 1 && $0.frames[0] == $0.area } == true)
+    }
+}
+
 @Suite struct CornerPanelTests {
     /// 左下与右下两个角都开着（D26：每个角单独开关）
     private static let twoCorners: Tuning = {
