@@ -52,7 +52,7 @@ struct PanelStack: View {
                               phase: current ? model.phase : .shown,
                               sliderValues: state.sliderValues,
                               pulses: current ? model.pulses : [:], presses: current ? model.presses : [:],
-                              origin: state.origin, outside: current && f.outside)
+                              origin: nil, outside: current && f.outside)
                         .scaleEffect(t.scale)
                         .rotation3DEffect(.degrees(t.tilt), axis: (x: 1, y: 0, z: 0), perspective: 0.6)
                         .blur(radius: t.blur)
@@ -204,8 +204,7 @@ struct PanelView: View {
     var body: some View {
         let tester = HitTester(layout: layout, panelSize: size, slotGap: slotGap, hysteresis: 0)
         let chips = layout.slots.compactMap { slot in ChipGeometry.of(slot, tester: tester).map { (slot: slot, geometry: $0) } }
-        // 唤起位置可能远在面板之外（映射区只占触控板中间一部分），限制在面板范围内，弹开时不会整组大幅偏移
-        let origin = origin.map { CGPoint(x: min(max($0.x, 0), size.width), y: min(max($0.y, 0), size.height)) } ?? tester.center
+        let origin = origin ?? tester.center
         let farthest = chips.map { hypot($0.geometry.frame.midX - origin.x, $0.geometry.frame.midY - origin.y) }.max() ?? 1
         let lit = chips.first { $0.slot.id == (phase.chosen ?? hovered) && !$0.slot.isCancel }
         let fading: Bool = { if case .dissolving = phase { true } else { phase == .collapsing } }()

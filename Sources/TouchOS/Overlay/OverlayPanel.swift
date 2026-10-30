@@ -156,9 +156,10 @@ enum PanelMetrics {
     static let pressDown: TimeInterval = 0.06
     static let pressRelease: TimeInterval = 0.28
 
-    /// 弹开：从唤起位置方向拉近 `enterPull` 倍距离、缩小，按离唤起位置的距离依次出现，最晚延迟 `enterStagger`
+    /// 弹开：从按钮组中心对称展开——向中心拉近 `enterPull` 倍距离、缩小，由内向外依次出现，最晚延迟 `enterStagger`。
+    /// 不从唤起位置方向展开：唤起位置常在面板之外，整组会先偏向一侧再弹回（负责人反馈）
     static let enterScale: CGFloat = 0.85
-    static let enterPull: CGFloat = 0.35
+    static let enterPull: CGFloat = 0.15
     static let enterStagger: TimeInterval = 0.08
     static let enterResponse = 0.3
     static let enterDamping = 0.78
