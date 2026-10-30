@@ -183,6 +183,13 @@ enum PanelMetrics {
     static let cancelHintSize: CGFloat = 11
     static let cancelHintOffset: CGFloat = 26
     static let dimOpacity = 0.14
+    /// 柔焦区：按钮组身后一层压暗的毛玻璃，向外渐隐、看不出边界，让桌面内容退成色块，不和按钮上的字抢（负责人反馈：被桌面干扰）。
+    /// 范围为按钮组每边外扩 `focusMargin`，边缘羽化 `focusFeather`
+    static let focusMargin: CGFloat = 64
+    static let focusFeather: CGFloat = 44
+    static let focusTint = 0.3
+    static let focusHoloTint = 0.08
+    static let focusFade: TimeInterval = 0.22
 
     /// 面板名：唤起后显示这么久再淡出，切换面板时重新出现
     static let titleDuration: TimeInterval = 1.4
@@ -259,7 +266,10 @@ private struct OverlayRoot: View {
                     Color.black.opacity(model.phase.appeared && !model.phase.leaving ? PanelMetrics.dimOpacity : 0)
                         .animation(.easeOut(duration: 0.2), value: model.phase)
                 }
-                TimelineView(.animation) { timeline in
+                FocusField(rect: groupRect, ring: state.layout.isRing)
+                    .opacity(model.phase.appeared && !model.phase.leaving ? 1 : 0)
+                    .animation(.easeOut(duration: PanelMetrics.focusFade), value: model.phase)
+                                TimelineView(.animation) { timeline in
                     let _ = timeline.date
                     PanelStack(model: model, state: state, now: ProcessInfo.processInfo.systemUptime, reduceMotion: reduceMotion)
                 }
@@ -274,6 +284,35 @@ private struct OverlayRoot: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .environment(\.overlayStyle, OverlayStyle(model.appearance))
+    }
+}
+
+/// 柔焦区（见 `PanelMetrics.focusMargin`）：材质用羽化的形状做遮罩，没有硬边
+private struct FocusField: View {
+    let rect: CGRect
+    let ring: Bool
+    @Environment(\.overlayStyle) private var style
+
+    var body: some View {
+        let field = rect.insetBy(dx: -PanelMetrics.focusMargin, dy: -PanelMetrics.focusMargin)
+        let feather = PanelMetrics.focusFeather
+        let core = field.insetBy(dx: feather, dy: feather)
+        // 环形面板用圆，网格用大圆角矩形
+        let radius = ring ? min(core.width, core.height) / 2 : feather * 2
+        ZStack {
+            Rectangle().fill(.ultraThinMaterial)
+            Rectangle().fill(Color.black.opacity(PanelMetrics.focusTint))
+            if style.theme == .holo { Rectangle().fill(style.accent.opacity(PanelMetrics.focusHoloTint)) }
+        }
+        .environment(\.colorScheme, .dark)
+        .mask {
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
+                .frame(width: core.width, height: core.height)
+                .blur(radius: feather / 2)
+        }
+        .frame(width: field.width, height: field.height)
+        .offset(x: field.minX, y: field.minY)
+        .allowsHitTesting(false)
     }
 }
 
