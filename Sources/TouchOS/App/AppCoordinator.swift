@@ -30,7 +30,7 @@ final class AppCoordinator {
     private var simulator: TouchSimulator?
     private var permissionTimer: Timer?
 
-    // 降级原因（任一存在即不接受锚定）
+    // 降级原因（任一存在即不接受唤起）
     private var inputUnavailable: String?
     private var tapStatus = TapWatchdog.Status.permissionMissing
 

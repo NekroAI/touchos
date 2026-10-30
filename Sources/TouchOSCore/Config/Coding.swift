@@ -55,7 +55,6 @@ extension WidgetKind: Codable {}
 extension Modifier: Codable {}
 extension ScriptLanguage: Codable {}
 extension SystemCommand: Codable {}
-extension AnchorCorner: Codable {}
 
 extension Slot: Codable {
     private enum Keys: String, CodingKey { case id, cell, rect, sector, title, symbol, action, slider, widget }
@@ -226,18 +225,17 @@ extension Action: Codable {
 }
 
 extension PanelTrigger {
-    /// 全部唤起方式，设置页与配置文件按这个顺序排列。角落类只列四个角（左右边缘只给锚指按住的实验用）
-    public static let all: [PanelTrigger] = [.tapHold, .fourFingerTap, .threeFingerTap]
-        + corners.map(PanelTrigger.hold) + corners.map(PanelTrigger.cornerDoubleTap)
+    /// 全部唤起方式，设置页与配置文件按这个顺序排列
+    public static let all: [PanelTrigger] = [.tapHold, .fourFingerTap, .threeFingerTap] + zones.map(PanelTrigger.zoneTapHold)
 
-    public static let corners: [AnchorCorner] = [.topLeft, .topRight, .bottomLeft, .bottomRight]
+    /// 方位分区按触控板上从左上到右下的顺序
+    public static let zones: [TriggerZone] = [.topLeft, .top, .topRight, .left, .right, .bottomLeft, .bottom, .bottomRight]
 
-    /// 配置文件中的写法：`tapHold`、`hold.bottomLeft`、`doubleTap.topRight`、`threeFingerTap`、`fourFingerTap`
+    /// 配置文件中的写法：`tapHold`、`tapHold.topLeft`、`threeFingerTap`、`fourFingerTap`
     public var key: String {
         switch self {
         case .tapHold: "tapHold"
-        case .hold(let c): "hold.\(c.rawValue)"
-        case .cornerDoubleTap(let c): "doubleTap.\(c.rawValue)"
+        case .zoneTapHold(let z): "tapHold.\(z.rawValue)"
         case .threeFingerTap: "threeFingerTap"
         case .fourFingerTap: "fourFingerTap"
         }
@@ -245,13 +243,27 @@ extension PanelTrigger {
 
     public init?(key: String) {
         let parts = key.split(separator: ".", maxSplits: 1).map(String.init)
-        switch (parts.first, parts.count == 2 ? AnchorCorner(rawValue: parts[1]) : nil) {
-        case ("hold", let c?): self = .hold(c)
-        case ("doubleTap", let c?): self = .cornerDoubleTap(c)
+        switch (parts.first, parts.count == 2 ? TriggerZone(rawValue: parts[1]) : nil) {
+        case ("tapHold", let z?): self = .zoneTapHold(z)
         case ("tapHold", nil) where parts.count == 1: self = .tapHold
         case ("threeFingerTap", nil) where parts.count == 1: self = .threeFingerTap
         case ("fourFingerTap", nil) where parts.count == 1: self = .fourFingerTap
         default: return nil
+        }
+    }
+
+    /// 旧写法换成现在的（D38）：一指按住角落（`hold.*`）已去掉，返回 nil；角落轻点两下（`doubleTap.*`）
+    /// 换成同一方位的轻点后按住，原来的左右边缘对应左右两边的中段。其余原样返回，不认识的也保留
+    public static func migrated(key: String) -> String? {
+        let parts = key.split(separator: ".", maxSplits: 1).map(String.init)
+        switch parts.first {
+        case "hold" where parts.count == 2:
+            return nil
+        case "doubleTap" where parts.count == 2:
+            let zone = ["leftEdge": "left", "rightEdge": "right"][parts[1]] ?? parts[1]
+            return TriggerZone(rawValue: zone).map { PanelTrigger.zoneTapHold($0).key }
+        default:
+            return key
         }
     }
 }

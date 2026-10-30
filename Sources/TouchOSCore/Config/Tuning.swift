@@ -1,19 +1,20 @@
 import Foundation
 
-/// 锚定区位置（SRS 6.1）：四角之一，或整条左 / 右边缘
-public enum AnchorCorner: String, Sendable, CaseIterable {
-    case bottomLeft, bottomRight, topLeft, topRight, leftEdge, rightEdge
+/// 触控板边上的八个方位分区（D38）：四个角，加四条边的中段。第一下轻点落在开启的分区里，
+/// 接着按住打开该分区绑定的面板
+public enum TriggerZone: String, Sendable, CaseIterable {
+    case topLeft, top, topRight, left, right, bottomLeft, bottom, bottomRight
 }
 
 /// 可调参数（SRS 附录参数总表）。默认值为原型前的估计值，M0 闸门时按实测修正。
-/// 代码中所有阈值都从这里读取（SRS 0.3）；K8 起由配置文件 `anchor` / `tuning` 段提供。
+/// 代码中所有阈值都从这里读取（SRS 0.3）。
 public struct Tuning: Equatable, Sendable {
-    /// `P.anchorZoneW` / `P.anchorZoneH`：锚定区宽高（触控板比例）
-    public var anchorZoneW = 0.12
-    public var anchorZoneH = 0.15
-    /// `P.dwellMs`
-    public var dwellMs = 200.0
-    /// `P.stillThresholdMM`
+    /// `P.zoneW` / `P.zoneH`：方位分区的深度（触控板比例）。角为 `zoneW × zoneH`，边的中段夹在两角之间（D38）
+    public var zoneW = 0.12
+    public var zoneH = 0.15
+    /// `P.tapHoldDelayMs`：轻点后按住的第二下落下后停留这么久才打开面板，期间抬起即普通轻点（D38）
+    public var tapHoldDelayMs = 120.0
+    /// `P.stillThresholdMM`：确认期间手指的最大位移，超出即放弃
     public var stillThresholdMM = 2.0
     /// `P.palmSize`：nil 表示使用校准值，未校准时用 `defaultPalmSize`（FR-10.8）
     public var palmSize: Float?
@@ -34,8 +35,6 @@ public struct Tuning: Equatable, Sendable {
     /// 指点指抬起后等这么久再执行；期间手指在抬起点 `liftReturnMM` 以内落回则当作没抬起，接着移动（D36）
     public var liftGraceMs = 100.0
     public var liftReturnMM = 15.0
-    /// `P.panelDelayMs`
-    public var panelDelayMs = 200.0
     /// `P.cooldownMs`
     public var cooldownMs = 150.0
     /// `P.momentumSuppressMs`
@@ -44,29 +43,22 @@ public struct Tuning: Equatable, Sendable {
     public var frameTimeoutMs = 500.0
     /// `P.maxSessionSec`
     public var maxSessionSec = 30.0
-    /// 常驻模式（交互实验，decisions.md D14）：锚指抬起后面板保留，单指操作
-    public var stickyPanel = false
-    /// `P.stickyIdleMs`：常驻模式下板上没有手指超过该时长自动关闭
+    /// `P.stickyIdleMs`：面板开着、板上没有手指超过该时长自动关闭
     public var stickyIdleMs = 5000.0
-    /// 唤起方式（D19、D25、D26）：可以同时开启多种，每种可以绑定不同的面板。
-    /// 轻点唤起时板上没有锚指，面板直接进入常驻状态（D14）
-    /// 锚指按住：启用的角（SRS 默认只有左下角）
-    public var holdCorners: [AnchorCorner] = [.bottomLeft]
-    /// 单指在角落轻点两下：启用的角
-    public var doubleTapCorners: [AnchorCorner] = []
+    /// 唤起方式（D19、D25、D26、D38）：可以同时开启多种，每种可以绑定不同的面板
+    /// 在方位分区里轻点后按住：开启的分区
+    public var zoneTapHold: [TriggerZone] = []
     public var threeFingerTap = false
     public var fourFingerTap = false
     /// 轻点后按住（D25）
     public var tapHold = false
     /// `P.tapHoldReachMM`：轻点后按住的第二次落点与第一次轻点的最大距离
     public var tapHoldReachMM = 10.0
-    /// `P.tapHoldMinMs`：轻点后按住时第二根手指至少停留多久，抬起才执行；0 为不限制（D25，默认不启用）
-    public var tapHoldMinMs = 0.0
     /// `P.tapMaxMs`：一次轻点从第一根手指落下到全部抬起的最长时长
     public var tapMaxMs = 250.0
     /// `P.tapMaxMoveMM`：轻点期间每根手指的最大位移
     public var tapMaxMoveMM = 3.0
-    /// `P.doubleTapGapMs`：角落双击、轻点后按住两次触摸之间（前一次抬起到后一次落下）的最长间隔
+    /// `P.doubleTapGapMs`：轻点后按住两次触摸之间（前一次抬起到后一次落下）的最长间隔
     public var doubleTapGapMs = 300.0
     /// `P.navDistanceMM`：双指上下移动这么远切换一个面板（D23）
     public var navDistanceMM = 30.0

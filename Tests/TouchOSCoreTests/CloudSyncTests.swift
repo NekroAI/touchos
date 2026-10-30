@@ -28,9 +28,9 @@ import Testing
         local.sync.iCloud = true
         var cloud = AppConfig()
         cloud.appearance.theme = "lens"
-        cloud.general.stickyPanel = true
+        cloud.general.dimBackground = true
         let merged = CloudSync.merge(cloud: try AppConfig.decode(CloudSync.payload(cloud)), into: local)
-        #expect(merged.appearance.theme == "lens" && merged.general.stickyPanel)
+        #expect(merged.appearance.theme == "lens" && merged.general.dimBackground)
         #expect(!merged.general.enabled && merged.sizes.mappingScale == 0.8 && merged.sync.iCloud)
     }
 

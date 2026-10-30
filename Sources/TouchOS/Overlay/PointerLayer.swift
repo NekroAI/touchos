@@ -12,7 +12,7 @@ struct PointerLayer: View {
     let showTrail: Bool
     @Environment(\.overlayStyle) private var style
 
-    /// 画布只覆盖指示点周围这么大的方块（轨迹、光晕、全息读数、"松手取消"都在其内），跟着指示点移动。
+    /// 画布只覆盖指示点周围这么大的方块（轨迹、光晕、全息读数都在其内），跟着指示点移动。
     /// 不铺满整个窗口：画布每帧由 CPU 重新栅格化，面积决定开销（性能实测，D28）
     static let canvasSize: CGFloat = 320
 
@@ -24,20 +24,12 @@ struct PointerLayer: View {
             let _ = timeline.date
             let now = ProcessInfo.processInfo.systemUptime
             let p = model.displayedPointer(at: now)
-            let local = area
             ZStack(alignment: .topLeading) {
-                // 指示点在映射区之外：抬起即取消。显示按钮组范围的轮廓（提示要移回多远，D15）
-                if let p, !local.contains(p) {
-                    RoundedRectangle(cornerRadius: style.theme == .holo ? 6 : 26)
-                        .stroke(.white.opacity(PanelMetrics.boundsOpacity), style: StrokeStyle(lineWidth: 1.5, dash: [6, 6]))
-                        .frame(width: local.width + 20, height: local.height + 20)
-                        .offset(x: groupRect.minX + local.minX - 10, y: groupRect.minY + local.minY - 10)
-                }
                 if let anchor = p ?? model.samples.last?.p {
                     let half = Self.canvasSize / 2
                     Canvas { ctx, _ in
                         ctx.translateBy(x: half - anchor.x, y: half - anchor.y)
-                        draw(&ctx, pointer: p, now: now, inside: p.map { local.contains($0) } ?? true)
+                        draw(&ctx, pointer: p, now: now)
                     }
                     .frame(width: Self.canvasSize, height: Self.canvasSize)
                     .offset(x: groupRect.minX + anchor.x - half, y: groupRect.minY + anchor.y - half)
@@ -55,14 +47,11 @@ struct PointerLayer: View {
     }
 
     /// 坐标为按钮组 pt
-    private func draw(_ ctx: inout GraphicsContext, pointer: CGPoint?, now: TimeInterval, inside: Bool) {
+    /// 指示点在面板之外时照常绘制：抬起即取消是自然的预期，只由按钮组轻微变淡提示（D39）
+    private func draw(_ ctx: inout GraphicsContext, pointer: CGPoint?, now: TimeInterval) {
         let color = overCancel ? Color.gray : style.accent
         if showTrail { drawTrail(&ctx, now: now, color: color) }
         guard let p = pointer else { return }
-        guard inside else {
-            drawCancelPointer(&ctx, at: p)
-            return
-        }
         if style.theme == .holo {
             drawCrosshair(&ctx, at: p, color: color, area: area)
         } else {
@@ -95,27 +84,6 @@ struct PointerLayer: View {
         let readout = String(format: "X %.2f  Y %.2f", (p.x - area.minX) / max(area.width, 1), (p.y - area.minY) / max(area.height, 1))
         let text = ctx.resolve(Text(readout).font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(color.opacity(0.85)))
         ctx.draw(text, at: CGPoint(x: p.x + 14, y: p.y + 12), anchor: .topLeading)
-    }
-
-    /// 取消样式的指示点：深色圆底上一个白色 ×，下方深色胶囊里一行"松手取消"（浅色背景上也看得清）
-    private func drawCancelPointer(_ ctx: inout GraphicsContext, at p: CGPoint) {
-        let d = PanelMetrics.cancelPointerSize
-        let disc = CGRect(x: p.x - d / 2, y: p.y - d / 2, width: d, height: d)
-        ctx.fill(Path(ellipseIn: disc), with: .color(.black.opacity(PanelMetrics.cancelPointerFill)))
-        ctx.stroke(Path(ellipseIn: disc), with: .color(.white.opacity(0.9)), lineWidth: 1.5)
-        let k = d * 0.2
-        var cross = Path()
-        cross.move(to: CGPoint(x: p.x - k, y: p.y - k))
-        cross.addLine(to: CGPoint(x: p.x + k, y: p.y + k))
-        cross.move(to: CGPoint(x: p.x + k, y: p.y - k))
-        cross.addLine(to: CGPoint(x: p.x - k, y: p.y + k))
-        ctx.stroke(cross, with: .color(.white), style: StrokeStyle(lineWidth: 2, lineCap: .round))
-        let hint = ctx.resolve(Text("松手取消").font(.system(size: PanelMetrics.cancelHintSize, weight: .medium)).foregroundStyle(.white))
-        let size = hint.measure(in: CGSize(width: 200, height: 40))
-        let at = CGPoint(x: p.x, y: p.y + PanelMetrics.cancelHintOffset)
-        let capsule = CGRect(x: at.x - size.width / 2 - 8, y: at.y - size.height / 2 - 3, width: size.width + 16, height: size.height + 6)
-        ctx.fill(Path(roundedRect: capsule, cornerRadius: capsule.height / 2), with: .color(.black.opacity(PanelMetrics.cancelPointerFill)))
-        ctx.draw(hint, at: at)
     }
 
     /// 最近 `P.trailMs`、最长 `trailMaxLength` 的路径：越旧、越远越细越透明

@@ -78,10 +78,6 @@ enum PanelCommands {
         !panel.isEnabled || configs.config.panels.filter(\.isEnabled).count > 1
     }
 
-    @ViewBuilder static func enableButton(_ panel: PanelLayout, configs: ConfigController) -> some View {
-        Button(panel.isEnabled ? "停用面板" : "启用面板") { setEnabled(panel.id, !panel.isEnabled, configs: configs) }
-            .disabled(!canDisable(panel, configs: configs))
-    }
 
     static func remove(_ id: String, configs: ConfigController, navigation: SettingsNavigation) {
         guard configs.config.panels.count > 1 else { return }
@@ -178,12 +174,19 @@ private struct PanelHeader: View {
                     SizePicker(value: panel.cols, range: 1...AppConfig.maxCols, unit: "列") { resize(rows: panel.rows, cols: $0) }
                 }
             }
+            // 启用开关放在标题栏，一眼可见（D37、D38）：停用的面板保留配置，不参与唤起与切换
+            Toggle("启用", isOn: Binding(get: { panel.isEnabled },
+                                         set: { PanelCommands.setEnabled(panel.id, $0, configs: configs) }))
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .fixedSize()
+                .disabled(!PanelCommands.canDisable(panel, configs: configs))
+                .help(PanelCommands.canDisable(panel, configs: configs) ? "停用后保留配置，不参与唤起和切换" : "至少要有一个启用的面板")
             Menu {
                 Button("重命名") { editingName = true }
                 Button("复制面板") { PanelCommands.add(panel, configs: configs, navigation: navigation) }
                 Button("设为默认面板") { PanelCommands.makeDefault(panel.id, configs: configs) }
                     .disabled(isDefault || !panel.isEnabled)
-                PanelCommands.enableButton(panel, configs: configs)
                 Divider()
                 Button(resetTitle + "…") { confirmingReset = true }
                 Button("删除面板", role: .destructive) { PanelCommands.remove(panel.id, configs: configs, navigation: navigation) }
@@ -656,21 +659,22 @@ extension PanelTrigger {
         case .tapHold: "轻点后按住"
         case .fourFingerTap: "四指轻点"
         case .threeFingerTap: "三指轻点"
-        case .hold(let c): "按住\(c.title)"
-        case .cornerDoubleTap(let c): "\(c.title)轻点两下"
+        case .zoneTapHold(let z): "\(z.title)轻点后按住"
         }
     }
 }
 
-extension AnchorCorner {
+extension TriggerZone {
     var title: String {
         switch self {
         case .topLeft: "左上角"
+        case .top: "上边"
         case .topRight: "右上角"
+        case .left: "左边"
+        case .right: "右边"
         case .bottomLeft: "左下角"
+        case .bottom: "下边"
         case .bottomRight: "右下角"
-        case .leftEdge: "左边缘"
-        case .rightEdge: "右边缘"
         }
     }
 }
@@ -712,6 +716,8 @@ extension SystemCommand {
         case .screenshotWindow: "截取窗口"
         case .windowLeftHalf: "窗口：左半屏"
         case .windowRightHalf: "窗口：右半屏"
+        case .windowTopHalf: "窗口：上半屏"
+        case .windowBottomHalf: "窗口：下半屏"
         case .windowFill: "窗口：填满"
         case .windowCenter: "窗口：居中"
         case .windowNextDisplay: "窗口：下一个显示器"

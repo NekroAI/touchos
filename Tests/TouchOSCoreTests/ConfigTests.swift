@@ -18,7 +18,7 @@ private func temporaryStore() -> ConfigStore {
         let config = AppConfig.default
         #expect(try AppConfig.decode(try config.encoded()) == config)
         #expect(config.validate().isEmpty)
-        #expect(config.panels.map(\.id) == ["common", "numpad", "symbols", "media", "window", "edit"])
+        #expect(config.panels.map(\.id) == ["common", "numpad", "media", "window"])
     }
 
     @Test func everyActionTypeRoundTrips() throws {
@@ -49,7 +49,7 @@ private func temporaryStore() -> ConfigStore {
                  symbol: "c", action: .none, widget: .nowPlaying),
         ]
         for s in slots { #expect(try roundTrip(s) == s) }
-        #expect(try roundTrip(PresetPanels.editing) == PresetPanels.editing)
+        #expect(try roundTrip(PresetPanels.window) == PresetPanels.window)
     }
 
     @Test func srsExampleSlotDecodes() throws {
@@ -73,9 +73,12 @@ private func temporaryStore() -> ConfigStore {
     }
 
     @Test func triggerKeysRoundTrip() {
-        let all: [PanelTrigger] = AnchorCorner.allCases.flatMap { [.hold($0), .cornerDoubleTap($0)] } + [.threeFingerTap, .fourFingerTap, .tapHold]
-        for t in all { #expect(PanelTrigger(key: t.key) == t) }
-        for bad in ["hold", "hold.middle", "fourFingerTap.x", "swipe", ""] { #expect(PanelTrigger(key: bad) == nil) }
+        #expect(PanelTrigger.all.count == 3 + TriggerZone.allCases.count && Set(PanelTrigger.all.map(\.key)).count == PanelTrigger.all.count)
+        for t in PanelTrigger.all { #expect(PanelTrigger(key: t.key) == t) }
+        #expect(PanelTrigger.zoneTapHold(.topLeft).key == "tapHold.topLeft")
+        for bad in ["hold.bottomLeft", "doubleTap.topLeft", "tapHold.middle", "tapHold.top.x", "fourFingerTap.x", "swipe", ""] {
+            #expect(PanelTrigger(key: bad) == nil)
+        }
     }
 
     @Test func partialFileUsesDefaultsForMissingSections() throws {
@@ -86,25 +89,23 @@ private func temporaryStore() -> ConfigStore {
 
     @Test func appliesToTuningWithClamping() {
         var config = AppConfig()
-        config.triggers.set(.hold(.topRight), true)
-        config.triggers.set(.cornerDoubleTap(.bottomLeft), true)
+        config.triggers.set(.zoneTapHold(.bottomLeft), true)
+        config.triggers.set(.zoneTapHold(.topRight), true)
         config.triggers.set(.fourFingerTap, false)
-        config.general.stickyPanel = true
         config.sizes.panelScale = 5
         config.sizes.mappingScale = 0
         config.sizes.hitGapMM = 9
         config.bindings = [.init(trigger: .threeFingerTap, panel: "media"), .init(trigger: .fourFingerTap, panel: "edit")]
-        config.bindings.append(AppConfig.Binding(trigger: .hold(.topLeft), panel: "window"))
+        config.bindings.append(AppConfig.Binding(trigger: .zoneTapHold(.topLeft), panel: "window"))
         var t = Tuning()
         config.apply(to: &t)
-        #expect(t.holdCorners == [.topRight] && t.doubleTapCorners == [.bottomLeft] && t.tapHold && !t.fourFingerTap)
-        #expect(t.stickyPanel && !t.threeFingerTap)
+        #expect(t.zoneTapHold == [.topRight, .bottomLeft] && t.tapHold && !t.fourFingerTap && !t.threeFingerTap)
         #expect(t.panelScale == Tuning.panelScaleRange.upperBound && t.mappingScale == Tuning.mappingScaleRange.lowerBound)
         #expect(t.hitGapMM == Tuning.hitGapRange.upperBound)
         // 旧文件没有按钮间隙：取默认值
         let old = try? JSONDecoder().decode(AppConfig.Sizes.self, from: Data(#"{"panelScale":0.5,"mappingScale":0.4}"#.utf8))
         #expect(old?.hitGapMM == Tuning().hitGapMM && old?.panelScale == 0.5)
-        #expect(config.bindingMap == [.threeFingerTap: "media", .fourFingerTap: "edit", .hold(.topLeft): "window"])
+        #expect(config.bindingMap == [.threeFingerTap: "media", .fourFingerTap: "edit", .zoneTapHold(.topLeft): "window"])
     }
 
     @Test func generalFieldsAddedLaterDefaultWhenMissing() throws {
@@ -122,11 +123,11 @@ private func temporaryStore() -> ConfigStore {
     @Test func triggerListKeepsOrderAndUnknownEntries() throws {
         var triggers = AppConfig.Triggers()
         triggers.enabled = ["swipe", "fourFingerTap"]
-        triggers.set(.hold(.bottomLeft), true)
+        triggers.set(.zoneTapHold(.bottomLeft), true)
         triggers.set(.tapHold, true)
-        #expect(triggers.enabled == ["tapHold", "fourFingerTap", "hold.bottomLeft", "swipe"])
+        #expect(triggers.enabled == ["tapHold", "fourFingerTap", "tapHold.bottomLeft", "swipe"])
         triggers.set(.tapHold, false)
-        #expect(!triggers.isOn(.tapHold) && triggers.list == [.fourFingerTap, .hold(.bottomLeft)])
+        #expect(!triggers.isOn(.tapHold) && triggers.list == [.fourFingerTap, .zoneTapHold(.bottomLeft)])
         var config = AppConfig()
         config.triggers = triggers
         #expect(config.validate().map(\.kind) == [.unknownBinding("swipe")])
@@ -135,12 +136,36 @@ private func temporaryStore() -> ConfigStore {
     }
 
     @Test func legacyTriggerSwitchesMigrate() throws {
-        // D26 之前：开关加一个角落；开着按住时，绑定了面板的其他角也能唤起。迁移后加上轻点后按住（D25）
+        // D26 之前：开关加一个角落，迁移后加上轻点后按住（D25）。一指按住去掉、角落轻点两下换成同一方位的分区（D38）
         let json = #"{"schemaVersion":1,"triggers":{"hold":true,"anchorCorner":"topRight","fourFingerTap":false,"threeFingerTap":true},"bindings":[{"trigger":"hold.topLeft","panel":"media"},{"trigger":"doubleTap.bottomRight","panel":"media"}]}"#
         let config = try AppConfig.decode(Data(json.utf8))
-        #expect(config.triggers.list == [.tapHold, .threeFingerTap, .hold(.topLeft), .hold(.topRight)])
+        #expect(config.triggers.list == [.tapHold, .threeFingerTap])
+        #expect(config.bindingMap == [.zoneTapHold(.bottomRight): "media"])
+        // 开着轻点两下：所在的角与绑定了面板的其他角都开启
+        let doubleTap = #"{"schemaVersion":1,"triggers":{"anchorCorner":"leftEdge","cornerDoubleTap":true},"bindings":[{"trigger":"doubleTap.bottomRight","panel":"media"},{"trigger":"hold.topLeft","panel":"media"}]}"#
+        let migrated = try AppConfig.decode(Data(doubleTap.utf8))
+        #expect(migrated.triggers.list == [.tapHold, .fourFingerTap, .zoneTapHold(.left), .zoneTapHold(.bottomRight)])
+        let defaultCorner = try AppConfig.decode(Data(#"{"schemaVersion":1,"triggers":{"cornerDoubleTap":true}}"#.utf8))
+        #expect(defaultCorner.triggers.list == [.tapHold, .fourFingerTap, .zoneTapHold(.bottomLeft)])
         let defaults = try AppConfig.decode(Data(#"{"schemaVersion":1,"triggers":{}}"#.utf8))
         #expect(defaults.triggers.list == [.tapHold, .fourFingerTap])
+    }
+
+    @Test func legacyTriggerKeysMigrate() throws {
+        // D38：`hold.*` 去掉，`doubleTap.*` 换成同一方位，原来的左右边缘对应左右两边的中段；重复的合并
+        let json = #"{"schemaVersion":1,"triggers":{"enabled":["hold.bottomLeft","doubleTap.topRight","doubleTap.rightEdge","tapHold.topRight","threeFingerTap","doubleTap.middle","wave"]},"bindings":[{"trigger":"hold.bottomLeft","panel":"media"},{"trigger":"doubleTap.leftEdge","panel":"window"},{"trigger":"fourFingerTap","panel":"numpad"}]}"#
+        let config = try AppConfig.decode(Data(json.utf8))
+        #expect(config.triggers.enabled == ["threeFingerTap", "tapHold.topRight", "tapHold.right", "wave"])
+        #expect(config.bindings == [.init(trigger: .zoneTapHold(.left), panel: "window"), .init(trigger: .fourFingerTap, panel: "numpad")])
+        // 原来只开了一指按住：至少保留轻点后按住，面板仍能唤起；本来就全部关闭的保持关闭
+        let holdOnly = try AppConfig.decode(Data(#"{"schemaVersion":1,"triggers":{"enabled":["hold.bottomLeft","hold.topRight"]}}"#.utf8))
+        #expect(holdOnly.triggers.list == [.tapHold])
+        let none = try AppConfig.decode(Data(#"{"schemaVersion":1,"triggers":{"enabled":[]}}"#.utf8))
+        #expect(none.triggers.enabled.isEmpty)
+        #expect(PanelTrigger.migrated(key: "hold.topLeft") == nil && PanelTrigger.migrated(key: "doubleTap.nowhere") == nil)
+        #expect(PanelTrigger.migrated(key: "doubleTap.leftEdge") == "tapHold.left")
+        #expect(PanelTrigger.migrated(key: "doubleTap.bottom") == "tapHold.bottom")
+        for key in ["tapHold", "tapHold.top", "fourFingerTap", "hold", "swipe"] { #expect(PanelTrigger.migrated(key: key) == key) }
     }
 }
 
@@ -294,11 +319,11 @@ private func temporaryStore() -> ConfigStore {
     }
 
     @Test func ringItemsReorder() {
-        let ring = PresetPanels.editing
-        let moved = ring.movingRingItem("edit.copy", to: 3)
-        #expect(moved.ringItems.map(\.id.raw).prefix(4) == ["edit.paste", "edit.cut", "edit.redo", "edit.copy"])
-        #expect(moved.ringCenter?.id == "edit.close" && moved.isRing)
-        #expect(ring.movingRingItem("edit.copy", to: 99).ringItems.last?.id == "edit.copy")
+        let ring = PresetPanels.window
+        let moved = ring.movingRingItem("window.top", to: 3)
+        #expect(moved.ringItems.map(\.id.raw).prefix(4) == ["window.fullscreen", "window.right", "window.closeWindow", "window.top"])
+        #expect(moved.ringCenter?.id == "window.close" && moved.isRing)
+        #expect(ring.movingRingItem("window.top", to: 99).ringItems.last?.id == "window.top")
         #expect(ring.movingRingItem("x", to: 0) == ring)
     }
 
@@ -309,10 +334,10 @@ private func temporaryStore() -> ConfigStore {
     }
 
     @Test func ringRebuildKeepsCenter() {
-        let ring = PresetPanels.editing
-        #expect(ring.ringItems.count == 8 && ring.ringCenter?.id == "edit.close")
+        let ring = PresetPanels.window
+        #expect(ring.ringItems.count == 8 && ring.ringCenter?.id == "window.close")
         let fewer = ring.rebuiltRing(items: Array(ring.ringItems.prefix(3)))
-        #expect(fewer.ringItems.count == 3 && fewer.ringCenter?.id == "edit.close" && fewer.isRing)
+        #expect(fewer.ringItems.count == 3 && fewer.ringCenter?.id == "window.close" && fewer.isRing)
         #expect(ring.rebuiltRing(items: ring.ringItems, center: .some(nil)).ringCenter == nil)
     }
 
@@ -335,7 +360,7 @@ private func temporaryStore() -> ConfigStore {
     @Test func presetOriginFollowsCopies() {
         #expect(PresetPanels.origin(of: "browser")?.id == "browser")
         #expect(PresetPanels.origin(of: "browser-2-3")?.id == "browser")
-        #expect(PresetPanels.origin(of: "edit-2")?.id == "edit")
+        #expect(PresetPanels.origin(of: "window-2")?.id == "window" && PresetPanels.origin(of: "edit-2") == nil)
         #expect(PresetPanels.origin(of: "browsers") == nil && PresetPanels.origin(of: "panel-2") == nil)
         #expect(PresetPanels.origin(of: "browser-x") == nil)
     }

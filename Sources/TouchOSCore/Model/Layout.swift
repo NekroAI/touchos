@@ -181,8 +181,9 @@ public enum SystemCommand: String, Sendable, CaseIterable {
     case playPause, nextTrack, previousTrack
     case lockScreen, missionControl, showDesktop, launchpad
     case screenshotArea, screenshotWindow
-    /// 前台窗口：左半屏、右半屏、填满、居中、移到下一个显示器（D23 预置"窗口"面板）
+    /// 前台窗口：左半屏、右半屏、填满、居中、移到下一个显示器（D23）；上半屏、下半屏（D38 环形「窗口」面板）
     case windowLeftHalf, windowRightHalf, windowFill, windowCenter, windowNextDisplay
+    case windowTopHalf, windowBottomHalf
 }
 
 public enum Action: Equatable, Sendable {

@@ -13,24 +13,18 @@ private func panel(_ id: String) -> Layout {
 
 private let four = [panel("p0"), panel("p1"), panel("p2"), panel("p3")]
 
-private var sticky: Tuning {
-    var t = Tuning.test
-    t.stickyPanel = true
-    return t
-}
-
 private func run(_ g: Gesture, panels: [Layout] = four, events: [(TimeInterval, SessionEvent)] = [],
                  until: TimeInterval) -> Harness {
     var env = SessionEnvironment.test
     env.panels = panels
-    var h = Harness(tuning: sticky, environment: env)
+    var h = Harness(tuning: .test, environment: env)
     h.run(g.frames(rate: rate), events: events, until: until)
     return h
 }
 
-/// 锚指驻留进入激活后在 0.4 抬起（常驻模式）
+/// 四指轻点打开面板，板上不留手指
 private func opened() -> Gesture {
-    Gesture(device: .builtIn).touch(id: 1, at: Spot.anchor, t: 0).hold(id: 1, until: 0.4).lift(id: 1, t: 0.4)
+    .fourFingerTap()
 }
 
 /// 两指在 0.8 落下，用 `over` 秒同时移到新位置后抬起

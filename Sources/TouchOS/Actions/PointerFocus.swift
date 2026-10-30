@@ -21,7 +21,7 @@ enum PointerFocus {
     static func applies(to action: Action) -> Bool {
         switch action {
         case .keyboardShortcut, .textSnippet: true
-        case .system(let c): [.windowLeftHalf, .windowRightHalf, .windowFill, .windowCenter, .windowNextDisplay].contains(c)
+        case .system(let c): [.windowLeftHalf, .windowRightHalf, .windowFill, .windowCenter, .windowNextDisplay, .windowTopHalf, .windowBottomHalf].contains(c)
         default: false
         }
     }

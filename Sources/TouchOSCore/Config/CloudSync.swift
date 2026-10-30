@@ -3,7 +3,7 @@ import Foundation
 /// iCloud 同步（D35）：哪些设置跟着 iCloud 走、两边都改过时怎么办。文件读写与监听在应用层，这里只做判断。
 ///
 /// 只属于这台 Mac、不写进 iCloud 的设置：「启用 TouchOS」开关、尺寸（面板大小、映射区、按钮间隙，随屏幕与触控板不同）、
-/// 同步开关本身。其余（面板、外观、唤起方式与绑定、常驻、排除的应用等）各台 Mac 一致
+/// 同步开关本身。其余（面板、外观、唤起方式与绑定、排除的应用等）各台 Mac 一致
 public enum CloudSync {
     /// iCloud 云盘里的文件夹与文件名：固定，不让用户选（负责人要求），另一台 Mac 打开开关即可接入
     public static let folderName = "Nekro TouchOS"

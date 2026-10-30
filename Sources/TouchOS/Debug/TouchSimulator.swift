@@ -154,7 +154,7 @@ final class TouchSimulator {
         ],
     ]
 
-    /// 用当前的布局与参数（打开轻点唤起、关闭锚指按住）跑一段脚本
+    /// 用当前的布局与参数（打开轻点唤起与轻点后按住、关闭方位分区）跑一段脚本
     private func run(_ script: Script, presses: [TimeInterval]) {
         timer?.invalidate()
         var environment = driver.environmentSnapshot
@@ -166,7 +166,7 @@ final class TouchSimulator {
         var tuning = driver.tuningSnapshot
         tuning.fourFingerTap = true
         tuning.tapHold = true
-        tuning.holdCorners = []
+        tuning.zoneTapHold = []
         let machine = SessionStateMachine(tuning: tuning, environment: environment)
         var previous: [Int: CGPoint] = [:]
         let start = ProcessInfo.processInfo.systemUptime

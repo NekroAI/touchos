@@ -37,7 +37,7 @@ final class EventTapController: @unchecked Sendable {
     private let mode = TOAtomicCreate()!            // TapPolicy.Mode 原始值 | passGestures << 8
     private let cooldownUntil = TOAtomicCreate()!
     private let momentumUntil = TOAtomicCreate()!
-    // 候选期被丢弃的指针位移，由 CursorLock 取走（FR-7.6）
+    // 确认期被丢弃的指针位移，由 CursorLock 取走（FR-7.6）
     private let deltaX = TOAtomicCreate()!
     private let deltaY = TOAtomicCreate()!
     // NFR-2 回调耗时（调试叠层可用时才统计）：每桶一个计数器，最大值以纳秒记
@@ -96,7 +96,7 @@ final class EventTapController: @unchecked Sendable {
         TOAtomicStore(mode, UInt64(policy.mode.rawValue) | (policy.passGestures ? 1 << 8 : 0))
     }
 
-    /// 取出候选期累计的指针位移并清零
+    /// 取出确认期累计的指针位移并清零
     func takeCursorDelta() -> CGVector {
         CGVector(dx: TOAtomicExchangeDouble(deltaX, 0), dy: TOAtomicExchangeDouble(deltaY, 0))
     }
@@ -183,7 +183,7 @@ final class EventTapController: @unchecked Sendable {
         if Self.pointerMoveTypes.contains(type) {
             switch mode {
             case .armed:
-                // FR-7.6：候选期丢弃并累计位移
+                // FR-7.6：确认期丢弃并累计位移
                 TOAtomicAddDouble(deltaX, Double(event.getIntegerValueField(.mouseEventDeltaX)))
                 TOAtomicAddDouble(deltaY, Double(event.getIntegerValueField(.mouseEventDeltaY)))
                 return nil
@@ -199,7 +199,7 @@ final class EventTapController: @unchecked Sendable {
                 if type == .leftMouseDown { onPhysicalPress() }  // T4：上报后放行
                 return pass
             case .active:
-                // 激活态的物理按压（D18：执行并保留、只有锚指时翻页）；按键事件一律吞掉
+                // 激活态的物理按压（D18：执行并保留）；按键事件一律吞掉
                 if Self.buttonDownTypes.contains(type) {
                     if !sawPressure || now - stageUpAt <= Self.pressPairingWindow {
                         stageUpAt = 0

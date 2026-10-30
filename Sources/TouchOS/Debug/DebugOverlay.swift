@@ -3,7 +3,7 @@ import SwiftUI
 import TouchOSCore
 
 /// 调试叠层（SRS FR-14.4）：每台设备的实时触点与帧率。只在内存中显示，永不写盘（FR-4.7）。
-/// 另显示最近 10 条状态转移、候选失败与会话结束原因，以及延迟实测（NFR-1、NFR-2、AC-1），统计从打开叠层时开始。
+/// 另显示最近 10 条状态转移、确认失败与会话结束原因，以及延迟实测（NFR-1、NFR-2、AC-1），统计从打开叠层时开始。
 @MainActor
 @Observable
 final class DebugOverlayModel {
@@ -16,7 +16,7 @@ final class DebugOverlayModel {
 
     var devices: [DeviceState] = []
     var status = ""
-    /// 会话状态、最近一次候选失败或会话结束原因
+    /// 会话状态、最近一次确认失败或会话结束原因
     var session: [String] = []
 
     /// 只保留最近 10 条（FR-14.4）
@@ -27,7 +27,7 @@ final class DebugOverlayModel {
 
     var pointerLatency = LatencyHistogram(bucketWidth: pointerBucketWidth, buckets: pointerBuckets)
     var tapTiming: LatencyHistogram?
-    var lastPanelShown: (anchorToActive: TimeInterval, activeToShown: TimeInterval)?
+    var lastPanelShown: (armToActive: TimeInterval, activeToShown: TimeInterval)?
     /// 力度触控板最近一次压力事件：阶段（0 无、1 点按、2 深按）与力度
     var pressure: (stage: Int, value: Float)?
 
@@ -218,9 +218,9 @@ private struct LatencySection: View {
             Text("指示点 \(summary(model.pointerLatency, p: 0.95, label: "p95"))")
             Text("拦截回调 \(model.tapTiming.map { summary($0, p: 0.99, label: "p99", micro: true) } ?? "—")")
             if let s = model.lastPanelShown {
-                Text(String(format: "锚定→激活 %.0f ms · 激活→面板 %.0f ms", s.anchorToActive * 1000, s.activeToShown * 1000))
+                Text(String(format: "确认→激活 %.0f ms · 激活→面板 %.0f ms", s.armToActive * 1000, s.activeToShown * 1000))
             } else {
-                Text("锚定→激活 — · 激活→面板 —")
+                Text("确认→激活 — · 激活→面板 —")
             }
         }
     }

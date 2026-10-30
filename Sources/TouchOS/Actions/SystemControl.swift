@@ -36,7 +36,7 @@ enum SystemControl {
             key(21, [.command, .shift], "⇧⌘4")
             Thread.sleep(forTimeInterval: windowShotDelay)
             key(49, [], "Space")
-        case .windowLeftHalf, .windowRightHalf, .windowFill, .windowCenter, .windowNextDisplay:
+        case .windowLeftHalf, .windowRightHalf, .windowFill, .windowCenter, .windowNextDisplay, .windowTopHalf, .windowBottomHalf:
             try WindowManager.apply(command, bundleID: frontmostBundleID)
         }
     }
@@ -90,6 +90,9 @@ enum WindowManager {
         switch command {
         case .windowLeftHalf: target = CGRect(x: area.minX, y: area.minY, width: area.width / 2, height: area.height)
         case .windowRightHalf: target = CGRect(x: area.midX, y: area.minY, width: area.width / 2, height: area.height)
+        // 辅助功能坐标向下为正：上半屏从可见区域顶端开始
+        case .windowTopHalf: target = CGRect(x: area.minX, y: area.minY, width: area.width, height: area.height / 2)
+        case .windowBottomHalf: target = CGRect(x: area.minX, y: area.midY, width: area.width, height: area.height / 2)
         case .windowFill: target = area
         case .windowCenter:
             let w = area.width * centerFraction, h = area.height * centerFraction

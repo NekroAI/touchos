@@ -4,7 +4,7 @@ import OSLog
 import TouchOSCore
 
 /// 直接驱动触控板的触觉马达（FR-6.14）。
-/// `NSHapticFeedbackManager` 只在系统认为用户正在使用触控板时才震动：锚指抬起后单指移动（D14）时，
+/// `NSHapticFeedbackManager` 只在系统认为用户正在使用触控板时才震动：面板开着、单指移动时，
 /// 指针事件全部被拦截丢弃，系统不再播放（负责人实测）。这里改用 MultitouchSupport 的 `MTActuator*` 按设备直接震动。
 /// 只在 input.queue 上使用。
 final class TrackpadHaptics: @unchecked Sendable {

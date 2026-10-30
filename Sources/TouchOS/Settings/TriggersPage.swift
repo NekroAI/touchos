@@ -3,7 +3,7 @@ import Combine
 import SwiftUI
 import TouchOSCore
 
-/// 唤起与手感（D25、D26）：左边逐项开关唤起方式、各自选择打开的面板；右边按实际比例画出触控板分区，
+/// 唤起与手感（D25、D26、D38）：左边逐项开关唤起方式、各自选择打开的面板；右边按实际比例画出触控板分区，
 /// 悬停某一项时突出它在板上的范围
 struct TriggersPage: View {
     let configs: ConfigController
@@ -15,7 +15,7 @@ struct TriggersPage: View {
         HStack(spacing: 0) {
             Form {
                 Section {
-                    row(.tapHold, detail: "单指轻点一下，紧接着在附近按住：第二下落下面板就出现，滑到按钮上抬起即执行")
+                    row(.tapHold, detail: "单指轻点一下，紧接着在附近按住片刻：面板出现，滑到按钮上抬起即执行")
                     if tapToClick && configs.config.triggers.isOn(.tapHold) { TapToClickWarning() }
                     row(.fourFingerTap, detail: "四指同时轻点；面板开着时再轻点一次关闭")
                     row(.threeFingerTap, detail: "三指同时轻点；会占用系统的三指查询手势")
@@ -28,17 +28,12 @@ struct TriggersPage: View {
                     }
                 }
                 Section {
-                    ForEach(PanelTrigger.corners, id: \.self) { row(.hold($0), title: $0.title) }
+                    ForEach(PanelTrigger.zones, id: \.self) { row(.zoneTapHold($0), title: $0.title) }
                 } header: {
-                    SectionHeader(title: "一指按住角落", note: "一指按住角落不动，面板出现后用另一指选择；按住的手指抬起即关闭。")
-                }
-                Section {
-                    ForEach(PanelTrigger.corners, id: \.self) { row(.cornerDoubleTap($0), title: $0.title) }
-                } header: {
-                    SectionHeader(title: "在角落轻点两下", note: "在开启了这一项的角落里轻点，优先算作「角落轻点两下」，不会触发轻点后按住。")
+                    SectionHeader(title: "在边角轻点后按住",
+                                  note: "第一下轻点落在开启的角或边上，接着按住，打开为这个方位选择的面板；落在别处仍是普通的轻点后按住。")
                 }
                 Section("手感") {
-                    Toggle("常驻：锚指抬起后面板保留", isOn: binding(configs, \.general.stickyPanel))
                     LabeledSlider(title: "面板大小（占屏幕）", value: binding(configs, \.sizes.panelScale), range: Tuning.panelScaleRange)
                         .onHover { hover(.panel, $0) }
                     LabeledSlider(title: "映射区大小（占触控板）", value: binding(configs, \.sizes.mappingScale), range: Tuning.mappingScaleRange)
@@ -163,8 +158,7 @@ struct TriggerPreview: View {
     let focus: PreviewFocus?
 
     static let width: CGFloat = 320
-    private static let holdColor = Color.orange
-    private static let doubleTapColor = Color.purple
+    private static let zoneColor = Color.purple
     private static let tapHoldColor = Color.teal
 
     private var device: CGSize { MultitouchBridge.fallbackSurfaceMM }
@@ -217,8 +211,7 @@ struct TriggerPreview: View {
             if config.triggers.isOn(.tapHold) {
                 LegendItem(color: Self.tapHoldColor, text: "轻点后按住：第二下落在第一下 \(reach) mm 以内，板上任意位置都可以")
             }
-            if !tuning.holdCorners.isEmpty { LegendItem(color: Self.holdColor, text: "一指按住角落") }
-            if !tuning.doubleTapCorners.isEmpty { LegendItem(color: Self.doubleTapColor, text: "角落轻点两下") }
+            if !tuning.zoneTapHold.isEmpty { LegendItem(color: Self.zoneColor, text: "边角：第一下落在这里，按住后打开该方位的面板") }
         }
     }
 
@@ -264,27 +257,18 @@ struct TriggerPreview: View {
                    at: CGPoint(x: pad.midX, y: (mapping.maxY + pad.maxY) / 2))
         }
 
-        // 角落
-        for c in PanelTrigger.corners {
-            let hold = t.holdCorners.contains(c), double = t.doubleTapCorners.contains(c)
-            let focusedHold = focus == .trigger(.hold(c)), focusedDouble = focus == .trigger(.cornerDoubleTap(c))
-            guard hold || double || focusedHold || focusedDouble else { continue }
-            let zone = view(anchorZone(c, width: t.anchorZoneW, height: t.anchorZoneH))
+        // 方位分区（D38）
+        for zone in PanelTrigger.zones {
+            let on = t.zoneTapHold.contains(zone), focused = focus == .trigger(.zoneTapHold(zone))
+            guard on || focused else { continue }
+            let rect = view(triggerZone(zone, width: t.zoneW, height: t.zoneH))
             var z = ctx
-            z.opacity = dimmed(focusedHold || focusedDouble)
-            let shape = Path(roundedRect: zone.insetBy(dx: 2, dy: 2), cornerRadius: 5)
-            if hold || focusedHold {
-                z.fill(shape, with: .color(Self.holdColor.opacity(hold ? 0.45 : 0.15)))
-            }
-            if double || focusedDouble {
-                if !(hold || focusedHold) { z.fill(shape, with: .color(Self.doubleTapColor.opacity(double ? 0.3 : 0.1))) }
-                z.stroke(shape, with: .color(Self.doubleTapColor), style: StrokeStyle(lineWidth: 1.5, dash: [3, 2]))
-            } else if !hold {
-                z.stroke(shape, with: .color(Self.holdColor), style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
-            }
-            let symbol = hold || focusedHold ? (double || focusedDouble ? "hand.tap.fill" : "hand.point.up.left.fill") : "hand.tap"
-            z.draw(Text(Image(systemName: symbol)).font(.system(size: 12)).foregroundStyle(.primary.opacity(0.8)),
-                   at: CGPoint(x: zone.midX, y: zone.midY))
+            z.opacity = dimmed(focused)
+            let shape = Path(roundedRect: rect.insetBy(dx: 2, dy: 2), cornerRadius: 5)
+            z.fill(shape, with: .color(Self.zoneColor.opacity(on ? 0.35 : 0.12)))
+            z.stroke(shape, with: .color(Self.zoneColor), style: StrokeStyle(lineWidth: on ? 1.5 : 1, dash: [3, 2]))
+            z.draw(Text(Image(systemName: "hand.tap")).font(.system(size: 12)).foregroundStyle(.primary.opacity(0.8)),
+                   at: CGPoint(x: rect.midX, y: rect.midY))
         }
 
         // 轻点后按住：在映射区中心示意第二下的允许范围

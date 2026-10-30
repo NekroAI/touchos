@@ -1,19 +1,21 @@
 import CoreGraphics
 import Foundation
 
-/// 锚定区（SRS 6.1）：触控板归一化坐标中的矩形，原点左下。
-public func anchorZone(_ corner: AnchorCorner, width w: Double, height h: Double) -> CGRect {
-    switch corner {
+/// 方位分区（D38）：触控板归一化坐标中的矩形，原点左下。角为 `w × h`，边的中段夹在两角之间
+public func triggerZone(_ zone: TriggerZone, width w: Double, height h: Double) -> CGRect {
+    switch zone {
     case .bottomLeft: CGRect(x: 0, y: 0, width: w, height: h)
     case .bottomRight: CGRect(x: 1 - w, y: 0, width: w, height: h)
     case .topLeft: CGRect(x: 0, y: 1 - h, width: w, height: h)
     case .topRight: CGRect(x: 1 - w, y: 1 - h, width: w, height: h)
-    case .leftEdge: CGRect(x: 0, y: 0, width: w, height: 1)
-    case .rightEdge: CGRect(x: 1 - w, y: 0, width: w, height: 1)
+    case .top: CGRect(x: w, y: 1 - h, width: 1 - 2 * w, height: h)
+    case .bottom: CGRect(x: w, y: 0, width: 1 - 2 * w, height: h)
+    case .left: CGRect(x: 0, y: h, width: w, height: 1 - 2 * h)
+    case .right: CGRect(x: 1 - w, y: h, width: w, height: 1 - 2 * h)
     }
 }
 
-/// 闭区间包含（锚定区边界上的点算在区内）
+/// 闭区间包含（边界上的点算在区内）
 func closedContains(_ rect: CGRect, _ p: CGPoint) -> Bool {
     p.x >= rect.minX && p.x <= rect.maxX && p.y >= rect.minY && p.y <= rect.maxY
 }
@@ -35,7 +37,7 @@ public struct Mapper: Sendable {
         self.scale = size
     }
 
-    /// 新接触可以成为指点指的区域（锚定区另行排除，FR-6.5）
+    /// 新接触可以成为指点指的区域
     public func acceptsPointerStart(_ p: CGPoint) -> Bool {
         p.x >= margin && p.x <= 1 - margin && p.y >= margin && p.y <= 1 - margin
     }

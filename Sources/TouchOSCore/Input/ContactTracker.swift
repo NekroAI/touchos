@@ -51,7 +51,7 @@ public struct ContactTracker: Sendable {
                     phase = moved ? .moved : .stationary
                 } else {
                     // SPEC-QUESTION: FR-4.2 没有规定"接触中"却没有上一帧（例如在手指已在板上时才注册回调）的情况。
-                    // 按字面理解为位移为 0 → stationary；该接触没有 began，因此不会成为锚指或指点指。
+                    // 按字面理解为位移为 0 → stationary；该接触没有 began，因此不会成为唤起的第二下或指点指。
                     phase = .stationary
                 }
             case RawContactState.ended:

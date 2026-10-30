@@ -7,12 +7,10 @@ public struct AppConfig: Codable, Equatable, Sendable {
     public static let currentVersion = 1
 
     public struct General: Codable, Equatable, Sendable {
-        /// 暂停时不接受锚定、不显示面板（FR-11.2）
+        /// 暂停时不接受唤起、不显示面板（FR-11.2）
         public var enabled = true
         public var haptics = true
         public var showTrail = true
-        /// 常驻模式：锚指抬起后面板保留（D14）
-        public var stickyPanel = false
         public var dimBackground = false
         /// 这些应用在前台时不接受唤起
         public var blacklist: [String] = []
@@ -22,7 +20,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         public init() {}
 
         private enum Keys: String, CodingKey {
-            case enabled, haptics, showTrail, stickyPanel, dimBackground, blacklist, focusPointerWindow
+            case enabled, haptics, showTrail, dimBackground, blacklist, focusPointerWindow
         }
 
         /// 缺省的字段取默认值：旧版本写出的文件没有后来新增的字段
@@ -32,7 +30,6 @@ public struct AppConfig: Codable, Equatable, Sendable {
             enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? d.enabled
             haptics = try c.decodeIfPresent(Bool.self, forKey: .haptics) ?? d.haptics
             showTrail = try c.decodeIfPresent(Bool.self, forKey: .showTrail) ?? d.showTrail
-            stickyPanel = try c.decodeIfPresent(Bool.self, forKey: .stickyPanel) ?? d.stickyPanel
             dimBackground = try c.decodeIfPresent(Bool.self, forKey: .dimBackground) ?? d.dimBackground
             blacklist = try c.decodeIfPresent([String].self, forKey: .blacklist) ?? d.blacklist
             focusPointerWindow = try c.decodeIfPresent(Bool.self, forKey: .focusPointerWindow) ?? d.focusPointerWindow
@@ -43,7 +40,6 @@ public struct AppConfig: Codable, Equatable, Sendable {
             try c.encode(enabled, forKey: .enabled)
             try c.encode(haptics, forKey: .haptics)
             try c.encode(showTrail, forKey: .showTrail)
-            try c.encode(stickyPanel, forKey: .stickyPanel)
             try c.encode(dimBackground, forKey: .dimBackground)
             try c.encode(blacklist, forKey: .blacklist)
             try c.encode(focusPointerWindow, forKey: .focusPointerWindow)
@@ -61,7 +57,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         public init() {}
     }
 
-    /// 启用的唤起方式（D26）：可以多选，角落类每个角单独开关。默认开轻点后按住与四指轻点（D25）
+    /// 启用的唤起方式（D26、D38）：可以多选，方位分区每个单独开关。默认开轻点后按住与四指轻点（D25）
     public struct Triggers: Codable, Equatable, Sendable {
         /// `PanelTrigger.key`，按 `PanelTrigger.all` 的顺序
         public var enabled: [String] = [PanelTrigger.tapHold.key, PanelTrigger.fourFingerTap.key]
@@ -83,20 +79,28 @@ public struct AppConfig: Codable, Equatable, Sendable {
         enum Keys: String, CodingKey { case enabled, hold, anchorCorner, threeFingerTap, fourFingerTap, cornerDoubleTap }
 
         /// D26 之前是几个开关加一个角落：按旧的含义换算，并加上新的默认方式轻点后按住（D25）。
-        /// 旧版本里绑定了面板的其他角也能唤起，这部分由 `AppConfig` 在读完绑定后补上
+        /// 旧版本里绑定了面板的其他角也能唤起，这部分由 `AppConfig` 在读完绑定后补上。
+        /// 一指按住角落已去掉、角落轻点两下改为方位分区的轻点后按住（D38），见 `PanelTrigger.migrated(key:)`
         public init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: Keys.self)
+            let keys: [String]
             if let enabled = try c.decodeIfPresent([String].self, forKey: .enabled) {
-                self.enabled = enabled
-                return
+                keys = enabled
+            } else {
+                let corner = try c.decodeIfPresent(String.self, forKey: .anchorCorner) ?? "bottomLeft"
+                var list = [PanelTrigger.tapHold.key]
+                if try c.decodeIfPresent(Bool.self, forKey: .cornerDoubleTap) ?? false { list.append("doubleTap.\(corner)") }
+                if try c.decodeIfPresent(Bool.self, forKey: .threeFingerTap) ?? false { list.append(PanelTrigger.threeFingerTap.key) }
+                if try c.decodeIfPresent(Bool.self, forKey: .fourFingerTap) ?? true { list.append(PanelTrigger.fourFingerTap.key) }
+                keys = list
             }
-            let corner = try c.decodeIfPresent(String.self, forKey: .anchorCorner).flatMap(AnchorCorner.init) ?? .bottomLeft
-            var list: [PanelTrigger] = [.tapHold]
-            if try c.decodeIfPresent(Bool.self, forKey: .hold) ?? false { list.append(.hold(corner)) }
-            if try c.decodeIfPresent(Bool.self, forKey: .cornerDoubleTap) ?? false { list.append(.cornerDoubleTap(corner)) }
-            if try c.decodeIfPresent(Bool.self, forKey: .threeFingerTap) ?? false { list.append(.threeFingerTap) }
-            if try c.decodeIfPresent(Bool.self, forKey: .fourFingerTap) ?? true { list.append(.fourFingerTap) }
-            enabled = PanelTrigger.all.filter(list.contains).map(\.key)
+            var migrated: [String] = []
+            for key in keys {
+                if let k = PanelTrigger.migrated(key: key), !migrated.contains(k) { migrated.append(k) }
+            }
+            // 原来只开了一指按住角落：去掉后至少保留默认的轻点后按住，面板仍能唤起
+            if migrated.isEmpty && !keys.isEmpty { migrated = [PanelTrigger.tapHold.key] }
+            enabled = PanelTrigger.all.map(\.key).filter(migrated.contains) + migrated.filter { PanelTrigger(key: $0) == nil }
         }
 
         public func encode(to encoder: Encoder) throws {
@@ -159,7 +163,11 @@ public struct AppConfig: Codable, Equatable, Sendable {
         public var panel: String
 
         public init(trigger: PanelTrigger, panel: String) {
-            self.trigger = trigger.key
+            self.init(key: trigger.key, panel: panel)
+        }
+
+        init(key: String, panel: String) {
+            self.trigger = key
             self.panel = panel
         }
     }
@@ -190,18 +198,16 @@ public struct AppConfig: Codable, Equatable, Sendable {
         triggers = try c.decodeIfPresent(Triggers.self, forKey: .triggers) ?? Triggers()
         sizes = try c.decodeIfPresent(Sizes.self, forKey: .sizes) ?? Sizes()
         panels = try c.decodeIfPresent([Layout].self, forKey: .panels) ?? PresetPanels.all
-        bindings = try c.decodeIfPresent([Binding].self, forKey: .bindings) ?? []
+        bindings = (try c.decodeIfPresent([Binding].self, forKey: .bindings) ?? []).compactMap { b in
+            // 一指按住角落的绑定丢弃，角落轻点两下的换成同一方位（D38）
+            PanelTrigger.migrated(key: b.trigger).map { Binding(key: $0, panel: b.panel) }
+        }
         sync = try c.decodeIfPresent(Sync.self, forKey: .sync) ?? Sync()
         if let old = try? c.nestedContainer(keyedBy: Triggers.Keys.self, forKey: .triggers), !old.contains(.enabled) {
-            // D26 之前：开着按住 / 轻点两下时，绑定了面板的其他角也能唤起
+            // D26 之前：开着轻点两下时，绑定了面板的其他角也能唤起
+            let zones = triggers.list.contains { if case .zoneTapHold = $0 { true } else { false } }
             for trigger in bindingMap.keys {
-                switch trigger {
-                case .hold where triggers.list.contains { if case .hold = $0 { true } else { false } },
-                     .cornerDoubleTap where triggers.list.contains { if case .cornerDoubleTap = $0 { true } else { false } }:
-                    triggers.set(trigger, true)
-                default:
-                    break
-                }
+                if case .zoneTapHold = trigger, zones { triggers.set(trigger, true) }
             }
         }
     }
@@ -225,12 +231,10 @@ public struct AppConfig: Codable, Equatable, Sendable {
     /// 把配置中的参数写入 `Tuning`，其余参数保留
     public func apply(to t: inout Tuning) {
         let list = triggers.list
-        t.holdCorners = list.compactMap { if case .hold(let c) = $0 { c } else { nil } }
-        t.doubleTapCorners = list.compactMap { if case .cornerDoubleTap(let c) = $0 { c } else { nil } }
+        t.zoneTapHold = list.compactMap { if case .zoneTapHold(let z) = $0 { z } else { nil } }
         t.threeFingerTap = list.contains(.threeFingerTap)
         t.fourFingerTap = list.contains(.fourFingerTap)
         t.tapHold = list.contains(.tapHold)
-        t.stickyPanel = general.stickyPanel
         t.panelScale = min(max(sizes.panelScale, Tuning.panelScaleRange.lowerBound), Tuning.panelScaleRange.upperBound)
         t.mappingScale = min(max(sizes.mappingScale, Tuning.mappingScaleRange.lowerBound), Tuning.mappingScaleRange.upperBound)
         t.hitGapMM = min(max(sizes.hitGapMM, Tuning.hitGapRange.lowerBound), Tuning.hitGapRange.upperBound)

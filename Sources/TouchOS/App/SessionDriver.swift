@@ -29,11 +29,11 @@ final class SessionDriver: @unchecked Sendable {
     private let haptics = TrackpadHaptics()
     /// 当前（或刚结束的）会话所在的设备，触觉反馈震这台设备
     private var sessionDevice: TrackpadDeviceID?
-    // 延迟打点（调试叠层）：当前处理的触点帧时间戳、本次候选的锚指落下时刻
+    // 延迟打点（调试叠层）：当前处理的触点帧时间戳、本次确认期开始的时刻
     private var frameTimestamp: TimeInterval?
     private var armStartedAt: TimeInterval?
 
-    /// 调试信息（状态、候选失败原因、会话结束原因），在 input.queue 上调用
+    /// 调试信息（状态、确认失败原因、会话结束原因），在 input.queue 上调用
     var onDebug: (@Sendable (String) -> Void)?
     /// 在关闭上按住后打开编辑窗口（D23），在主线程调用
     var onOpenEditor: (@MainActor @Sendable (String) -> Void)?
@@ -139,7 +139,7 @@ final class SessionDriver: @unchecked Sendable {
             DispatchQueue.main.async { self.onOpenEditor?(panelID) }
         case .armFailed(let reason):
             log.info("arm failed: \(reason.rawValue, privacy: .public)")
-            onDebug?("候选失败：\(reason.rawValue)")
+            onDebug?("确认失败：\(reason.rawValue)")
         case .sessionEnded(let end):
             log.info("session ended: \(String(describing: end), privacy: .public)")
             onDebug?("会话结束：\(end)")
@@ -158,21 +158,21 @@ final class SessionDriver: @unchecked Sendable {
     static func dismissal(for end: SessionEnd?) -> OverlayController.Dismissal {
         switch end {
         case .committed(let id): .commit(id)
-        case .anchorLifted, .escape, .cancelSlot, .idleTimeout, .thirdFinger, .handoff, .liftAfterPress, .liftOutside, .tapToggle, .edit: .fade
+        case .escape, .cancelSlot, .idleTimeout, .handoff, .liftAfterPress, .liftOutside, .tapToggle, .edit: .fade
         default: .immediate
         }
     }
 
-    /// AC-1：锚指落下 → 进入激活 → 面板在主线程显示，后一段在主线程上补全
+    /// AC-1：第二下落下（确认期开始）→ 进入激活 → 面板在主线程显示，后一段在主线程上补全
     private func panelShownSample() -> (@Sendable (TimeInterval) -> LatencySample)? {
         guard onLatency != nil, let armedAt = armStartedAt, case .active(let ctx) = machine.state else { return nil }
         let entered = ctx.enteredAt
-        return { now in .panelShown(anchorToActive: entered - armedAt, activeToShown: now - entered) }
+        return { now in .panelShown(armToActive: entered - armedAt, activeToShown: now - entered) }
     }
 
     /// 空闲时有新手指落下才读取一次，改动在下一次唤起生效
     /// 空闲时每次有手指落下：冻结光标所在屏幕决定面板尺寸（FR-8.5、8.6），并读取滑杆的实际值。
-    /// 在进入激活之前送回状态机；轻点唤起（D19）不经过候选期，所以不能等到候选开始再刷新
+    /// 在进入激活之前送回状态机；三指 / 四指轻点（D19）不经过确认期，所以不能等到确认期开始再刷新
     private func refreshEnvironment() {
         environment.screenSize = Self.cursorScreenSize()
         environment.sliderValues[.volume] = SystemVolume.get()
@@ -188,7 +188,7 @@ final class SessionDriver: @unchecked Sendable {
         t.repeatIntervalMs = NSEvent.keyRepeatInterval * 1000
         guard t != machine.tuning else { return }
         _ = machine.handle(.tuning(t))
-        onDebug?("面板 \(t.panelScale) · 映射区 \(t.mappingScale) · 常驻 \(t.stickyPanel ? "开" : "关")")
+        onDebug?("面板 \(t.panelScale) · 映射区 \(t.mappingScale)")
     }
 
     private func updateTimer() {
@@ -221,7 +221,7 @@ final class SessionDriver: @unchecked Sendable {
 enum LatencySample: Sendable {
     /// 触点帧时间戳 → 主线程更新指示点
     case pointer(TimeInterval)
-    case panelShown(anchorToActive: TimeInterval, activeToShown: TimeInterval)
+    case panelShown(armToActive: TimeInterval, activeToShown: TimeInterval)
 }
 
 /// 主线程上的浮层控制

@@ -208,14 +208,8 @@ enum PanelMetrics {
     static let pointerHalo: CGFloat = 30
     static let trailMaxWidth: CGFloat = 5
     static let trailMaxOpacity = 0.45
-    /// 指示点在映射区之外（此时抬起即取消，D21、D22）：按钮组整体变淡，显示按钮组范围的轮廓，
-    /// 指示点换成不带强调色的 × 并标注"松手取消"
-    static let outsideGroupOpacity = 0.45
-    static let boundsOpacity = 0.4
-    static let cancelPointerSize: CGFloat = 24
-    static let cancelPointerFill = 0.75
-    static let cancelHintSize: CGFloat = 11
-    static let cancelHintOffset: CGFloat = 26
+    /// 指示点在映射区之外（此时抬起即取消，D21、D22）：按钮组轻微变淡，不另加标记（D39，负责人认为在面板外松手取消是自然预期）
+    static let outsideGroupOpacity = 0.85
     static let dimOpacity = 0.14
     /// 轨迹最长这么多 pt：手指移得快时只留一段彗尾，不画出绕回来的大弧
     static let trailMaxLength: CGFloat = 90

@@ -94,42 +94,27 @@ public enum PresetPanels {
         cell("media", "lock", 4, 2, "锁屏", "lock", .system(.lockScreen)),
     ])
 
-    public static let window = Layout(id: "window", name: "窗口", rows: rows, cols: cols, slots: [
-        cell("window", "left", 0, 0, "左半屏", "rectangle.lefthalf.filled", .system(.windowLeftHalf)),
-        cell("window", "fill", 1, 0, "填满", "rectangle.inset.filled", .system(.windowFill)),
-        cell("window", "center", 2, 0, "居中", "rectangle.center.inset.filled", .system(.windowCenter)),
-        cell("window", "fullscreen", 3, 0, "全屏", "arrow.up.left.and.arrow.down.right", key(3, [.control, .command], "⌃⌘F")),
-        cell("window", "right", 4, 0, "右半屏", "rectangle.righthalf.filled", .system(.windowRightHalf)),
-        cell("window", "lastApp", 0, 1, w: 2, "上一个应用", "arrow.left.arrow.right", key(48, [.command], "⌘⇥")),
-        close("window"),
-        cell("window", "display", 3, 1, "下一个显示器", "display.2", .system(.windowNextDisplay)),
-        cell("window", "minimize", 4, 1, "最小化", "minus.rectangle", key(46, [.command], "⌘M")),
-        cell("window", "hide", 0, 2, "隐藏", "eye.slash", key(4, [.command], "⌘H")),
-        cell("window", "finder", 1, 2, "访达", "folder", .openApp(bundleID: "com.apple.finder")),
-        cell("window", "notes", 2, 2, "备忘录", "note.text", .openApp(bundleID: "com.apple.Notes")),
-        cell("window", "terminal", 3, 2, "终端", "terminal", .openApp(bundleID: "com.apple.Terminal")),
-        cell("window", "settings", 4, 2, "系统设置", "gearshape", .openApp(bundleID: "com.apple.systempreferences")),
-    ])
-
-    private static func ringItem(_ id: String, _ title: String, _ symbol: String, _ action: Action) -> Slot {
-        Slot(id: SlotID("edit.\(id)"), shape: .rect(.zero), title: title, symbol: symbol, action: action)
+    private static func ringItem(_ panel: String, _ id: String, _ title: String, _ symbol: String, _ action: Action) -> Slot {
+        Slot(id: SlotID("\(panel).\(id)"), shape: .rect(.zero), title: title, symbol: symbol, action: action)
     }
 
-    public static let editing = Layout.ring(id: "edit", name: "编辑", items: [
-        ringItem("copy", "拷贝", "doc.on.doc", key(8, [.command], "⌘C")),
-        ringItem("paste", "粘贴", "doc.on.clipboard", key(9, [.command], "⌘V")),
-        ringItem("cut", "剪切", "scissors", key(7, [.command], "⌘X")),
-        ringItem("redo", "重做", "arrow.uturn.forward", key(6, [.command, .shift], "⇧⌘Z")),
-        ringItem("find", "查找", "magnifyingglass", key(3, [.command], "⌘F")),
-        ringItem("save", "保存", "square.and.arrow.down", key(1, [.command], "⌘S")),
-        ringItem("selectAll", "全选", "selection.pin.in.out", key(0, [.command], "⌘A")),
-        ringItem("undo", "撤销", "arrow.uturn.backward", key(6, [.command], "⌘Z")),
-    ], center: Slot(id: "edit.close", shape: .rect(.zero), title: "关闭", symbol: "xmark", action: .none))
+    /// 环形「窗口」（D38）：方向即结果，上下左右四个半屏；四个斜角是居中、全屏、最小化、关闭窗口。
+    /// 从正上方起顺时针排列
+    public static let window = Layout.ring(id: "window", name: "窗口", items: [
+        ringItem("window", "top", "上半屏", "rectangle.tophalf.filled", .system(.windowTopHalf)),
+        ringItem("window", "fullscreen", "全屏", "arrow.up.left.and.arrow.down.right", key(3, [.control, .command], "⌃⌘F")),
+        ringItem("window", "right", "右半屏", "rectangle.righthalf.filled", .system(.windowRightHalf)),
+        ringItem("window", "closeWindow", "关闭窗口", "xmark.rectangle", key(13, [.command], "⌘W")),
+        ringItem("window", "bottom", "下半屏", "rectangle.bottomhalf.filled", .system(.windowBottomHalf)),
+        ringItem("window", "minimize", "最小化", "minus.rectangle", key(46, [.command], "⌘M")),
+        ringItem("window", "left", "左半屏", "rectangle.lefthalf.filled", .system(.windowLeftHalf)),
+        ringItem("window", "center", "居中", "rectangle.center.inset.filled", .system(.windowCenter)),
+    ], center: Slot(id: "window.close", shape: .rect(.zero), title: "关闭", symbol: "xmark", action: .none))
 
-    /// 首次启动写入的面板，第一个为默认面板
-    public static let all = [common, numpad, symbols, media, window, editing]
-    /// 新建面板可选的模板：默认面板之外还有浏览器
-    public static let templates = all + [browser]
+    /// 首次启动写入的面板，第一个为默认面板（D38）
+    public static let all = [common, numpad, media, window]
+    /// 新建面板可选的模板：默认面板之外还有符号、浏览器
+    public static let templates = all + [symbols, browser]
 
     /// 面板来自哪个预置面板：ID 相同，或是它的副本（`browser-2`、`browser-2-3`）
     public static func origin(of id: String) -> Layout? {

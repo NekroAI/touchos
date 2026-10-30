@@ -27,7 +27,7 @@ private func contact(_ frame: TouchFrame, _ id: Int) -> Contact? {
         }
     }
 
-    @Test func anchorIsStationaryBetweenBeganAndEnded() {
+    @Test func restingFingerIsStationaryBetweenBeganAndEnded() {
         let phases = frames.compactMap { contact($0, 1)?.phase }
         #expect(phases.count == 64)
         #expect(phases.first == .began)

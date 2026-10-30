@@ -158,7 +158,6 @@ private struct Sidebar: View {
                     .contextMenu {
                         Button("复制") { PanelCommands.add(panel, configs: configs, navigation: navigation) }
                         Button("设为默认面板") { PanelCommands.makeDefault(panel.id, configs: configs) }.disabled(isDefault || !panel.isEnabled)
-                        PanelCommands.enableButton(panel, configs: configs)
                         Divider()
                         Button("删除", role: .destructive) { PanelCommands.remove(panel.id, configs: configs, navigation: navigation) }
                             .disabled(configs.config.panels.count <= 1)
@@ -616,7 +615,7 @@ private struct AboutPage: View {
             Image(systemName: "hand.point.up.left.fill").font(.system(size: 52)).foregroundStyle(.tint)
             Text("Nekro TouchOS").font(.title.weight(.semibold))
             Text("版本 \(version)").foregroundStyle(.secondary)
-            Text("一指按住或多指轻点唤出面板，另一指在触控板上直接选择。").multilineTextAlignment(.center)
+            Text("轻点后按住唤出面板，手指在触控板上的位置直接对应按钮，抬起即执行。").multilineTextAlignment(.center)
             Link("项目主页 github.com/NekroAI/touchos", destination: URL(string: "https://github.com/NekroAI/touchos")!)
             Text("开源许可：GPL-3.0-or-later").font(.callout).foregroundStyle(.secondary)
             Text("TouchOS 读取触控板原始触点，仅在内存中处理，从不记录或上传。")

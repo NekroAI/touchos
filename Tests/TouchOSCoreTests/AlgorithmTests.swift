@@ -4,13 +4,16 @@ import Testing
 @testable import TouchOSCore
 
 @Suite struct AlgorithmTests {
-    @Test func anchorZonesForEveryCorner() {
-        #expect(anchorZone(.bottomLeft, width: 0.1, height: 0.2) == CGRect(x: 0, y: 0, width: 0.1, height: 0.2))
-        #expect(anchorZone(.bottomRight, width: 0.1, height: 0.2) == CGRect(x: 0.9, y: 0, width: 0.1, height: 0.2))
-        #expect(anchorZone(.topLeft, width: 0.1, height: 0.2) == CGRect(x: 0, y: 0.8, width: 0.1, height: 0.2))
-        #expect(anchorZone(.topRight, width: 0.1, height: 0.2) == CGRect(x: 0.9, y: 0.8, width: 0.1, height: 0.2))
-        #expect(anchorZone(.leftEdge, width: 0.1, height: 0.2) == CGRect(x: 0, y: 0, width: 0.1, height: 1))
-        #expect(anchorZone(.rightEdge, width: 0.1, height: 0.2) == CGRect(x: 0.9, y: 0, width: 0.1, height: 1))
+    @Test func triggerZonesForEveryDirection() {
+        // D38：四个角 0.1 × 0.2，四条边的中段夹在两角之间
+        #expect(triggerZone(.bottomLeft, width: 0.1, height: 0.2) == CGRect(x: 0, y: 0, width: 0.1, height: 0.2))
+        #expect(triggerZone(.bottomRight, width: 0.1, height: 0.2) == CGRect(x: 0.9, y: 0, width: 0.1, height: 0.2))
+        #expect(triggerZone(.topLeft, width: 0.1, height: 0.2) == CGRect(x: 0, y: 0.8, width: 0.1, height: 0.2))
+        #expect(triggerZone(.topRight, width: 0.1, height: 0.2) == CGRect(x: 0.9, y: 0.8, width: 0.1, height: 0.2))
+        #expect(triggerZone(.top, width: 0.1, height: 0.2) == CGRect(x: 0.1, y: 0.8, width: 1 - 2 * 0.1, height: 0.2))
+        #expect(triggerZone(.bottom, width: 0.1, height: 0.2) == CGRect(x: 0.1, y: 0, width: 1 - 2 * 0.1, height: 0.2))
+        #expect(triggerZone(.left, width: 0.1, height: 0.2) == CGRect(x: 0, y: 0.2, width: 0.1, height: 1 - 2 * 0.2))
+        #expect(triggerZone(.right, width: 0.1, height: 0.2) == CGRect(x: 0.9, y: 0.2, width: 0.1, height: 1 - 2 * 0.2))
     }
 
     @Test func mapperNormalizesClampsAndFlipsY() {

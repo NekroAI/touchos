@@ -3,7 +3,7 @@ import Foundation
 import Testing
 @testable import TouchOSCore
 
-// 交互实验（decisions.md D12、D13、D23）：扇区、滑杆、按压动作、各角绑定面板
+// 交互实验（decisions.md D12、D13、D23）：扇区、滑杆、按压动作、面板开着时的指点指
 
 private let rate = 90.0
 
@@ -41,7 +41,6 @@ private enum ExpSpot {
     static let plain = (0.8, 0.85)
     static let sliderLeft = (0.2, 0.2)
     static let sliderRight = (0.8, 0.2)
-    static let bottomRightAnchor = (0.95, 0.06)
 }
 
 private func environment(_ panels: [Layout], bindings: [PanelTrigger: String] = [:]) -> SessionEnvironment {
@@ -58,8 +57,9 @@ private func run(_ g: Gesture, environment: SessionEnvironment = environment([ex
     return h
 }
 
-private func anchored(until: TimeInterval = 1.2) -> Gesture {
-    Gesture(device: .builtIn).touch(id: 1, at: Spot.anchor, t: 0).hold(id: 1, until: until)
+/// 轻点后按住在 `p` 打开面板，手指 2 是指点指，按住到 `until`（0.22 打开）
+private func pointing(at p: (Double, Double), until: TimeInterval) -> Gesture {
+    .tapHold(at: p, until: until)
 }
 
 private func activeLayout(_ h: Harness) -> String? {
@@ -115,7 +115,7 @@ private func activeLayout(_ h: Harness) -> String? {
 @Suite struct PressTests {
     @Test func pressExecutesAndKeepsPanel() {
         // D18：按压执行一次并保留，可以连按
-        let g = anchored().touch(id: 2, at: ExpSpot.dual, t: 0.5).hold(id: 2, until: 1.0)
+        let g = pointing(at: ExpSpot.dual, until: 1.0)
         let h = run(g, events: [(0.6, .physicalPress), (0.75, .physicalPress)], until: 1.0)
         #expect(h.actions.map(\.action) == [closeTab, closeTab])
         #expect(h.ends.isEmpty)
@@ -123,14 +123,14 @@ private func activeLayout(_ h: Harness) -> String? {
     }
 
     @Test func liftAfterPressOnSameSlotClosesWithoutExecuting() {
-        let g = anchored().touch(id: 2, at: ExpSpot.dual, t: 0.5).hold(id: 2, until: 0.8).lift(id: 2, t: 0.8)
+        let g = pointing(at: ExpSpot.dual, until: 0.8).lift(id: 2, t: 0.8)
         let h = run(g, events: [(0.65, .physicalPress)], until: 1.0)
         #expect(h.actions.map(\.action) == [closeTab])
         #expect(h.ends == [.liftAfterPress])
     }
 
     @Test func movingToAnotherSlotAfterPressCommitsOnLift() {
-        let g = anchored().touch(id: 2, at: ExpSpot.dual, t: 0.5).hold(id: 2, until: 0.7)
+        let g = pointing(at: ExpSpot.dual, until: 0.7)
             .move(id: 2, to: ExpSpot.plain, over: 0.1).hold(id: 2, until: 0.9).lift(id: 2, t: 0.9)
         let h = run(g, events: [(0.6, .physicalPress)], until: 1.1)
         #expect(h.actions.map(\.action) == [closeTab, selectAll])
@@ -140,7 +140,7 @@ private func activeLayout(_ h: Harness) -> String? {
     @Test func pressOnSliderAppliesPreviewAndKeepsIt() {
         var env = environment([experiment])
         env.sliderValues[.volume] = 0.3
-        let g = anchored().touch(id: 2, at: ExpSpot.sliderRight, t: 0.5).hold(id: 2, until: 0.7)
+        let g = pointing(at: ExpSpot.sliderRight, until: 0.7)
             .move(id: 2, to: ExpSpot.plain, over: 0.1).hold(id: 2, until: 1.0)
         let h = run(g, environment: env, events: [(0.6, .physicalPress)], until: 1.0)
         let applied = h.effects.compactMap { if case .slider(.volume, let v) = $0 { v } else { nil } }
@@ -152,8 +152,8 @@ private func activeLayout(_ h: Harness) -> String? {
     }
 
     @Test func pressOnCancelOrWithoutPointerDoesNothing() {
-        let cancel = anchored().touch(id: 2, at: Spot.null, t: 0.5).hold(id: 2, until: 0.9)
-        let single = anchored()
+        let cancel = pointing(at: Spot.null, until: 0.9)
+        let single = Gesture.fourFingerTap()
         for h in [run(cancel, environment: .test, events: [(0.6, .physicalPress)], until: 1.0),
                   run(single, environment: .test, events: [(0.6, .physicalPress)], until: 1.0)] {
             #expect(h.actions.isEmpty)
@@ -163,7 +163,7 @@ private func activeLayout(_ h: Harness) -> String? {
 
     @Test func pressWithoutPointerNoLongerFlipsPanels() {
         // D23：去掉按压翻页，改为双指切换
-        let h = run(anchored(), environment: environment([experiment, radial]), events: [(0.3, .physicalPress)], until: 0.5)
+        let h = run(.fourFingerTap(), environment: environment([experiment, radial]), events: [(0.3, .physicalPress)], until: 0.5)
         #expect(activeLayout(h) == "exp")
     }
 }
@@ -187,7 +187,7 @@ private func activeLayout(_ h: Harness) -> String? {
         #expect(abs(geometry.mapping(of: narrow).width - 0.36) < 1e-9)
         #expect(abs(geometry.frame(of: narrow).minX - 120) < 1e-9 && geometry.frame(of: narrow).minY == 0)
         // 没有格子的布局按参考大小
-        #expect(geometry.size(of: PresetPanels.editing) == CGSize(width: 600, height: 400))
+        #expect(geometry.size(of: PresetPanels.window) == CGSize(width: 600, height: 400))
     }
 
     @Test func oversizedGridShrinksToTheLimit() {
@@ -207,12 +207,12 @@ private func activeLayout(_ h: Harness) -> String? {
             Slot(id: "n.a", cell: GridCell(row: 0, col: 0), title: "A", symbol: "", action: selectAll),
             Slot(id: "n.b", cell: GridCell(row: 0, col: 1), title: "B", symbol: "", action: closeTab),
         ])
-        let outside = anchored().touch(id: 2, at: (0.1, 0.85), t: 0.5).hold(id: 2, until: 0.9).lift(id: 2, t: 0.9)
-        let h = run(outside, environment: environment([narrow]), until: 1.0)
+        let outside = pointing(at: (0.1, 0.85), until: 0.9).lift(id: 2, t: 0.9)
+        let h = run(outside, environment: environment([narrow]), until: 1.1)
         #expect(h.ends == [.liftOutside] && h.actions.isEmpty)
         // 映射区左半对应左边一列
-        let inside = anchored().touch(id: 2, at: (0.3, 0.85), t: 0.5).hold(id: 2, until: 0.9).lift(id: 2, t: 0.9)
-        let k = run(inside, environment: environment([narrow]), until: 1.0)
+        let inside = pointing(at: (0.3, 0.85), until: 0.9).lift(id: 2, t: 0.9)
+        let k = run(inside, environment: environment([narrow]), until: 1.1)
         #expect(k.actions.map(\.action) == [selectAll])
         // 面板在参考坐标里居中
         let shown = k.effects.compactMap { if case .updatePanel(let s) = $0 { s } else { nil } }.last
@@ -221,40 +221,9 @@ private func activeLayout(_ h: Harness) -> String? {
     }
 }
 
-@Suite struct CornerPanelTests {
-    /// 左下与右下两个角都开着（D26：每个角单独开关）
-    private static let twoCorners: Tuning = {
-        var t = Tuning.test
-        t.holdCorners = [.bottomLeft, .bottomRight]
-        return t
-    }()
-
-    @Test func cornerOpensItsBoundPanel() {
-        let env = environment([experiment, radial], bindings: [.hold(.bottomRight): "radial"])
-        let left = run(anchored(until: 0.5), environment: env, tuning: Self.twoCorners, until: 0.5)
-        #expect(activeLayout(left) == "exp")
-        let right = run(Gesture(device: .builtIn).touch(id: 1, at: ExpSpot.bottomRightAnchor, t: 0).hold(id: 1, until: 0.5),
-                        environment: env, tuning: Self.twoCorners, until: 0.5)
-        #expect(activeLayout(right) == "radial")
-        // 没开的角不唤起，即使绑定了面板
-        let off = run(Gesture(device: .builtIn).touch(id: 1, at: ExpSpot.bottomRightAnchor, t: 0).hold(id: 1, until: 0.5),
-                      environment: env, until: 0.5)
-        #expect(activeLayout(off) == nil)
-    }
-
-    @Test func pointerCannotStartInTheActiveCornersZone() {
-        let env = environment([experiment], bindings: [.hold(.bottomRight): "exp"])
-        let g = Gesture(device: .builtIn).touch(id: 1, at: ExpSpot.bottomRightAnchor, t: 0).hold(id: 1, until: 1.0)
-            .touch(id: 2, at: (0.94, 0.08), t: 0.5).hold(id: 2, until: 0.9)
-        let h = run(g, environment: env, tuning: Self.twoCorners, until: 0.9)
-        guard case .active(let ctx) = h.machine.state else { Issue.record("not active"); return }
-        #expect(ctx.pointer == nil)
-    }
-}
-
 @Suite struct SliderTests {
     @Test func sliderPreviewsWhileMovingAndAppliesOnLift() {
-        let g = anchored().touch(id: 2, at: ExpSpot.sliderLeft, t: 0.5).move(id: 2, to: ExpSpot.sliderRight, over: 0.2)
+        let g = pointing(at: ExpSpot.sliderLeft, until: 0.5).move(id: 2, to: ExpSpot.sliderRight, over: 0.2)
             .hold(id: 2, until: 0.8).lift(id: 2, t: 0.8)
         let h = run(g, until: 1.0)
         let applied = h.effects.compactMap { if case .slider(.volume, let v) = $0 { v } else { nil } }
@@ -273,7 +242,7 @@ private func activeLayout(_ h: Harness) -> String? {
     @Test func sliderAppliesLiveAndLeavingRestores() {
         var env = environment([experiment])
         env.sliderValues[.volume] = 0.3
-        let g = anchored().touch(id: 2, at: ExpSpot.sliderLeft, t: 0.5).move(id: 2, to: ExpSpot.sliderRight, over: 0.2)
+        let g = pointing(at: ExpSpot.sliderLeft, until: 0.5).move(id: 2, to: ExpSpot.sliderRight, over: 0.2)
             .move(id: 2, to: ExpSpot.plain, over: 0.2).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
         let h = run(g, environment: env, until: 1.2)
         let applied = h.effects.compactMap { if case .slider(.volume, let v) = $0 { v } else { nil } }
@@ -288,13 +257,13 @@ private func activeLayout(_ h: Harness) -> String? {
     @Test func liftOutsideRestoresAndLiftOnSliderKeeps() {
         var env = environment([experiment])
         env.sliderValues[.volume] = 0.3
-        let outside = anchored().touch(id: 2, at: ExpSpot.sliderLeft, t: 0.5).move(id: 2, to: ExpSpot.sliderRight, over: 0.2)
+        let outside = pointing(at: ExpSpot.sliderLeft, until: 0.5).move(id: 2, to: ExpSpot.sliderRight, over: 0.2)
             .move(id: 2, to: (0.99, 0.01), over: 0.1).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
         let h = run(outside, environment: env, until: 1.2)
         let applied = h.effects.compactMap { if case .slider(.volume, let v) = $0 { v } else { nil } }
         #expect(applied.last == 0.3 && h.ends == [.liftOutside])
         // 在滑杆上抬起：最终值送出后不再恢复
-        let keep = anchored().touch(id: 2, at: ExpSpot.sliderLeft, t: 0.5).move(id: 2, to: ExpSpot.sliderRight, over: 0.2)
+        let keep = pointing(at: ExpSpot.sliderLeft, until: 0.5).move(id: 2, to: ExpSpot.sliderRight, over: 0.2)
             .hold(id: 2, until: 0.8).lift(id: 2, t: 0.8)
         let k = run(keep, environment: env, until: 1.0)
         let kept = k.effects.compactMap { if case .slider(.volume, let v) = $0 { v } else { nil } }
@@ -306,7 +275,7 @@ private func activeLayout(_ h: Harness) -> String? {
 
     @Test func unknownValueOnlyPreviews() {
         // 读不到实际值：没有可恢复的基准，移动时不送出，离开也不恢复
-        let g = anchored().touch(id: 2, at: ExpSpot.sliderLeft, t: 0.5).move(id: 2, to: ExpSpot.sliderRight, over: 0.2)
+        let g = pointing(at: ExpSpot.sliderLeft, until: 0.5).move(id: 2, to: ExpSpot.sliderRight, over: 0.2)
             .move(id: 2, to: ExpSpot.plain, over: 0.2).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
         let h = run(g, until: 1.2)
         #expect(!h.effects.contains { if case .slider = $0 { true } else { false } })
@@ -315,7 +284,7 @@ private func activeLayout(_ h: Harness) -> String? {
     @Test func abortRestoresSlider() {
         var env = environment([experiment])
         env.sliderValues[.volume] = 0.3
-        let g = anchored().touch(id: 2, at: ExpSpot.sliderRight, t: 0.5).hold(id: 2, until: 0.8)
+        let g = pointing(at: ExpSpot.sliderRight, until: 0.8)
         let h = run(g, environment: env, events: [(0.7, .tapDisabled)], until: 0.8)
         let applied = h.effects.compactMap { if case .slider(.volume, let v) = $0 { v } else { nil } }
         #expect(applied.count == 2 && applied.last == 0.3)
@@ -324,49 +293,42 @@ private func activeLayout(_ h: Harness) -> String? {
     @Test func panelStartsWithEnvironmentSliderValue() {
         var env = environment([experiment])
         env.sliderValues[.volume] = 0.4
-        let h = run(anchored(until: 0.6), environment: env, until: 0.6)
+        let h = run(.fourFingerTap(), environment: env, until: 0.6)
         let shown = h.effects.compactMap { if case .showPanel(let s) = $0 { s } else { nil } }
         #expect(shown.first?.sliderValues["slider"] == 0.4)
     }
 }
 
-@Suite struct StickyPanelTests {
-    static var sticky: Tuning {
-        var t = Tuning.test
-        t.stickyPanel = true
-        return t
-    }
-
-    private func runSticky(_ g: Gesture, environment: SessionEnvironment = .test,
-                           events: [(TimeInterval, SessionEvent)] = [], until: TimeInterval) -> Harness {
-        var h = Harness(tuning: Self.sticky, environment: environment)
+/// 面板开着时的指点指：四指轻点打开（没有指点指），之后落下的手指成为指点指
+@Suite struct OpenPanelTests {
+    private func runOpen(_ g: Gesture, tuning: Tuning = .test, environment: SessionEnvironment = .test,
+                         events: [(TimeInterval, SessionEvent)] = [], until: TimeInterval) -> Harness {
+        var h = Harness(tuning: tuning, environment: environment)
         h.run(g.frames(rate: rate), events: events, until: until)
         return h
     }
 
-    /// 锚指驻留进入激活后在 0.4 抬起
-    private func anchorThenLift() -> Gesture {
-        Gesture(device: .builtIn).touch(id: 1, at: Spot.anchor, t: 0).hold(id: 1, until: 0.4).lift(id: 1, t: 0.4)
+    /// 四指轻点在 0.12 打开面板，板上不留手指
+    private func tapOpened() -> Gesture {
+        .fourFingerTap()
     }
 
-    @Test func liftingAnchorKeepsPanelAndSingleFingerCommits() {
-        // 新手指复用锚指的 ID，并且落在锚定角附近也可以成为指点指
-        let g = anchorThenLift().touch(id: 1, at: Spot.anchor, t: 0.8).move(id: 1, to: Spot.close, over: 0.2)
+    @Test func fingerNearACornerCanBeThePointer() {
+        // 角落附近（边缘以内）落下的手指也可以成为指点指，复用已抬起手指的 ID 也可以
+        let g = tapOpened().touch(id: 1, at: (0.06, 0.07), t: 0.8).move(id: 1, to: Spot.close, over: 0.2)
             .hold(id: 1, until: 1.2).lift(id: 1, t: 1.2)
-        let h = runSticky(g, until: 1.4)
+        let h = runOpen(g, until: 1.4)
         #expect(h.actions.map(\.action) == [closeTab])
         #expect(h.ends == [.committed("close")])
-        let sticky = h.effects.contains { if case .updatePanel(let s) = $0 { s.sticky } else { false } }
-        #expect(sticky)
     }
 
     @Test func gapAndCancelBothClose() {
         // D37：空白处抬起与取消相同
-        let gap = anchorThenLift().touch(id: 2, at: Spot.gap, t: 0.8).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
-        let h1 = runSticky(gap, until: 1.5)
+        let gap = tapOpened().touch(id: 2, at: Spot.gap, t: 0.8).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
+        let h1 = runOpen(gap, until: 1.5)
         #expect(h1.ends == [.cancelSlot] && h1.actions.isEmpty)
-        let cancel = anchorThenLift().touch(id: 2, at: Spot.null, t: 0.8).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
-        let h2 = runSticky(cancel, until: 1.2)
+        let cancel = tapOpened().touch(id: 2, at: Spot.null, t: 0.8).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
+        let h2 = runOpen(cancel, until: 1.2)
         #expect(h2.ends == [.cancelSlot])
         #expect(h2.actions.isEmpty)
     }
@@ -375,46 +337,45 @@ private func activeLayout(_ h: Harness) -> String? {
     // 右外沿 0.95，判定区到 0.942 为止（D31）
     @Test func liftInHitGapClosesWithoutAction() {
         for x in [0.654, 0.946] {
-            let g = anchorThenLift().touch(id: 2, at: (x, Spot.close.1), t: 0.8).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
-            let h = runSticky(g, until: 1.3)
+            let g = tapOpened().touch(id: 2, at: (x, Spot.close.1), t: 0.8).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
+            let h = runOpen(g, until: 1.3)
             #expect(h.ends == [.cancelSlot] && h.actions.isEmpty)
         }
         // 间隙为 0：同一点命中"关闭"
-        var tight = Self.sticky
+        var tight = Tuning.test
         tight.hitGapMM = 0
-        var h = Harness(tuning: tight, environment: .test)
-        h.run(anchorThenLift().touch(id: 2, at: (0.654, Spot.close.1), t: 0.8).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
-            .frames(rate: rate), until: 1.3)
+        let h = runOpen(tapOpened().touch(id: 2, at: (0.654, Spot.close.1), t: 0.8).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0),
+                        tuning: tight, until: 1.3)
         #expect(h.actions.map(\.action) == [closeTab])
     }
 
     @Test func liftFiresTheHighlightedSlot() {
         // 从按钮滑进间隙的一小段仍保持高亮，抬起执行的就是高亮的那个（D31，修订 FR-6.11）
-        let g = anchorThenLift().touch(id: 2, at: Spot.close, t: 0.8).hold(id: 2, until: 1.0)
+        let g = tapOpened().touch(id: 2, at: Spot.close, t: 0.8).hold(id: 2, until: 1.0)
             .move(id: 2, to: (0.656, Spot.close.1), over: 0.2).hold(id: 2, until: 1.4).lift(id: 2, t: 1.4)
-        let h = runSticky(g, until: 1.6)
+        let h = runOpen(g, until: 1.6)
         #expect(h.actions.map(\.action) == [closeTab])
         // 直接落在同一点：还在间隙里，不执行
-        let fresh = anchorThenLift().touch(id: 2, at: (0.656, Spot.close.1), t: 0.8).hold(id: 2, until: 1.4).lift(id: 2, t: 1.4)
-        #expect(runSticky(fresh, until: 1.6).actions.isEmpty)
+        let fresh = tapOpened().touch(id: 2, at: (0.656, Spot.close.1), t: 0.8).hold(id: 2, until: 1.4).lift(id: 2, t: 1.4)
+        #expect(runOpen(fresh, until: 1.6).actions.isEmpty)
     }
 
     @Test func holdingPressRepeatsUntilRelease() {
         // D33：按住 0.5 秒后每 83 ms 触发一次（tick 16 ms 一次：1.504、1.584、1.68、1.76），松开即停；之后在同一按钮抬起只关闭
-        let g = anchorThenLift().touch(id: 2, at: Spot.vol, t: 0.8).hold(id: 2, until: 2.2).lift(id: 2, t: 2.2)
-        let h = runSticky(g, events: [(1.0, .physicalPress), (1.8, .physicalRelease)], until: 2.4)
+        let g = tapOpened().touch(id: 2, at: Spot.vol, t: 0.8).hold(id: 2, until: 2.2).lift(id: 2, t: 2.2)
+        let h = runOpen(g, events: [(1.0, .physicalPress), (1.8, .physicalRelease)], until: 2.4)
         #expect(h.actions.count == 5 && h.actions.allSatisfy { $0.action == .system(.volumeUp) })
         #expect(h.ends == [.liftAfterPress])
     }
 
     @Test func repeatStopsWhenLeavingAndSkipsCommandShortcuts() {
         // 移出按钮即停止，移回来也不恢复
-        let away = anchorThenLift().touch(id: 2, at: Spot.vol, t: 0.8).hold(id: 2, until: 1.6)
+        let away = tapOpened().touch(id: 2, at: Spot.vol, t: 0.8).hold(id: 2, until: 1.6)
             .move(id: 2, to: Spot.gap, over: 0.05).move(id: 2, to: Spot.vol, over: 0.05).hold(id: 2, until: 2.4)
-        #expect(runSticky(away, events: [(1.0, .physicalPress)], until: 2.4).actions.count == 3)
+        #expect(runOpen(away, events: [(1.0, .physicalPress)], until: 2.4).actions.count == 3)
         // 带 ⌘ 的快捷键只触发一次
-        let command = anchorThenLift().touch(id: 2, at: Spot.close, t: 0.8).hold(id: 2, until: 2.4)
-        #expect(runSticky(command, events: [(1.0, .physicalPress)], until: 2.4).actions.count == 1)
+        let command = tapOpened().touch(id: 2, at: Spot.close, t: 0.8).hold(id: 2, until: 2.4)
+        #expect(runOpen(command, events: [(1.0, .physicalPress)], until: 2.4).actions.count == 1)
     }
 
     @Test func repeatableActions() {
@@ -428,8 +389,8 @@ private func activeLayout(_ h: Harness) -> String? {
 
     @Test func liftWaitsForGraceBeforeCommitting() throws {
         // D36：抬起 100 ms 后才执行
-        let g = anchorThenLift().touch(id: 2, at: Spot.close, t: 0.8).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
-        let h = runSticky(g, until: 1.4)
+        let g = tapOpened().touch(id: 2, at: Spot.close, t: 0.8).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
+        let h = runOpen(g, until: 1.4)
         #expect(h.actions.map(\.action) == [closeTab])
         let at = try #require(h.firstTime { if case .action = $0 { true } else { false } })
         #expect(at >= 1.1 && at < 1.12)
@@ -437,34 +398,34 @@ private func activeLayout(_ h: Harness) -> String? {
 
     @Test func fingerReturningNearbyContinues() {
         // 宽限期内在 1.5 mm 外落回：接着移动到音量上再抬起，只执行音量
-        let g = anchorThenLift().touch(id: 2, at: Spot.close, t: 0.8).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
+        let g = tapOpened().touch(id: 2, at: Spot.close, t: 0.8).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
             .touch(id: 3, at: (0.86, 0.85), t: 1.05).move(id: 3, to: Spot.vol, over: 0.2).hold(id: 3, until: 1.5).lift(id: 3, t: 1.5)
-        let h = runSticky(g, until: 1.8)
+        let h = runOpen(g, until: 1.8)
         #expect(h.actions.map(\.action) == [.system(.volumeUp)])
         #expect(h.ends == [.committed("vol")])
     }
 
     @Test func fingerLandingFarIsANewTouch() {
         // 落在 15 mm 以外：原来的抬起立即执行
-        let g = anchorThenLift().touch(id: 2, at: Spot.close, t: 0.8).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
+        let g = tapOpened().touch(id: 2, at: Spot.close, t: 0.8).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
             .touch(id: 3, at: Spot.a, t: 1.05).hold(id: 3, until: 1.3)
-        let h = runSticky(g, until: 1.3)
+        let h = runOpen(g, until: 1.3)
         #expect(h.actions.map(\.action) == [closeTab])
         #expect((h.firstTime { if case .action = $0 { true } else { false } } ?? 0) < 1.07)
     }
 
     @Test func gapLiftIsForgivenWhenTheFingerReturns() {
         // 在空白处抬起会关闭，但宽限期内在附近落回就接着选
-        let g = anchorThenLift().touch(id: 2, at: Spot.gap, t: 0.8).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
+        let g = tapOpened().touch(id: 2, at: Spot.gap, t: 0.8).hold(id: 2, until: 1.0).lift(id: 2, t: 1.0)
             .touch(id: 3, at: (0.51, 0.5), t: 1.05).move(id: 3, to: Spot.close, over: 0.2).hold(id: 3, until: 1.5).lift(id: 3, t: 1.5)
-        let h = runSticky(g, until: 1.8)
+        let h = runOpen(g, until: 1.8)
         #expect(h.actions.map(\.action) == [closeTab])
     }
 
     @Test func farTouchDuringGraceInOverviewBecomesThePointer() {
         // 总览里在空白处抬起不关闭（只有选中缩略图才离开总览）；宽限期内落到远处的新手指接着当指点指
-        var h = Harness(tuning: Self.sticky, environment: environment([Layout.test, radial]))
-        let pinch = anchorThenLift().touch(id: 2, at: (0.3, 0.5), t: 0.8).touch(id: 3, at: (0.7, 0.5), t: 0.8)
+        var h = Harness(tuning: .test, environment: environment([Layout.test, radial]))
+        let pinch = tapOpened().touch(id: 2, at: (0.3, 0.5), t: 0.8).touch(id: 3, at: (0.7, 0.5), t: 0.8)
             .move(id: 2, to: (0.45, 0.5), over: 0.2).move(id: 3, to: (0.55, 0.5), over: 0.2).lift(id: 2, t: 1.05).lift(id: 3, t: 1.05)
         let g = pinch.touch(id: 4, at: (0.5, 0.95), t: 1.8).hold(id: 4, until: 2.0).lift(id: 4, t: 2.0)
             .touch(id: 5, at: (0.2, 0.2), t: 2.05).hold(id: 5, until: 2.3)
@@ -474,43 +435,37 @@ private func activeLayout(_ h: Harness) -> String? {
     }
 
     @Test func idleTimeoutClosesOnlyWithoutFingers() {
-        let idle = runSticky(anchorThenLift(), until: 6.0)
+        let idle = runOpen(tapOpened(), until: 6.0)
         #expect(idle.ends == [.idleTimeout])
         let closedAt = idle.firstTime { $0 == .sessionEnded(.idleTimeout) } ?? 0
-        #expect(closedAt > 5.4 && closedAt < 5.5)
+        #expect(closedAt > 5.12 && closedAt < 5.12 + 2 * Harness.tickInterval)
         // 指点指一直停在空隙上：没有超时
-        let resting = anchorThenLift().touch(id: 2, at: Spot.gap, t: 0.5).hold(id: 2, until: 7)
-        #expect(runSticky(resting, until: 7).isActive)
+        let resting = tapOpened().touch(id: 2, at: Spot.gap, t: 0.5).hold(id: 2, until: 7)
+        #expect(runOpen(resting, until: 7).isActive)
     }
 
     @Test func threeFingerMovementOrRestHandsOffToSystem() {
         // D22：三指以上停留超过轻点时限，或开始移动，才交还系统手势
         let three = { (g: Gesture) in g.touch(id: 2, at: (0.4, 0.5), t: 0.8).touch(id: 3, at: (0.5, 0.5), t: 0.8)
             .touch(id: 4, at: (0.6, 0.5), t: 0.8) }
-        let resting = three(anchorThenLift()).hold(id: 2, until: 1.3).hold(id: 3, until: 1.3).hold(id: 4, until: 1.3)
-        let h = runSticky(resting, until: 1.3)
+        let resting = three(tapOpened()).hold(id: 2, until: 1.3).hold(id: 3, until: 1.3).hold(id: 4, until: 1.3)
+        let h = runOpen(resting, until: 1.3)
         #expect(h.ends == [.handoff])
         #expect(h.policies.contains { $0.mode == .cooldown && $0.passGestures })
-        let swipe = three(anchorThenLift()).move(id: 2, to: (0.3, 0.5), over: 0.1).move(id: 3, to: (0.4, 0.5), over: 0.1)
+        let swipe = three(tapOpened()).move(id: 2, to: (0.3, 0.5), over: 0.1).move(id: 3, to: (0.4, 0.5), over: 0.1)
             .move(id: 4, to: (0.5, 0.5), over: 0.1)
-        #expect(runSticky(swipe, until: 1.0).ends == [.handoff])
+        #expect(runOpen(swipe, until: 1.0).ends == [.handoff])
         // 两指停留不交还：面板保留（D23 双指用于切换面板）
-        let two = anchorThenLift().touch(id: 2, at: Spot.gap, t: 0.8).touch(id: 3, at: Spot.a, t: 0.81).hold(id: 2, until: 1.4)
+        let two = tapOpened().touch(id: 2, at: Spot.gap, t: 0.8).touch(id: 3, at: Spot.a, t: 0.81).hold(id: 2, until: 1.4)
             .hold(id: 3, until: 1.4)
-        #expect(runSticky(two, until: 1.4).isActive)
+        #expect(runOpen(two, until: 1.4).isActive)
     }
 
-    @Test func pressOnGapDoesNothingInStickyMode() {
+    @Test func pressOnGapDoesNothing() {
         let env = environment([Layout.test, radial])
-        let g = anchorThenLift().touch(id: 2, at: Spot.gap, t: 0.8).hold(id: 2, until: 1.2)
-        let h = runSticky(g, environment: env, events: [(1.0, .physicalPress)], until: 1.2)
+        let g = tapOpened().touch(id: 2, at: Spot.gap, t: 0.8).hold(id: 2, until: 1.2)
+        let h = runOpen(g, environment: env, events: [(1.0, .physicalPress)], until: 1.2)
         #expect(activeLayout(h) == "test" && h.actions.isEmpty)
-    }
-
-    @Test func withoutStickyModeLiftingAnchorStillCancels() {
-        var h = Harness(tuning: .test, environment: .test)
-        h.run(anchorThenLift().frames(rate: rate), until: 0.6)
-        #expect(h.ends == [.anchorLifted])
     }
 }
 
