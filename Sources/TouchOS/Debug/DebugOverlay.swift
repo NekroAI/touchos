@@ -30,6 +30,9 @@ final class DebugOverlayModel {
     var lastPanelShown: (armToActive: TimeInterval, activeToShown: TimeInterval)?
     /// 力度触控板最近一次压力事件：阶段（0 无、1 点按、2 深按）与力度
     var pressure: (stage: Int, value: Float)?
+    /// 指针诊断（D47）：激活态丢弃的指针事件数与校正情况，统计从打开叠层时开始
+    var droppedMoves: UInt64 = 0
+    var cursor: CursorLock.Diagnostics?
 
     func record(_ sample: LatencySample) {
         switch sample {
@@ -83,14 +86,16 @@ final class DebugOverlayController {
     let model = DebugOverlayModel()
     private let pipeline: InputPipeline
     private let tap: EventTapController
+    private let cursor: CursorLock
     private var panel: NSPanel?
     private var timer: Timer?
 
     var isVisible: Bool { panel?.isVisible ?? false }
 
-    init(pipeline: InputPipeline, tap: EventTapController) {
+    init(pipeline: InputPipeline, tap: EventTapController, cursor: CursorLock) {
         self.pipeline = pipeline
         self.tap = tap
+        self.cursor = cursor
     }
 
     func toggle() {
@@ -106,9 +111,14 @@ final class DebugOverlayController {
         }
         model.resetLatency()
         tap.resetTiming()
-        let tap = self.tap
+        cursor.resetDiagnostics()
+        let tap = self.tap, cursor = self.cursor
         timer = Timer.scheduledTimer(withTimeInterval: Self.timingRefreshInterval, repeats: true) { _ in
-            MainActor.assumeIsolated { model.tapTiming = tap.timingSnapshot() }
+            MainActor.assumeIsolated {
+                model.tapTiming = tap.timingSnapshot()
+                model.droppedMoves = tap.droppedActiveMoves
+                model.cursor = cursor.diagnostics
+            }
         }
         panel.orderFrontRegardless()
     }
@@ -155,6 +165,7 @@ private struct DebugOverlayView: View {
             }
             Text(model.pressure.map { String(format: "按压阶段 %d · 力度 %.2f", $0.stage, $0.value) } ?? "按压阶段 —")
             LatencySection(model: model)
+            CursorSection(model: model)
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(Array(model.session.enumerated()), id: \.offset) { _, line in Text(line) }
             }
@@ -180,6 +191,13 @@ private struct DeviceSection: View {
         VStack(alignment: .leading, spacing: 4) {
             Text("\(state.device.displayName) · \(Int(size.width))×\(Int(size.height)) mm · \(String(state.device.id.raw))")
             Canvas { ctx, canvas in
+                // 中心十字线：核对手指在物理中心时读数是否为 (0.5, 0.5)
+                var cross = Path()
+                cross.move(to: CGPoint(x: canvas.width / 2, y: 0))
+                cross.addLine(to: CGPoint(x: canvas.width / 2, y: canvas.height))
+                cross.move(to: CGPoint(x: 0, y: canvas.height / 2))
+                cross.addLine(to: CGPoint(x: canvas.width, y: canvas.height / 2))
+                ctx.stroke(cross, with: .color(.secondary.opacity(0.5)), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
                 for c in state.contacts {
                     // 触控板坐标原点在左下，画布原点在左上
                     let p = CGPoint(x: c.position.x * canvas.width, y: (1 - c.position.y) * canvas.height)
@@ -192,7 +210,9 @@ private struct DeviceSection: View {
             // 文字区固定行数，触摸时不挤压上方的触控板区域
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(state.contacts.prefix(Self.contactRows), id: \.id) { c in
-                    Text(String(format: "#%d %@ size %.2f pressure %.2f", c.id, String(describing: c.phase), c.size, c.pressure))
+                    // 只显示在屏幕上，不记录（FR-4.7）
+                    Text(String(format: "#%d %@ x %.3f y %.3f（离中心 %+.1f / %+.1f mm）size %.2f", c.id, String(describing: c.phase),
+                                c.position.x, c.position.y, (c.position.x - 0.5) * size.width, (c.position.y - 0.5) * size.height, c.size))
                     Text(String(format: "   angle %.2f axes %.2f/%.2f density %.2f", c.ellipse.angle, c.ellipse.majorAxis,
                                 c.ellipse.minorAxis, c.ellipse.density))
                         .foregroundStyle(.secondary)
@@ -210,6 +230,29 @@ private struct DeviceSection: View {
 }
 
 /// 延迟实测（NFR-1、NFR-2、AC-1）
+/// 指针诊断（D47）：面板打开时滑动手指，看事件有没有到拦截、光标有没有被校正
+private struct CursorSection: View {
+    let model: DebugOverlayModel
+
+    /// 应用链接的 SDK 版本（系统按它决定部分行为）。符号来自 dyld 的未公开接口，取不到时显示"—"
+    private static let linkedSDK: String = {
+        typealias Getter = @convention(c) () -> UInt32
+        guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "dyld_get_program_sdk_version") else { return "—" }
+        let v = unsafeBitCast(symbol, to: Getter.self)()
+        return "\(v >> 16).\((v >> 8) & 0xFF)"
+    }()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("SDK \(Self.linkedSDK) · 丢弃指针事件 \(model.droppedMoves)")
+            if let c = model.cursor {
+                Text("校验 \(c.checks) · 校正 \(c.corrections)")
+                Text(String(format: "最大偏离 事件 %.1f · 屏幕 %.1f pt", c.maxEventDeviation, c.maxScreenDeviation))
+            }
+        }
+    }
+}
+
 private struct LatencySection: View {
     let model: DebugOverlayModel
 

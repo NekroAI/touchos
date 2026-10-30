@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format is based on 
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-30
+
+### Added
+- Debug Tools switch on the About page, with cursor diagnostics in the debug overlay.
+
+### Fixed
+- Empty panel thumbnails in the Settings sidebar.
+- The cursor check now also uses the on-screen cursor position; a report of the cursor moving while a panel is open is still under investigation.
+
 ## [0.1.0] - 2026-10-30
 
 ### Added

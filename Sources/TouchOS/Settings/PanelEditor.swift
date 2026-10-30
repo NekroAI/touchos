@@ -106,7 +106,7 @@ struct PanelThumbnail: View {
 
     /// 在 `rect` 里画出按钮块（触控板预览也用）
     static func draw(_ panel: PanelLayout, in ctx: inout GraphicsContext, rect: CGRect,
-                     fill: GraphicsContext.Shading = .style(.secondary), line: GraphicsContext.Shading = .style(.tertiary)) {
+                     fill: GraphicsContext.Shading = .color(.secondary), line: GraphicsContext.Shading = .color(.secondary.opacity(0.6))) {
         let unit = min(rect.width, rect.height) / 18  // 缩略图高 18 时的线宽、圆点等为 1
         if panel.isRing {
             let n = max(panel.ringItems.count, 1)

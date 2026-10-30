@@ -44,6 +44,8 @@ final class EventTapController: @unchecked Sendable {
     private let measure: Bool
     private let timing: [OpaquePointer]
     private let timingMaxNs = TOAtomicCreate()!
+    // 调试叠层的指针诊断：激活态收到（并丢弃）的指针移动事件数
+    private let activeMoves = TOAtomicCreate()!
     // AC-17：到达该时刻（systemUptime）后的第一个事件在回调里阻塞，0 表示未预约
     private let stallAt = TOAtomicCreate()!
     private let ticksToNs: Double = {
@@ -108,7 +110,11 @@ final class EventTapController: @unchecked Sendable {
                                 max: Double(TOAtomicLoad(timingMaxNs)) / 1e9)
     }
 
+    /// 取出激活态丢弃的指针移动事件数（调试叠层）
+    var droppedActiveMoves: UInt64 { TOAtomicLoad(activeMoves) }
+
     func resetTiming() {
+        TOAtomicStore(activeMoves, 0)
         for t in timing { TOAtomicStore(t, 0) }
         TOAtomicStore(timingMaxNs, 0)
     }
@@ -188,6 +194,7 @@ final class EventTapController: @unchecked Sendable {
                 TOAtomicAddDouble(deltaY, Double(event.getIntegerValueField(.mouseEventDeltaY)))
                 return nil
             case .active:
+                TOAtomicIncrement(activeMoves)
                 return nil  // FR-7.4：任何来源的指针移动一律丢弃
             default:
                 return pass

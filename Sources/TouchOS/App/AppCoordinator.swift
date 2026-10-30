@@ -44,7 +44,8 @@ final class AppCoordinator {
         tap.onPhysicalRelease = { ref.driver?.send(.physicalRelease) }
         let overlay = OverlayController(slotGap: tuning.slotGap, trailMs: tuning.trailMs)
         let executor = ActionExecutor()
-        let driver = SessionDriver(queue: queue, tuning: tuning, tap: tap, cursor: CursorLock(tap: tap),
+        let cursor = CursorLock(tap: tap)
+        let driver = SessionDriver(queue: queue, tuning: tuning, tap: tap, cursor: cursor,
                                    executor: executor, overlay: overlay)
         ref.driver = driver
         self.driver = driver
@@ -78,7 +79,7 @@ final class AppCoordinator {
             })
 
         if DebugOverlayController.isAvailable {
-            let debug = DebugOverlayController(pipeline: pipeline, tap: tap)
+            let debug = DebugOverlayController(pipeline: pipeline, tap: tap, cursor: cursor)
             debugOverlay = debug
             simulator = TouchSimulator(driver: driver, overlay: overlay)
             menuBar.onToggleDebugOverlay = { [weak self] in

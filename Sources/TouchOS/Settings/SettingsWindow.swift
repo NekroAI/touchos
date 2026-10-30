@@ -633,6 +633,10 @@ struct AppLabel: View {
 // MARK: 关于
 
 private struct AboutPage: View {
+    @State private var debugTools = UserDefaults.standard.bool(forKey: DebugOverlayController.hiddenSwitchKey)
+    /// 这个进程启动时的状态，变了才需要重启
+    private let launchDebugTools = DebugOverlayController.isAvailable
+
     var body: some View {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
         VStack(spacing: 14) {
@@ -644,6 +648,17 @@ private struct AboutPage: View {
             Text("开源许可：GPL-3.0-or-later").font(.callout).foregroundStyle(.secondary)
             Text("TouchOS 读取触控板原始触点，仅在内存中处理，从不记录或上传。")
                 .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            Toggle(isOn: makeBinding(get: { debugTools }, set: { on in
+                debugTools = on
+                UserDefaults.standard.set(on, forKey: DebugOverlayController.hiddenSwitchKey)
+            })) {
+                Text("调试工具")
+                Text("在菜单栏显示调试叠层，用于排查问题。数据只显示在屏幕上，不会写入文件或上传。")
+            }
+            .frame(maxWidth: 420)
+            if debugTools != launchDebugTools {
+                Button("重启以应用") { AppLanguage.relaunch() }
+            }
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
