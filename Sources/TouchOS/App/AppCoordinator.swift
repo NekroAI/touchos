@@ -41,6 +41,7 @@ final class AppCoordinator {
                                  onEscape: { ref.driver?.send(.escapeKey) },
                                  onDisabled: { ref.driver?.send(.tapDisabled) })
         tap.onPhysicalRelease = { ref.driver?.send(.physicalRelease) }
+        tap.onKeyDown = { ref.driver?.send(.keyPress(ProcessInfo.processInfo.systemUptime)) }
         let overlay = OverlayController(slotGap: tuning.slotGap, trailMs: tuning.trailMs)
         let executor = ActionExecutor()
         let cursor = CursorLock(tap: tap, stallLimit: tuning.cursorStallLimitMs / 1000)

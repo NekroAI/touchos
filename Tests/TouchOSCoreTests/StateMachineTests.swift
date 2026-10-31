@@ -375,6 +375,88 @@ private func shown(_ h: Harness) -> Bool {
     }
 }
 
+/// 打字时防误触（D54）：默认环境的设备是内置板，手势 0 s 开始、第二下 0.1 s 落下
+@Suite struct TypingGuardTests {
+    private func filtered(_ h: Harness) -> [TriggerFilter] {
+        h.effects.compactMap { if case .triggerFiltered(let f) = $0 { f } else { nil } }
+    }
+
+    /// 负的时刻表示手势开始之前按的键
+    private func opened(at p: (Double, Double), keyAt key: TimeInterval, tuning: Tuning = .test,
+                        environment: SessionEnvironment = .test) -> Harness {
+        var h = Harness(tuning: tuning, environment: environment)
+        h.send(.keyPress(key), at: key)
+        h.run(Gesture.tapHold(at: p, until: 0.4).frames(rate: rate), until: 0.4)
+        return h
+    }
+
+    @Test func blocksWholeSurfaceRightAfterAKey() {
+        let h = opened(at: Spot.gap, keyAt: -0.2)
+        #expect(!h.isActive)
+        #expect(filtered(h) == [.typing])
+    }
+
+    @Test func blocksOnlyTheEdgeForLonger() {
+        let edge = opened(at: (0.04, 0.04), keyAt: -1)
+        #expect(!edge.isActive)
+        #expect(filtered(edge) == [.typingEdge])
+        #expect(opened(at: Spot.gap, keyAt: -1).isActive)
+    }
+
+    @Test func edgeWorksAgainAfterTheWindow() {
+        #expect(opened(at: (0.04, 0.04), keyAt: -2).isActive)
+    }
+
+    @Test func secondTouchIsCheckedAgainstAKeyAfterTheFirst() {
+        var h = Harness()
+        h.run(Gesture.tapHold(until: 0.4).frames(rate: rate), events: [(0.07, .keyPress(0.07))], until: 0.4)
+        #expect(!h.isActive)
+        #expect(filtered(h) == [.typing])
+    }
+
+    @Test func keyDuringConfirmationAbandons() {
+        var h = Harness()
+        h.run(Gesture.tapHold(until: 0.4).frames(rate: rate), events: [(0.15, .keyPress(0.15))], until: 0.4)
+        #expect(!h.isActive)
+        #expect(h.effects.contains(.armFailed(.typing)))
+    }
+
+    @Test func keyWhilePanelIsOpenKeepsIt() {
+        var h = Harness()
+        h.run(Gesture.tapHold(until: 0.6).frames(rate: rate), events: [(0.4, .keyPress(0.4))], until: 0.6)
+        #expect(h.isActive)
+    }
+
+    @Test func offAndExternalTrackpadAreNotFiltered() {
+        var off = Tuning.test
+        off.typingGuard = false
+        #expect(opened(at: Spot.gap, keyAt: -0.2, tuning: off).isActive)
+
+        var environment = SessionEnvironment.test
+        environment.devices = [.builtIn: TrackpadDevice(id: .builtIn, isBuiltIn: false, displayName: "妙控板",
+                                                        surfaceSizeMM: CGSize(width: 150, height: 100))]
+        #expect(opened(at: Spot.gap, keyAt: -0.2, environment: environment).isActive)
+    }
+
+    @Test func palmSizedFirstTapDoesNotCount() {
+        let g = Gesture(device: .builtIn).touch(id: 1, at: Spot.gap, t: 0, size: Tuning.defaultPalmSize).lift(id: 1, t: 0.05)
+            .touch(id: 2, at: Spot.gap, t: 0.1).hold(id: 2, until: 0.4)
+        let h = run(g, until: 0.4)
+        #expect(!h.isActive)
+        #expect(filtered(h) == [.palm])
+    }
+
+    @Test func settingIsCarriedIntoTuningAndDefaultsOn() throws {
+        var config = AppConfig()
+        #expect(config.general.typingGuard)
+        config.general.typingGuard = false
+        var t = Tuning()
+        config.apply(to: &t)
+        #expect(!t.typingGuard)
+        #expect(try JSONDecoder().decode(AppConfig.General.self, from: Data("{}".utf8)).typingGuard)
+    }
+}
+
 /// 选择确认时间（D53）：手指落下后很快抬起且基本没动，只关闭不执行
 @Suite struct CommitGuardTests {
     private var tuning: Tuning {

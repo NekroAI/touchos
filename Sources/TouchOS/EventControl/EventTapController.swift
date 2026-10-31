@@ -60,6 +60,8 @@ final class EventTapController: @unchecked Sendable {
     private let onEscape: @Sendable () -> Void
     private let onDisabled: @Sendable () -> Void
 
+    /// 其他来源的键盘按下（D54，在拦截线程上调用，须异步投递）。在 `start()` 之前设置
+    var onKeyDown: (@Sendable () -> Void)?
     /// 调试叠层：力度触控板的按压阶段与力度（在拦截线程上调用，须异步投递）。在 `start()` 之前设置
     var onPressureDebug: (@Sendable (_ stage: Int, _ pressure: Float) -> Void)?
 
@@ -253,6 +255,8 @@ final class EventTapController: @unchecked Sendable {
             let passGestures = packed & (1 << 8) != 0  // FR-7.5
             return inCooldown && !passGestures ? nil : pass
         }
+        // 面板动作自己发出的按键不算打字，否则执行后紧接着唤起会被挡下
+        if type == .keyDown, event.getIntegerValueField(.eventSourceUnixProcessID) != Int64(getpid()) { onKeyDown?() }
         if type == .keyDown, mode == .active, event.getIntegerValueField(.keyboardEventKeycode) == Self.escapeKeyCode {
             onEscape()  // T16：上报并吞掉
             return nil

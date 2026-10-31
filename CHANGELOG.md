@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format is based on 
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-11-01
+
+### Added
+- Ignore Accidental Touches While Typing, on the Triggers page and on by default. On the built-in trackpad, panels won't open for 0.4 s after a key press, or for 1.5 s from within 12 mm of the edge.
+
+### Changed
+- A tap with an unusually large contact area, such as a resting palm, no longer counts towards opening a panel.
+
 ## [0.1.6] - 2026-10-31
 
 ### Changed

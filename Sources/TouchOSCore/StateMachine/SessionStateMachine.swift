@@ -4,9 +4,14 @@ import Foundation
 // 交互状态机（SRS 第 5 章）：纯函数式，`handle(event) -> [effect]`，副作用由外层按顺序执行。
 // 时间统一为外层提供的单调时钟（秒）；触点帧的时间戳已由输入层换算到同一时钟。
 
+/// 被挡下的一次唤起（D54）：刚按过键（全板 / 外圈），或接触面积过大
+public enum TriggerFilter: String, Equatable, Sendable {
+    case typing, typingEdge, palm
+}
+
 /// 轻点后按住的确认期失败原因（D38）：第二下没有停留满 `P.tapHoldDelayMs` 就抬起、移动、按压或又落下一指
 public enum ArmFailure: String, Equatable, Sendable {
-    case moved, pressed, secondTouch, lifted, palm
+    case moved, pressed, secondTouch, lifted, palm, typing
 }
 
 /// 激活态结束原因（调试叠层与日志用）
@@ -163,6 +168,8 @@ public enum SessionEffect: Equatable, Sendable {
     /// 打开编辑窗口并定位到该面板（D23），在会话结束、光标恢复之后执行
     case openEditor(String)
     case armFailed(ArmFailure)
+    /// 轻点因打字或手掌被忽略（D54），只用于诊断
+    case triggerFiltered(TriggerFilter)
     case sessionEnded(SessionEnd)
 }
 
@@ -171,6 +178,8 @@ public enum SessionEvent: Equatable, Sendable {
     case physicalPress
     /// 物理按压松开（用于在关闭上按住进入编辑，D23）
     case physicalRelease
+    /// 键盘按下（D54），带按下时刻：空闲时没有 tick，不能用 `clock`
+    case keyPress(TimeInterval)
     case escapeKey
     case tick(TimeInterval)
     case deviceRemoved(TrackpadDeviceID)
@@ -304,6 +313,10 @@ public struct SessionStateMachine: Sendable {
     private var lastPressAt: TimeInterval?
     /// 最近一次帧或 tick 的时刻：按压等不带时间的事件用它
     private var clock: TimeInterval = 0
+    /// 最近一次键盘按下的时刻（D54）
+    public private(set) var lastKeyAt: TimeInterval?
+    /// 最近一次轻点的最大接触面积：诊断日志用它核对手掌阈值（D54）
+    public private(set) var lastTapSize: Float = 0
 
     public init(tuning: Tuning, environment: SessionEnvironment = SessionEnvironment()) {
         self.tuning = tuning
@@ -320,6 +333,14 @@ public struct SessionStateMachine: Sendable {
         }
         if case .tuning(let t) = event {
             if state == .idle { tuning = t } else { pendingTuning = t }
+            return []
+        }
+        if case .keyPress(let t) = event {
+            lastKeyAt = t
+            // 第二下停留期间打了字：这根手指不是在唤起
+            if case .armed(let ctx) = state, tuning.typingGuard, environment.devices[ctx.device]?.isBuiltIn == true {
+                return abandon(.typing)
+            }
             return []
         }
         if state == .idle, let t = pendingTuning {
@@ -358,6 +379,9 @@ public struct SessionStateMachine: Sendable {
               state == .idle, !environment.suspended
         else { return [] }
         pendingTapHold = nil
+        lastTapSize = tap.maxSize
+        if tap.maxSize >= tuning.effectivePalmSize { return [.triggerFiltered(.palm)] }
+        if let filter = typingFilter(tap.origins, on: device, at: tap.endedAt) { return [.triggerFiltered(filter)] }
         switch tap.fingers {
         case 3 where tuning.threeFingerTap, 4 where tuning.fourFingerTap:
             guard let index = environment.panelIndex(for: tap.fingers == 3 ? .threeFingerTap : .fourFingerTap) else { return [] }
@@ -380,6 +404,21 @@ public struct SessionStateMachine: Sendable {
         }
     }
 
+    /// 打字时防误触（D54）：内置触控板在按键后的一段时间内不接受唤起。外圈挡得更久，边角平时仍可唤起
+    private func typingFilter(_ points: [CGPoint], on device: TrackpadDevice, at t: TimeInterval) -> TriggerFilter? {
+        guard tuning.typingGuard, device.isBuiltIn, let key = lastKeyAt else { return nil }
+        let age = t - key
+        if age < tuning.typingBlockMs / 1000 { return .typing }
+        if age < tuning.typingEdgeMs / 1000, points.contains(where: { isInEdgeRing($0, on: device) }) { return .typingEdge }
+        return nil
+    }
+
+    /// 距触控板边缘不到 `P.typingEdgeMM`
+    public func isInEdgeRing(_ p: CGPoint, on device: TrackpadDevice) -> Bool {
+        let mm = device.surfaceSizeMM
+        return min(p.x, 1 - p.x) * mm.width < tuning.typingEdgeMM || min(p.y, 1 - p.y) * mm.height < tuning.typingEdgeMM
+    }
+
     /// 轻点后按住（D25、D38）：第一下轻点之后 `P.doubleTapGapMs` 内、`P.tapHoldReachMM` 以内落下一根新手指，
     /// 且板上只有这一根，进入确认期；停留满 `P.tapHoldDelayMs` 打开面板，这根手指成为指点指。不满足时返回 nil
     private mutating func tapHold(_ frame: TouchFrame, _ touching: [Contact]) -> [SessionEffect]? {
@@ -392,6 +431,7 @@ public struct SessionStateMachine: Sendable {
         }
         guard let c = touching.first(where: { $0.phase == .began }) else { return nil }
         pendingTapHold = nil
+        if let filter = typingFilter([c.position], on: device, at: frame.timestamp) { return [.triggerFiltered(filter)] }
         let mm = device.surfaceSizeMM
         let reach = hypot((c.position.x - first.position.x) * mm.width, (c.position.y - first.position.y) * mm.height)
         guard touching.count == 1, reach <= tuning.tapHoldReachMM, environment.panelIndex(for: first.trigger) != nil else {

@@ -18,6 +18,12 @@ public struct Tuning: Equatable, Sendable {
     /// 指点指落下后这么久以内抬起、且移动不到 `P.stillThresholdMM`：只关闭不执行，防止误开面板后抬手就触发（D53）。0 表示不保护
     public var commitGuardMs = 200.0
     public static let commitGuardRange = 0.0...500.0
+    /// 打字时防误触（D54，只对内置触控板）：按键后 `P.typingBlockMs` 内整块板不接受唤起，
+    /// `P.typingEdgeMs` 内外圈 `P.typingEdgeMM` 不接受唤起
+    public var typingGuard = true
+    public var typingBlockMs = 400.0
+    public var typingEdgeMs = 1500.0
+    public var typingEdgeMM = 12.0
     /// `P.stillThresholdMM`：确认期间手指的最大位移，超出即放弃
     public var stillThresholdMM = 2.0
     /// `P.palmSize`：nil 表示使用校准值，未校准时用 `defaultPalmSize`（FR-10.8）

@@ -51,6 +51,11 @@ struct TriggersPage: View {
                 } footer: {
                     FormFooter(String(localized: "经常误开面板或误执行时，把这两项调大。手指落下后不到确认时间就抬起、且基本没移动，只关闭面板不执行；设为 0 ms 则不保护。"))
                 }
+                Section {
+                    Toggle("打字时防误触", isOn: binding(configs, \.general.typingGuard))
+                } footer: {
+                    FormFooter(String(localized: "只对内置触控板生效：按键后短时间内不打开面板，靠近边缘的区域挡得更久。"))
+                }
             }
             .formStyle(.grouped)
             Divider()
