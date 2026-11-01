@@ -513,3 +513,61 @@ private func shown(_ h: Harness) -> Bool {
         #expect(t.tapHoldDelayMs == Tuning.tapHoldDelayRange.lowerBound && t.commitGuardMs == Tuning.commitGuardRange.upperBound)
     }
 }
+
+/// 面板定位（D55）
+@Suite struct PanelAnchorTests {
+    private let margin = CGSize(width: 0.04, height: 0.05)
+    private let size = CGSize(width: 0.4, height: 0.4)
+
+    @Test func landingBecomesCenter() {
+        let c = mappingCenter(landing: CGPoint(x: 0.4, y: 0.6), zone: nil, size: size, margin: margin)
+        #expect(c == CGPoint(x: 0.4, y: 0.6))
+    }
+
+    @Test func pushedInsideNearEdgeKeepingMargin() {
+        let c = mappingCenter(landing: CGPoint(x: 0.02, y: 0.98), zone: nil, size: size, margin: margin)
+        let r = Mapper(margin: 0.05, size: size, center: c).mappingRect
+        #expect(abs(r.minX - margin.width) < 1e-9)
+        #expect(abs(r.maxY - (1 - margin.height)) < 1e-9)
+    }
+
+    /// 同一分区内落点不同，手指相对面板的位置不变
+    @Test func cornerZoneStartsOutsideThatCorner() {
+        for p in [CGPoint(x: 0.03, y: 0.95), CGPoint(x: 0.1, y: 0.88)] {
+            let c = mappingCenter(landing: p, zone: .topLeft, size: size, margin: margin)
+            let r = Mapper(margin: 0.05, size: size, center: c).mappingRect
+            #expect(abs(r.minX - p.x - margin.width) < 1e-9)
+            #expect(abs(p.y - r.maxY - margin.height) < 1e-9)
+        }
+    }
+
+    @Test func sideZoneFixesOnlyTheAxisAcrossTheEdge() {
+        let c = mappingCenter(landing: CGPoint(x: 0.45, y: 0.95), zone: .top, size: size, margin: margin)
+        #expect(c.x == 0.45)
+        #expect(abs(0.95 - (c.y + 0.2) - margin.height) < 1e-9)
+    }
+
+    @Test func oversizedMappingStaysCentered() {
+        let c = mappingCenter(landing: CGPoint(x: 0.1, y: 0.9), zone: .topLeft, size: CGSize(width: 1, height: 1), margin: margin)
+        #expect(c == CGPoint(x: 0.5, y: 0.5))
+    }
+
+    @Test func marginIsSameMillimetersOnBothAxes() {
+        let g = PanelGeometry(group: CGSize(width: 600, height: 400), mappingScale: 0.4, referenceRows: 3, referenceCols: 5,
+                              limit: CGSize(width: 900, height: 900), deviceMM: CGSize(width: 160, height: 110))
+        let m = g.anchorMargin(ratio: 0.1)
+        #expect(abs(m.width * 160 - 5.4) < 1e-9)
+        #expect(abs(m.height * 110 - 5.4) < 1e-9)
+    }
+
+    @Test func configDefaultsToLandingAndToleratesUnknown() throws {
+        let decode = { (s: String) in try JSONDecoder().decode(AppConfig.General.self, from: Data(s.utf8)) }
+        #expect(try decode("{}").panelAnchor == .landing)
+        #expect(try decode(#"{"panelAnchor":"future"}"#).panelAnchor == .landing)
+        var config = AppConfig()
+        config.general.panelAnchor = .center
+        var t = Tuning()
+        config.apply(to: &t)
+        #expect(t.panelAnchor == .center)
+    }
+}

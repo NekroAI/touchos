@@ -96,6 +96,8 @@ extension Tuning {
         // 参考网格与测试布局（3×3）一致：映射区仍为 0.05–0.95，面板大小不变（D29）
         t.referenceRows = 3
         t.referenceCols = 3
+        // 测试点按触控板绝对位置推算；跟随落点单独测试（D55）
+        t.panelAnchor = .center
         return t
     }
 }

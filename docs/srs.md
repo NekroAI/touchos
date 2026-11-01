@@ -355,6 +355,8 @@ Z_{anchor} = [0, w_a] \times [0, h_a]
 
 ### 6.2 坐标映射（Mapper）
 
+（修订：默认跟随落点，映射区中心随指点指落点确定，可切换回下述固定方式，见 decisions.md D55）
+
 映射区为每边内缩 `P.mappingMargin`（比例 m）后的矩形。（修订：映射区改为居中、边长为触控板 `P.mappingScale` 倍的矩形，下式中 m 相应替换为 (1 − scale)/2；`P.mappingMargin` 只表示不接受指点指落下的边缘，见 decisions.md D9）指点指归一化坐标 (x, y) 先归一到映射区并钳制：
 
 ```latex

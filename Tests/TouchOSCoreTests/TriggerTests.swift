@@ -307,3 +307,84 @@ private func opened(_ h: Harness) -> Bool {
         #expect(!h.isActive && h.failures.isEmpty && h.policies.isEmpty)
     }
 }
+
+/// 跟随落点（D55）
+@Suite struct LandingAnchorTests {
+    private var landing: Tuning {
+        tuning { $0.panelAnchor = .landing; $0.mappingScale = 0.4; $0.zoneTapHold = [.topLeft] }
+    }
+
+    private func center(_ h: Harness) -> CGPoint? {
+        if case .active(let ctx) = h.machine.state { ctx.mappingCenter } else { nil }
+    }
+
+    /// 右边一格（映射区 0.4 的三分之一）：落点不同，同样的动作命中同一个按钮
+    @Test func sameMotionHitsSameButtonFromAnywhere() {
+        for start in [(0.5, 0.5), (0.35, 0.6), (0.65, 0.4)] {
+            let g = Gesture.tapHold(at: start).move(id: 2, to: (start.0 + 0.133, start.1), over: 0.25).lift(id: 2, t: 0.7)
+            let h = run(g, tuning: landing, until: 1.2)
+            #expect(h.ends == [.committed("vol")])
+        }
+    }
+
+    @Test func fixedCenterKeepsAbsoluteMapping() {
+        let t = tuning { $0.panelAnchor = .center; $0.mappingScale = 0.4 }
+        let h = run(.tapHold(at: (0.35, 0.6), until: 0.4), tuning: t, until: 0.4)
+        #expect(center(h) == CGPoint(x: 0.5, y: 0.5))
+    }
+
+    /// 起手在面板中心的空隙：直接抬手只关闭
+    @Test func liftingAtLandingOnlyCloses() {
+        let g = Gesture.tapHold(at: (0.35, 0.6)).lift(id: 2, t: 0.6)
+        let h = run(g, tuning: landing, until: 1)
+        #expect(h.actions.isEmpty)
+        #expect(h.ends == [.cancelSlot])
+    }
+
+    /// 左上分区：手指在面板左上角之外，直接抬手是取消；往里移一点命中左上的按钮
+    @Test func cornerZoneStartsOutsidePanel() {
+        let p = (0.06, 0.92)
+        let outside = run(Gesture.tapHold(at: p).lift(id: 2, t: 0.6), tuning: landing, until: 1)
+        #expect(outside.ends == [.liftOutside])
+        let g = Gesture.tapHold(at: p).move(id: 2, to: (p.0 + 0.1, p.1 - 0.12), over: 0.25).lift(id: 2, t: 0.7)
+        #expect(run(g, tuning: landing, until: 1.2).ends == [.committed("a")])
+    }
+
+    /// 环形面板绑定到方位唤起时仍以落点为中心
+    @Test func ringIgnoresZone() {
+        var env = SessionEnvironment.test
+        env.panels = [PresetPanels.window]
+        let p = (0.08, 0.9)
+        let h = run(.tapHold(at: p, until: 0.4), tuning: landing, environment: env, until: 0.4)
+        let c = center(h)
+        // 放不下而往里推到边界，不会多退一个面板的距离
+        let square = env.devices[.builtIn]!.surfaceSizeMM
+        let geometry = PanelGeometry(screen: env.screenSize, deviceMM: square, tuning: landing)
+        let size = geometry.mapping(of: PresetPanels.window), m = geometry.anchorMargin(ratio: landing.anchorMargin)
+        #expect(abs((c?.x ?? 0) - (size.width / 2 + m.width)) < 1e-9)
+        #expect(abs((c?.y ?? 0) - (1 - size.height / 2 - m.height)) < 1e-9)
+    }
+
+    /// 四指轻点：面板打开时没有指点指，第一根落下的手指成为中心
+    @Test func fourFingerTapAnchorsOnFirstLanding() {
+        let g = fingers(4, lift: 0.1).touch(id: 9, at: (0.3, 0.6), t: 0.3)
+        let h = run(g, tuning: landing, until: 0.35)
+        #expect(center(h) == CGPoint(x: 0.3, y: 0.6))
+    }
+
+    /// 抬起防抖内手指回来：接着移动，中心不变
+    @Test func returningFingerKeepsCenter() {
+        let g = Gesture.tapHold(at: (0.35, 0.6)).lift(id: 2, t: 0.4).touch(id: 3, at: (0.36, 0.6), t: 0.43)
+        let h = run(g, tuning: landing, until: 0.46)
+        #expect(center(h) == CGPoint(x: 0.35, y: 0.6))
+    }
+}
+
+/// 跟随落点时手指从面板中心出发（D55）：预置面板的中心不能是会执行动作的按钮
+@Test func presetPanelCentersAreSafe() {
+    for panel in PresetPanels.all {
+        let tester = HitTester(layout: panel, panelSize: CGSize(width: 600, height: 400), slotGap: 4, hysteresis: 0, extendsEdges: false)
+        let id = tester.hit(CGPoint(x: 300, y: 200))
+        #expect(id == nil || panel.slot(id!)?.isCancel == true, "\(panel.id)")
+    }
+}

@@ -20,21 +20,42 @@ func closedContains(_ rect: CGRect, _ p: CGPoint) -> Bool {
     p.x >= rect.minX && p.x <= rect.maxX && p.y >= rect.minY && p.y <= rect.maxY
 }
 
-/// 坐标映射（SRS 6.2，按 decisions.md D9、D21 修订）：触控板归一化坐标 → 面板坐标。
-/// 映射区是居中、占触控板 `scale` 比例（宽高同比）的矩形，与面板线性绝对映射。映射区以外不命中任何槽位，
+/// 映射区中心（D55，触控板归一化坐标，原点左下）：以落点为中心；方位唤起（`zone`）时落点在面板对应的角或边之外 `margin` 处。
+/// 映射区放不下时往里推，四周保留 `margin`（放不下时缩小）。`size` 为映射区占触控板的比例
+public func mappingCenter(landing p: CGPoint, zone: TriggerZone?, size: CGSize, margin: CGSize) -> CGPoint {
+    func axis(_ v: Double, length: Double, margin: Double, low: Bool, high: Bool) -> Double {
+        let m = min(margin, max(0, (1 - length) / 2))
+        let lower = length / 2 + m, upper = 1 - lower
+        guard lower < upper else { return 0.5 }
+        let start = low ? v + m + length / 2 : high ? v - m - length / 2 : v
+        return min(max(start, lower), upper)
+    }
+    let left = zone == .bottomLeft || zone == .topLeft || zone == .left
+    let right = zone == .bottomRight || zone == .topRight || zone == .right
+    let bottom = zone == .bottomLeft || zone == .bottomRight || zone == .bottom
+    let top = zone == .topLeft || zone == .topRight || zone == .top
+    return CGPoint(x: axis(p.x, length: size.width, margin: margin.width, low: left, high: right),
+                   y: axis(p.y, length: size.height, margin: margin.height, low: bottom, high: top))
+}
+
+/// 坐标映射（SRS 6.2，按 decisions.md D9、D21、D55 修订）：触控板归一化坐标 → 面板坐标。
+/// 映射区是以 `center` 为中心、占触控板 `scale` 比例（宽高同比）的矩形，与面板线性映射。映射区以外不命中任何槽位，
 /// 在那里抬起即关闭面板（D21）；指示点照常画在面板之外（D15）。指点指可以落在四周 `margin` 宽的边缘以内的任何位置。
 public struct Mapper: Sendable {
     public let margin: Double
     /// 映射区占触控板的宽、高比例
     public let scale: CGSize
+    /// 映射区中心（D55）
+    public let center: CGPoint
 
     public init(margin: Double, scale: Double) {
         self.init(margin: margin, size: CGSize(width: scale, height: scale))
     }
 
-    public init(margin: Double, size: CGSize) {
+    public init(margin: Double, size: CGSize, center: CGPoint = CGPoint(x: 0.5, y: 0.5)) {
         self.margin = margin
         self.scale = size
+        self.center = center
     }
 
     /// 新接触可以成为指点指的区域
@@ -44,7 +65,7 @@ public struct Mapper: Sendable {
 
     /// 映射区（触控板归一化坐标，原点左下）
     public var mappingRect: CGRect {
-        CGRect(x: (1 - scale.width) / 2, y: (1 - scale.height) / 2, width: scale.width, height: scale.height)
+        CGRect(x: center.x - scale.width / 2, y: center.y - scale.height / 2, width: scale.width, height: scale.height)
     }
 
     /// 点是否在映射区内（含边界）
@@ -66,10 +87,11 @@ public struct Mapper: Sendable {
         return CGPoint(x: (p.x - r.minX) / r.width * panelSize.width, y: (1 - (p.y - r.minY) / r.height) * panelSize.height)
     }
 
-    /// 整块触控板对应的显示范围相对面板每边多出的宽度（pt）
+    /// 整块触控板对应的显示范围相对面板每边多出的宽度（pt）；映射区不居中时取较宽的一侧
     public func overscan(panelSize: CGSize) -> CGSize {
-        CGSize(width: (1 - scale.width) / 2 / scale.width * panelSize.width,
-               height: (1 - scale.height) / 2 / scale.height * panelSize.height)
+        let r = mappingRect
+        return CGSize(width: max(r.minX, 1 - r.maxX) / scale.width * panelSize.width,
+                      height: max(r.minY, 1 - r.maxY) / scale.height * panelSize.height)
     }
 
     /// 面板坐标（pt，原点左上）
@@ -121,6 +143,13 @@ public struct PanelGeometry: Equatable, Sendable {
         let size = size(of: layout), mapping = mapping(of: layout)
         guard deviceMM.width > 0, deviceMM.height > 0, mapping.width > 0, mapping.height > 0 else { return 0 }
         return (size.width / (mapping.width * deviceMM.width) + size.height / (mapping.height * deviceMM.height)) / 2
+    }
+
+    /// 跟随落点时映射区外侧留的余量（D55，触控板比例）：参考映射区平均边长的 `ratio`，两轴毫米数相同
+    public func anchorMargin(ratio: Double) -> CGSize {
+        guard deviceMM.width > 0, deviceMM.height > 0 else { return CGSize(width: mappingScale * ratio, height: mappingScale * ratio) }
+        let mm = mappingScale * (deviceMM.width + deviceMM.height) / 2 * ratio
+        return CGSize(width: mm / deviceMM.width, height: mm / deviceMM.height)
     }
 
     /// 相对参考网格的宽、高倍数（超出上限时已整体缩小）

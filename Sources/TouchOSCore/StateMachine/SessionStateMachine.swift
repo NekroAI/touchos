@@ -245,6 +245,10 @@ public struct ActiveContext: Equatable, Sendable {
     public let enteredAt: TimeInterval
     /// 唤起位置（触控板归一化坐标）：轻点的中心
     public var entryPoint: CGPoint?
+    /// 映射区中心（D55）：跟随落点时每次新的指点指落下时确定，固定在中央时不变
+    public var mappingCenter = CGPoint(x: 0.5, y: 0.5)
+    /// 面板出现时的映射区中心：弹开动画的位置不随之后的落点改变
+    public var entryCenter = CGPoint(x: 0.5, y: 0.5)
     public let panels: [Layout]
     public var panelIndex = 0
     public var layout: Layout { panels[panelIndex] }
@@ -506,15 +510,18 @@ public struct SessionStateMachine: Sendable {
     /// 确认期满，进入激活（5.4）：第二下成为指点指。`armed` 为 false 表示没有经过确认期，光标在此刻冻结
     private mutating func enterActive(_ ctx: ArmedContext, now: TimeInterval, armed: Bool = true) -> [SessionEffect] {
         let index = environment.panelIndex(for: ctx.trigger) ?? 0
+        var zone: TriggerZone?
+        if case .zoneTapHold(let z) = ctx.trigger { zone = z }
         let effects = enterActive(device: ctx.device, entry: ctx.entry, panel: index, now: now,
-                                  pointer: (ctx.contactID, ctx.latest), cursorArmed: armed)
+                                  pointer: (ctx.contactID, ctx.latest), zone: zone, cursorArmed: armed)
         return effects.isEmpty && armed ? abortArmed() : effects
     }
 
     /// 进入激活：面板立即显示（D19）。`pointer` 为轻点后按住的第二下，直接作为指点指（D25）；
     /// `cursorArmed` 表示确认期已记录冻结点。条件不满足时返回空
     private mutating func enterActive(device id: TrackpadDeviceID, entry: CGPoint, panel: Int, now: TimeInterval,
-                                      pointer: (id: Int, position: CGPoint)? = nil, cursorArmed: Bool = false) -> [SessionEffect] {
+                                      pointer: (id: Int, position: CGPoint)? = nil, zone: TriggerZone? = nil,
+                                      cursorArmed: Bool = false) -> [SessionEffect] {
         let panels = environment.panels
         guard panels.indices.contains(panel), let device = environment.devices[id] else { return [] }
         let geometry = PanelGeometry(screen: environment.screenSize, deviceMM: device.surfaceSizeMM, tuning: tuning)
@@ -536,6 +543,8 @@ public struct SessionStateMachine: Sendable {
         if !cursorArmed { effects.append(.cursor(.arm)) }
         effects.append(.cursor(.lock))
         if let c = pointer {
+            active.mappingCenter = anchoredCenter(active, landing: c.position, zone: zone)
+            active.entryCenter = active.mappingCenter
             active.pointer = PointerTrack(id: c.id, t: now, p: c.position)
             let h = hover(active, c.position, now: now)
             active.hovered = h.slot
@@ -759,9 +768,18 @@ public struct SessionStateMachine: Sendable {
 
     /// 当前面板的映射区（D29：随网格伸缩）；总览时为参考映射区，对应整个参考大小
     private func mapper(_ ctx: ActiveContext) -> Mapper {
-        let size = showingOverview(ctx) ? CGSize(width: tuning.mappingScale, height: tuning.mappingScale)
-            : ctx.geometry.mapping(of: ctx.layout)
-        return Mapper(margin: tuning.mappingMargin, size: size)
+        Mapper(margin: tuning.mappingMargin, size: mappingSize(ctx), center: ctx.mappingCenter)
+    }
+
+    private func mappingSize(_ ctx: ActiveContext) -> CGSize {
+        showingOverview(ctx) ? CGSize(width: tuning.mappingScale, height: tuning.mappingScale) : ctx.geometry.mapping(of: ctx.layout)
+    }
+
+    /// 这次落点对应的映射区中心（D55）。环形面板靠相对圆心的角度判定，方位唤起也以落点为中心
+    private func anchoredCenter(_ ctx: ActiveContext, landing p: CGPoint, zone: TriggerZone?) -> CGPoint {
+        guard tuning.panelAnchor == .landing else { return ctx.mappingCenter }
+        return mappingCenter(landing: p, zone: ctx.layout.isRing ? nil : zone, size: mappingSize(ctx),
+                             margin: ctx.geometry.anchorMargin(ratio: tuning.anchorMargin))
     }
 
     /// 映射区对应的显示范围：当前面板，总览时为参考大小
@@ -815,7 +833,7 @@ public struct SessionStateMachine: Sendable {
     }
 
     private mutating func pointerFrame(_ ctx: inout ActiveContext, _ frame: TouchFrame) -> [SessionEffect] {
-        let mapper = mapper(ctx)
+        var mapper = mapper(ctx)
         var effects: [SessionEffect] = []
 
         if let pending = ctx.pendingLift {
@@ -851,7 +869,9 @@ public struct SessionStateMachine: Sendable {
             pointer.append(t: frame.timestamp, p: c.position)  // T9
             ctx.pointer = pointer
         } else if let c = frame.contacts.first(where: { $0.phase == .began && mapper.acceptsPointerStart($0.position) }) {
-            // T8：新接触落在边缘以内（FR-6.5；映射区修订见 decisions.md D9）
+            // T8：新接触落在边缘以内（FR-6.5；映射区修订见 decisions.md D9）；跟随落点时以它为中心（D55）
+            ctx.mappingCenter = anchoredCenter(ctx, landing: c.position, zone: nil)
+            mapper = self.mapper(ctx)
             ctx.pointer = PointerTrack(id: c.id, t: frame.timestamp, p: c.position)
         } else {
             state = .active(ctx)
@@ -1080,7 +1100,11 @@ public struct SessionStateMachine: Sendable {
         s.overviewHover = ctx.overviewHover
         s.holdStartedAt = ctx.holdStartedAt
         s.holdDuration = tuning.editHoldMs / 1000
-        s.origin = ctx.entryPoint.map(shown)
+        let entryMapper = Mapper(margin: tuning.mappingMargin, size: mappingSize(ctx), center: ctx.entryCenter)
+        s.origin = ctx.entryPoint.map { p in
+            let q = entryMapper.unclampedPanelPoint(p, panelSize: area.size)
+            return CGPoint(x: q.x + area.minX, y: q.y + area.minY)
+        }
         s.sliderValues = ctx.sliderValues
         s.sliderBase = ctx.sliderBase
         return s

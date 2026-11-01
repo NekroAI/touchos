@@ -356,3 +356,8 @@
 "打字时防误触" = "Ignore Accidental Touches While Typing";
 "只对内置触控板生效：按键后短时间内不打开面板，靠近边缘的区域挡得更久。" = "Built-in trackpad only: panels won't open for a moment after a key press, and the area near the edges stays blocked a little longer.";
 "经常误开面板或误执行时，把这两项调大。手指落下后不到确认时间就抬起、且基本没移动，只关闭面板不执行；设为 0 ms 则不保护。" = "Increase these two if panels open or actions run by accident. Lifting before the confirm time without really moving just closes the panel; 0 ms turns this protection off.";
+"跟随落点（推荐）" = "Follow Finger (Recommended)";
+"固定在中央" = "Fixed at Center";
+"面板定位" = "Panel Position";
+"跟随落点：手指落下的位置就是面板中心，同一个按钮总是同样的方向和距离；从开启的边角起手时，手指从面板对应的角或边外侧出发。固定在中央：面板对应触控板正中的固定区域。" = "Follow Finger: where your finger lands becomes the panel's center, so a button is always the same direction and distance away. Starting from an enabled corner or edge, your finger begins just outside that corner or edge of the panel. Fixed at Center: the panel maps to a fixed area in the middle of the trackpad.";
+"映射区：随手指落点移动，这里画的是落在中央时的位置；在区外抬起即取消" = "Mapping area: moves with where your finger lands; shown here for a landing at the center. Lifting outside it cancels";

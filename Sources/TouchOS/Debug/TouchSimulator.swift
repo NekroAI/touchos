@@ -204,6 +204,7 @@ final class TouchSimulator {
         tuning.fourFingerTap = true
         tuning.tapHold = true
         tuning.zoneTapHold = []
+        tuning.panelAnchor = .center  // 脚本按触控板绝对位置编写（D55）
         let machine = SessionStateMachine(tuning: tuning, environment: environment)
         var previous: [Int: CGPoint] = [:]
         let start = ProcessInfo.processInfo.systemUptime

@@ -22,11 +22,13 @@ public struct AppConfig: Codable, Equatable, Sendable {
         public var cursorFreeze = CursorFreeze.hide
         /// 打字时防误触（D54）
         public var typingGuard = true
+        /// 面板定位（D55）
+        public var panelAnchor = PanelAnchor.landing
 
         public init() {}
 
         private enum Keys: String, CodingKey {
-            case enabled, haptics, showTrail, dimBackground, blacklist, focusPointerWindow, checkUpdates, cursorFreeze, typingGuard
+            case enabled, haptics, showTrail, dimBackground, blacklist, focusPointerWindow, checkUpdates, cursorFreeze, typingGuard, panelAnchor
         }
 
         /// 缺省的字段取默认值：旧版本写出的文件没有后来新增的字段
@@ -43,6 +45,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
             // 新版本可能增加取值：不认识的按默认处理，不让整份配置读取失败
             cursorFreeze = (try c.decodeIfPresent(String.self, forKey: .cursorFreeze)).flatMap(CursorFreeze.init) ?? d.cursorFreeze
             typingGuard = try c.decodeIfPresent(Bool.self, forKey: .typingGuard) ?? d.typingGuard
+            panelAnchor = (try c.decodeIfPresent(String.self, forKey: .panelAnchor)).flatMap(PanelAnchor.init) ?? d.panelAnchor
         }
 
         public func encode(to encoder: Encoder) throws {
@@ -56,6 +59,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
             try c.encode(checkUpdates, forKey: .checkUpdates)
             try c.encode(cursorFreeze, forKey: .cursorFreeze)
             try c.encode(typingGuard, forKey: .typingGuard)
+            try c.encode(panelAnchor, forKey: .panelAnchor)
         }
     }
 
@@ -257,6 +261,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         t.fourFingerTap = list.contains(.fourFingerTap)
         t.tapHold = list.contains(.tapHold)
         t.typingGuard = general.typingGuard
+        t.panelAnchor = general.panelAnchor
         t.panelScale = min(max(sizes.panelScale, Tuning.panelScaleRange.lowerBound), Tuning.panelScaleRange.upperBound)
         t.mappingScale = min(max(sizes.mappingScale, Tuning.mappingScaleRange.lowerBound), Tuning.mappingScaleRange.upperBound)
         t.hitGapMM = min(max(sizes.hitGapMM, Tuning.hitGapRange.lowerBound), Tuning.hitGapRange.upperBound)

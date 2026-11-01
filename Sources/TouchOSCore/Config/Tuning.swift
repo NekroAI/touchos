@@ -34,6 +34,10 @@ public struct Tuning: Equatable, Sendable {
     /// 修订 0.6 → 0.4（D21）：随面板一起缩小，手指移动与屏幕上指示点移动的比例保持不变
     public var mappingScale = 0.4
     public static let mappingScaleRange = 0.3...1.0
+    /// 面板定位（D55）
+    public var panelAnchor = PanelAnchor.landing
+    /// `P.anchorMargin`：跟随落点时映射区外侧的余量，参考映射区平均边长的比例（D55）
+    public var anchorMargin = 0.1
     public static let panelScaleRange = 0.3...0.9
     /// `P.hysteresis`（面板比例）
     public var hysteresis = 0.02

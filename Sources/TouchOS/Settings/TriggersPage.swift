@@ -34,6 +34,13 @@ struct TriggersPage: View {
                                   note: String(localized: "第一下轻点落在开启的角或边上，接着按住，打开为这个方位选择的面板；落在别处仍是普通的轻点后按住。"))
                 }
                 Section {
+                    Picker(selection: binding(configs, \.general.panelAnchor)) {
+                        Text("跟随落点（推荐）").tag(PanelAnchor.landing)
+                        Text("固定在中央").tag(PanelAnchor.center)
+                    } label: {
+                        Text("面板定位")
+                        Text("跟随落点：手指落下的位置就是面板中心，同一个按钮总是同样的方向和距离；从开启的边角起手时，手指从面板对应的角或边外侧出发。固定在中央：面板对应触控板正中的固定区域。")
+                    }
                     LabeledSlider(title: String(localized: "面板大小（占屏幕）"), value: binding(configs, \.sizes.panelScale), range: Tuning.panelScaleRange)
                         .onHover { hover(.panel, $0) }
                     LabeledSlider(title: String(localized: "映射区大小（占触控板）"), value: binding(configs, \.sizes.mappingScale), range: Tuning.mappingScaleRange)
@@ -226,7 +233,9 @@ struct TriggerPreview: View {
     private var legend: some View {
         let reach = Int(tuning.tapHoldReachMM.rounded())
         return VStack(alignment: .leading, spacing: 6) {
-            LegendItem(color: .accentColor, text: String(localized: "映射区：手指位置对应面板上的按钮，在区外抬起即取消"))
+            LegendItem(color: .accentColor, text: tuning.panelAnchor == .landing
+                ? String(localized: "映射区：随手指落点移动，这里画的是落在中央时的位置；在区外抬起即取消")
+                : String(localized: "映射区：手指位置对应面板上的按钮，在区外抬起即取消"))
             if config.triggers.isOn(.tapHold) {
                 LegendItem(color: Self.tapHoldColor, text: String(localized: "轻点后按住：第二下落在第一下 \(reach) mm 以内，板上任意位置都可以"))
             }
@@ -252,7 +261,14 @@ struct TriggerPreview: View {
         let screen = NSScreen.main?.visibleFrame.size ?? CGSize(width: 1440, height: 900)
         let scale = shownPanel.map { PanelGeometry(screen: screen, deviceMM: device, tuning: t).mapping(of: $0) }
             ?? CGSize(width: t.mappingScale, height: t.mappingScale)
-        let mapping = view(Mapper(margin: t.mappingMargin, size: scale).mappingRect)
+        var center = CGPoint(x: 0.5, y: 0.5)
+        // 跟随落点时，方位唤起的映射区从那个角或边开始（D55）
+        if t.panelAnchor == .landing, case .trigger(.zoneTapHold(let zone)) = focus, shownPanel?.isRing != true {
+            let z = triggerZone(zone, width: t.zoneW, height: t.zoneH)
+            center = mappingCenter(landing: CGPoint(x: z.midX, y: z.midY), zone: zone, size: scale,
+                                   margin: PanelGeometry(screen: screen, deviceMM: device, tuning: t).anchorMargin(ratio: t.anchorMargin))
+        }
+        let mapping = view(Mapper(margin: t.mappingMargin, size: scale, center: center).mappingRect)
         var m = ctx
         m.opacity = dimmed(focus == .mapping || focus == .panel || focus == .gap || { if case .trigger = focus { true } else { false } }())
         m.fill(Path(roundedRect: mapping, cornerRadius: 6), with: .color(.accentColor.opacity(focus == .mapping ? 0.22 : 0.12)))

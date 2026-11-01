@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format is based on 
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-11-01
+
+### Added
+- Panel Position, under Feel on the Triggers page, with two options. Follow Finger, the new default, centers the panel on where your finger lands, so a button is always the same direction and distance away. Fixed at Center is the previous behavior.
+- With Follow Finger, a grid panel opened from an enabled corner or edge starts with your finger just outside that corner or edge of the panel, where lifting cancels.
+
 ## [0.1.7] - 2026-11-01
 
 ### Added
