@@ -18,6 +18,11 @@ public struct Tuning: Equatable, Sendable {
     /// 指点指落下后这么久以内抬起、且移动不到 `P.stillThresholdMM`：只关闭不执行，防止误开面板后抬手就触发（D53）。0 表示不保护
     public var commitGuardMs = 200.0
     public static let commitGuardRange = 0.0...500.0
+    /// `P.minHoldSize`：轻点后按住的第二下，接触面积在确认期内至少要达到这么大，否则当作轻轻碰到、不打开面板（D56）。
+    /// 单位为框架原始接触面积（`zTotal`），0 表示不检查。妙控板实测：有意按住在确认期内 0.36–0.84，轻擦 0.08–0.32；
+    /// 默认取保守值，只滤掉明显过轻的接触。内置板未实测
+    public var minHoldSize: Float = 0.25
+    public static let minHoldSizeRange = 0.0...0.6
     /// 打字时防误触（D54，只对内置触控板）：按键后 `P.typingBlockMs` 内整块板不接受唤起，
     /// `P.typingEdgeMs` 内外圈 `P.typingEdgeMM` 不接受唤起
     public var typingGuard = true

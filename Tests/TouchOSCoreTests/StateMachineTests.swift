@@ -514,6 +514,55 @@ private func shown(_ h: Harness) -> Bool {
     }
 }
 
+/// 唤起所需按压（D56）：第二下的接触面积在确认期内至少达到 `P.minHoldSize`
+@Suite struct MinHoldSizeTests {
+    private var tuning: Tuning {
+        var t = Tuning.test
+        t.minHoldSize = 0.25
+        return t
+    }
+
+    @Test func lightSecondTouchDoesNotOpen() {
+        let h = run(secondDown(size: 0.1).hold(id: 2, until: 0.4), tuning: tuning)
+        #expect(h.failures == [.light] && !shown(h))
+        #expect(h.machine.state == .idle && h.policies.last?.mode == .idle)
+        #expect(h.machine.lastHoldSize == 0.1)
+    }
+
+    @Test func firmSecondTouchOpensEvenAfterLightFirstTap() {
+        let g = Gesture(device: .builtIn).touch(id: 1, at: Spot.gap, t: 0, size: 0.1).lift(id: 1, t: 0.05)
+            .touch(id: 2, at: Spot.gap, t: 0.1, size: 0.4).hold(id: 2, until: 0.4)
+        let h = run(g, tuning: tuning, until: 0.4)
+        #expect(h.isActive && h.failures.isEmpty)
+        #expect(h.machine.lastHoldSize == 0.4)
+    }
+
+    @Test func zeroTurnsTheCheckOff() {
+        var off = tuning
+        off.minHoldSize = 0
+        let h = run(secondDown(size: 0.1).hold(id: 2, until: 0.4), tuning: off, until: 0.4)
+        #expect(h.isActive)
+    }
+
+    @Test func zeroDelayChecksTheLandingFrame() {
+        var t = tuning
+        t.tapHoldDelayMs = 0
+        let h = run(secondDown(size: 0.1).hold(id: 2, until: 0.4), tuning: t, until: 0.4)
+        #expect(h.failures == [.light] && !h.isActive)
+        #expect(!h.effects.contains(.cursor(.compensate)))
+    }
+
+    @Test func settingIsClampedIntoTuningAndDefaultsWhenMissing() throws {
+        var config = AppConfig.default
+        config.sizes.minHoldSize = 5
+        var t = Tuning()
+        config.apply(to: &t)
+        #expect(t.minHoldSize == Float(Tuning.minHoldSizeRange.upperBound))
+        let decoded = try JSONDecoder().decode(AppConfig.Sizes.self, from: Data("{}".utf8))
+        #expect(decoded.minHoldSize == Double(Tuning().minHoldSize))
+    }
+}
+
 /// 面板定位（D55）
 @Suite struct PanelAnchorTests {
     private let margin = CGSize(width: 0.04, height: 0.05)

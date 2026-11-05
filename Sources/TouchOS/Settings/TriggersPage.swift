@@ -52,11 +52,13 @@ struct TriggersPage: View {
                                   step: 10, format: { "\(Int($0)) ms" })
                     LabeledSlider(title: String(localized: "选择确认时间"), value: binding(configs, \.sizes.commitGuardMs), range: Tuning.commitGuardRange,
                                   step: 10, format: { "\(Int($0)) ms" })
+                    LabeledSlider(title: String(localized: "唤起所需按压"), value: binding(configs, \.sizes.minHoldSize), range: Tuning.minHoldSizeRange,
+                                  step: 0.05, format: { $0 == 0 ? String(localized: "不检查") : String(format: "%.2f", $0) })
                     Toggle("触觉反馈", isOn: binding(configs, \.general.haptics))
                 } header: {
                     Text("手感")
                 } footer: {
-                    FormFooter(String(localized: "经常误开面板或误执行时，把这两项调大。手指落下后不到确认时间就抬起、且基本没移动，只关闭面板不执行；设为 0 ms 则不保护。"))
+                    FormFooter(String(localized: "经常误开面板或误执行时，把这三项调大，有意唤起却打不开时调小。手指落下后不到确认时间就抬起、且基本没移动，只关闭面板不执行。唤起所需按压越大，轻点后按住的第二下要按得越实，轻轻碰到的不算。确认时间设为 0 ms、按压设为 0 即不检查。"))
                 }
                 Section {
                     Toggle("打字时防误触", isOn: binding(configs, \.general.typingGuard))

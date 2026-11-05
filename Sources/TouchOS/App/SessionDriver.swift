@@ -149,6 +149,7 @@ final class SessionDriver: @unchecked Sendable {
         case .armFailed(let reason):
             log.info("arm failed: \(reason.rawValue, privacy: .public)")
             onDebug?("确认失败：\(reason.rawValue)")  // l10n-ignore
+            DiagnosticLog.shared.record("确认失败：\(reason.rawValue) · 按住接触面积 \(String(format: "%.2f", machine.lastHoldSize))")  // l10n-ignore
         case .triggerFiltered(let reason):
             log.info("trigger filtered: \(reason.rawValue, privacy: .public)")
             DiagnosticLog.shared.record("唤起被挡下：\(reason.rawValue) · 接触面积 \(String(format: "%.2f", machine.lastTapSize))")  // l10n-ignore
@@ -158,14 +159,14 @@ final class SessionDriver: @unchecked Sendable {
         }
     }
 
-    /// 每次打开面板记下距上次按键多久、是否在外圈、接触面积，用来调整 D54 的数值；不记录坐标（FR-4.7）
+    /// 每次打开面板记下距上次按键多久、是否在外圈、两下的接触面积，用来调整 D54、D56 的数值；不记录坐标（FR-4.7）
     private func logPanelOpened() {
         guard case .active(let ctx) = machine.state else { return }
         let age = machine.lastKeyAt.map { "\(Int((ctx.enteredAt - $0) * 1000)) ms" } ?? "无"  // l10n-ignore
         let device = machine.environment.devices[ctx.device]
         var edge = false
         if let entry = ctx.entryPoint, let device { edge = machine.isInEdgeRing(entry, on: device) }
-        DiagnosticLog.shared.record("面板打开：\(device?.isBuiltIn == true ? "内置板" : "外接板") · 距上次按键 \(age) · \(edge ? "外圈" : "内圈") · 接触面积 \(String(format: "%.2f", machine.lastTapSize))")  // l10n-ignore
+        DiagnosticLog.shared.record("面板打开：\(device?.isBuiltIn == true ? "内置板" : "外接板") · 距上次按键 \(age) · \(edge ? "外圈" : "内圈") · 接触面积 \(String(format: "%.2f", machine.lastTapSize)) · 按住接触面积 \(String(format: "%.2f", machine.lastHoldSize))")  // l10n-ignore
     }
 
     /// FR-6.14：两次间隔不少于 40 ms；提交时的确认震动（D16）不受间隔限制

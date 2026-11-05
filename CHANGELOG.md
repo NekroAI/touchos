@@ -4,6 +4,11 @@ All notable changes to this project are documented here. The format is based on 
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-11-05
+
+### Added
+- Press Required to Open, under Feel on the Triggers page. The held finger of a tap and hold must press down at least a little before a panel opens, so a light brush no longer counts. Set it to 0 to turn the check off.
+
 ## [0.1.8] - 2026-11-01
 
 ### Added

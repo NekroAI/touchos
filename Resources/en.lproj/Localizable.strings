@@ -353,9 +353,11 @@
 "显示调试叠层，用于排查问题。其中的诊断日志只留在内存里，不会写入文件或上传，是否复制给别人由你决定。" = "Shows the debug overlay for troubleshooting. Its diagnostic log stays in memory and is never written to a file or uploaded; you decide whether to copy it for anyone.";
 "按住多久打开面板" = "Hold Time to Open Panel";
 "选择确认时间" = "Selection Confirm Time";
+"唤起所需按压" = "Press Required to Open";
+"不检查" = "Off";
 "打字时防误触" = "Ignore Accidental Touches While Typing";
 "只对内置触控板生效：按键后短时间内不打开面板，靠近边缘的区域挡得更久。" = "Built-in trackpad only: panels won't open for a moment after a key press, and the area near the edges stays blocked a little longer.";
-"经常误开面板或误执行时，把这两项调大。手指落下后不到确认时间就抬起、且基本没移动，只关闭面板不执行；设为 0 ms 则不保护。" = "Increase these two if panels open or actions run by accident. Lifting before the confirm time without really moving just closes the panel; 0 ms turns this protection off.";
+"经常误开面板或误执行时，把这三项调大，有意唤起却打不开时调小。手指落下后不到确认时间就抬起、且基本没移动，只关闭面板不执行。唤起所需按压越大，轻点后按住的第二下要按得越实，轻轻碰到的不算。确认时间设为 0 ms、按压设为 0 即不检查。" = "Increase these three if panels open or actions run by accident; decrease them if a panel won't open when you mean it to. Lifting before the confirm time without really moving just closes the panel. The higher the press required, the firmer the held finger of a tap and hold must be; light brushes don't count. A confirm time of 0 ms or a press of 0 turns the check off.";
 "跟随落点（推荐）" = "Follow Finger (Recommended)";
 "固定在中央" = "Fixed at Center";
 "面板定位" = "Panel Position";
