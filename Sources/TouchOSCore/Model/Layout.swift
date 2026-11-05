@@ -73,20 +73,23 @@ public struct Slot: Equatable, Sendable {
     public var id: SlotID
     public var shape: SlotShape
     public var title: String
-    /// SF Symbols 名称（应用图标、本地图片在 K12 加入）
+    /// SF Symbols 名称；为空时按钮中间直接画名称（D30）
     public var symbol: String
+    /// 设置后显示该应用的图标（单色，D58），代替 `symbol`；`symbol` 留给旧版本与应用未安装时显示
+    public var appIcon: String?
     /// 抬起或按压时执行（D18：按压执行并保留面板，抬起执行并关闭，不再区分连续触发槽位）
     public var action: Action
     /// 设置后为滑杆槽位：槽位内的位置直接对应数值，按压或抬起时确定（交互实验）
     public var slider: SliderTarget?
     public var widget: WidgetKind?
 
-    public init(id: SlotID, shape: SlotShape, title: String, symbol: String, action: Action, slider: SliderTarget? = nil,
-                widget: WidgetKind? = nil) {
+    public init(id: SlotID, shape: SlotShape, title: String, symbol: String, appIcon: String? = nil, action: Action,
+                slider: SliderTarget? = nil, widget: WidgetKind? = nil) {
         self.id = id
         self.shape = shape
         self.title = title
         self.symbol = symbol
+        self.appIcon = appIcon
         self.action = action
         self.slider = slider
         self.widget = widget
@@ -146,13 +149,14 @@ public struct Layout: Equatable, Sendable {
     public static func ring(id: String, name: String, items: [Slot], center: Slot?, inner: Double = 0.36) -> Layout {
         let step = 360 / Double(max(items.count, 1))
         var slots = items.enumerated().map { i, s in
-            Slot(id: s.id, shape: .sector(Sector(innerRadius: inner, outerRadius: nil, startAngle: Double(i) * step - step / 2,
-                                                 endAngle: Double(i) * step + step / 2)),
-                 title: s.title, symbol: s.symbol, action: s.action, slider: s.slider, widget: s.widget)
+            var item = s
+            item.shape = .sector(Sector(innerRadius: inner, outerRadius: nil, startAngle: Double(i) * step - step / 2,
+                                        endAngle: Double(i) * step + step / 2))
+            return item
         }
         if let c = center {
             slots.append(Slot(id: c.id, shape: .sector(Sector(innerRadius: 0, outerRadius: inner * 0.62, startAngle: 0, endAngle: 360)),
-                              title: c.title, symbol: c.symbol, action: c.action))
+                              title: c.title, symbol: c.symbol, appIcon: c.appIcon, action: c.action))
         }
         return Layout(id: id, name: name, slots: slots)
     }
@@ -194,6 +198,11 @@ public enum SystemCommand: String, Sendable, CaseIterable {
     case windowTopHalf, windowBottomHalf
 }
 
+/// 动作在执行时读取的内容（D59）。先只有剪贴板，以后可加访达选中项、选中文字
+public enum ActionInput: String, Sendable, CaseIterable {
+    case clipboard
+}
+
 public enum Action: Equatable, Sendable {
     case none                                   // 安全区
     case keyboardShortcut(KeyCombo)
@@ -206,6 +215,8 @@ public enum Action: Equatable, Sendable {
     case system(SystemCommand)
     /// 输入一段文字（D30，SRS 预留的 M2 动作提前实现）：直接送字符，与键盘布局、输入法无关，任何符号都能输入
     case textSnippet(String)
+    /// 用指定应用打开剪贴板里的链接、文件或路径（D59）；都不是时，有 `searchURL` 就把文字代入它再打开，否则失败
+    case openWith(bundleID: String, input: ActionInput, searchURL: String?)
     // M2 预留：macro([Action])、windowManagement(WindowCommand)、subPanel(LayoutID)
 
     /// 按住按钮时是否连续触发（D33）：输入文字、不带 ⌘ 的按键（删除、方向、回车、Tab）、音量与亮度步进。

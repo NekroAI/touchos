@@ -61,6 +61,9 @@ final class ActionExecutor: @unchecked Sendable {
 
     private func run(_ request: ActionRequest) throws {
         let target = focusPointerWindow(for: request.action)
+        // 只在动作用到时读剪贴板（D59），内容不写日志
+        let clipboard = request.action.input == .clipboard ? Clipboard.read() : nil
+        let environment = clipboard.map { [ActionInput.clipboardVariable: $0.plainText] } ?? [:]
         switch request.action {
         case .none:
             break
@@ -73,15 +76,28 @@ final class ActionExecutor: @unchecked Sendable {
         case .openApp(let bundleID):
             try Launcher.openApp(bundleID)
         case .openURL(let url, let browser):
-            try Launcher.openURL(url, browserBundleID: browser)
+            guard let clipboard else { try Launcher.openURL(url, browserBundleID: browser); break }
+            let text = clipboard.plainText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { throw ActionFailure(reason: String(localized: "剪贴板是空的")) }
+            guard let filled = URL(string: Placeholder.fill(url.absoluteString, with: text)), filled.scheme != nil else {
+                throw ActionFailure(reason: String(localized: "代入剪贴板后不是有效的链接"))
+            }
+            try Launcher.openURL(filled, browserBundleID: browser)
+        case .openWith(let bundleID, _, let searchURL):
+            let snapshot = clipboard ?? ClipboardSnapshot()
+            guard !snapshot.isEmpty else { throw ActionFailure(reason: String(localized: "剪贴板是空的")) }
+            guard let opened = snapshot.openTarget(searchURL: searchURL, fileExists: { FileManager.default.fileExists(atPath: $0) }) else {
+                throw ActionFailure(reason: String(localized: "剪贴板里没有链接或路径"))
+            }
+            try Launcher.open(opened, with: bundleID)
         case .openFile(let path):
             try Launcher.openFile(path)
         case .shell(let command, let timeout, let notify):
-            let output = try ProcessRunner.run("/bin/zsh", ["-c", command], timeout: timeout)
+            let output = try ProcessRunner.run("/bin/zsh", ["-c", command], timeout: timeout, environment: environment)
             if notify, !output.isEmpty { Notifier.post(title: request.title, body: String(output.prefix(ProcessRunner.notifyLimit))) }
         case .appleScript(let source, let language):
             let args = language == .javaScript ? ["-l", "JavaScript", "-e", source] : ["-e", source]
-            _ = try ProcessRunner.run("/usr/bin/osascript", args, timeout: ProcessRunner.defaultTimeout)
+            _ = try ProcessRunner.run("/usr/bin/osascript", args, timeout: ProcessRunner.defaultTimeout, environment: environment)
         case .shortcut(let name):
             _ = try ProcessRunner.run("/usr/bin/shortcuts", ["run", name], timeout: ProcessRunner.shortcutTimeout)
         case .system(let command):
@@ -184,6 +200,19 @@ enum Launcher {
         }
     }
 
+    /// 用指定应用打开剪贴板里的链接或文件（D59）
+    static func open(_ target: OpenTarget, with bundleID: String) throws {
+        guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+            throw ActionFailure(reason: String(localized: "未安装 \(bundleID)"))
+        }
+        let urls: [URL]
+        switch target {
+        case .files(let files): urls = files
+        case .url(let url): urls = [url]
+        }
+        NSWorkspace.shared.open(urls, withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+    }
+
     static func openFile(_ path: String) throws {
         let expanded = (path as NSString).expandingTildeInPath
         guard FileManager.default.fileExists(atPath: expanded) else { throw ActionFailure(reason: String(localized: "找不到 \(path)")) }
@@ -199,10 +228,14 @@ enum ProcessRunner {
     /// 输出通知只取前这么多字
     static let notifyLimit = 200
 
-    static func run(_ executable: String, _ arguments: [String], timeout: TimeInterval) throws -> String {
+    static func run(_ executable: String, _ arguments: [String], timeout: TimeInterval,
+                    environment: [String: String] = [:]) throws -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
+        if !environment.isEmpty {
+            process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, new in new }
+        }
         process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
         let out = Pipe(), err = Pipe()
         process.standardOutput = out
@@ -226,5 +259,17 @@ enum ProcessRunner {
             throw ActionFailure(reason: message.isEmpty ? String(localized: "退出码 \(process.terminationStatus)") : String(message.prefix(notifyLimit)))
         }
         return output
+    }
+}
+
+/// 系统剪贴板（D59）：在主线程读出一份快照。拷贝的文件优先，文字另存
+enum Clipboard {
+    static func read() -> ClipboardSnapshot {
+        let read = {
+            let board = NSPasteboard.general
+            let files = board.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+            return ClipboardSnapshot(fileURLs: files, text: board.string(forType: .string))
+        }
+        return Thread.isMainThread ? read() : DispatchQueue.main.sync(execute: read)
     }
 }

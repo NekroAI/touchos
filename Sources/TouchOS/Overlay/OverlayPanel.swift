@@ -374,6 +374,7 @@ extension Action {
         case .shell: "Shell"
         case .appleScript: String(localized: "脚本")
         case .shortcut(let name): name
+        case .openWith: String(localized: "打开剪贴板")
         case .system, .textSnippet: nil
         }
     }

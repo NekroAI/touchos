@@ -713,7 +713,7 @@ extension Action {
         switch self {
         case .none: String(localized: "关闭")
         case .keyboardShortcut(let k): k.displayLabel
-        case .openApp(let id): NSWorkspace.shared.urlForApplication(withBundleIdentifier: id)?.deletingPathExtension().lastPathComponent ?? id
+        case .openApp(let id): AppLabel.name(id)
         case .openURL(let url, _): url.host ?? url.absoluteString
         case .openFile(let path): (path as NSString).lastPathComponent
         case .shell: "Shell"
@@ -721,6 +721,7 @@ extension Action {
         case .shortcut(let name): name
         case .system(let c): c.title
         case .textSnippet(let text): String(localized: "输入「\(text)」")
+        case .openWith(let id, _, _): String(localized: "用 \(AppLabel.name(id)) 打开剪贴板")
         }
     }
 }

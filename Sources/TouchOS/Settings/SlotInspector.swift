@@ -14,7 +14,7 @@ struct SlotInspector: View {
         if let id = navigation.selectedSlot, let slot = panel.slot(id) {
             VStack(spacing: 0) {
                 HStack(spacing: 10) {
-                    Image(systemName: Self.symbol(slot.symbol)).font(.title3).foregroundStyle(.tint).frame(width: 24)
+                    SlotIconPreview(slot: slot).font(.title3).foregroundStyle(.tint).frame(width: 24, height: 24)
                     Text(slot.title.isEmpty ? String(localized: "按钮") : slot.title).font(.headline).lineLimit(1)
                     Spacer()
                     Button { navigation.selectedSlot = nil } label: {
@@ -32,11 +32,6 @@ struct SlotInspector: View {
                     .id(slot.id)
             }
         }
-    }
-
-    /// 图标名无效时显示占位
-    static func symbol(_ name: String) -> String {
-        NSImage(systemSymbolName: name, accessibilityDescription: nil) == nil ? "questionmark.square.dashed" : name
     }
 }
 
@@ -67,7 +62,7 @@ private enum SlotKind: String, CaseIterable, Identifiable {
 
 /// 动作类型（编辑器里的选项）
 private enum ActionKind: String, CaseIterable, Identifiable {
-    case shortcut, text, system, app, url, file, shortcutsApp, shell, script
+    case shortcut, text, system, app, url, openWith, file, shortcutsApp, shell, script
 
     var id: String { rawValue }
 
@@ -78,6 +73,7 @@ private enum ActionKind: String, CaseIterable, Identifiable {
         case .system: String(localized: "系统功能")
         case .app: String(localized: "打开应用")
         case .url: String(localized: "打开链接")
+        case .openWith: String(localized: "用应用打开剪贴板")
         case .file: String(localized: "打开文件或文件夹")
         case .shortcutsApp: String(localized: "运行快捷指令")
         case .shell: String(localized: "Shell 命令")
@@ -97,6 +93,7 @@ private enum ActionKind: String, CaseIterable, Identifiable {
         case .shell: self = .shell
         case .appleScript: self = .script
         case .textSnippet: self = .text
+        case .openWith: self = .openWith
         }
     }
 
@@ -107,6 +104,7 @@ private enum ActionKind: String, CaseIterable, Identifiable {
         case .system: .system(.playPause)
         case .app: .openApp(bundleID: "com.apple.finder")
         case .url: .openURL(url: URL(string: "https://")!, browserBundleID: nil)
+        case .openWith: .openWith(bundleID: AppChooser.defaultBrowser ?? "com.apple.Safari", input: .clipboard, searchURL: nil)
         case .file: .openFile(path: "~/Downloads")
         case .shortcutsApp: .shortcut(name: "")
         case .shell: .shell(command: "", timeoutSec: ProcessRunner.defaultTimeout, notifyOutput: false)
@@ -128,7 +126,8 @@ private struct SlotForm: View {
         Form {
             Section("外观") {
                 TextField("名称", text: field(\.title))
-                SymbolField(symbol: field(\.symbol))
+                IconField(symbol: field(\.symbol), appIcon: makeBinding(get: { slot.appIcon }, set: { v in edit { $0.appIcon = v } }),
+                          actionApp: slot.action.appBundleID)
             }
             Section("功能") {
                 Picker("按钮", selection: makeBinding(get: { SlotKind(slot) }, set: setKind)) {
@@ -194,13 +193,25 @@ private struct SlotForm: View {
             LabeledContent("应用") {
                 HStack {
                     AppLabel(bundleID: id)
-                    Button("选择…") { if let picked = pickApp() { setAction(.openApp(bundleID: picked)) } }
+                    Button("选择…") { if let picked = AppChooser.pick() { setAction(.openApp(bundleID: picked)) } }
                 }
             }
         case .openURL(let url, let browser):
-            TextField("链接", text: makeBinding(get: { url.absoluteString }, set: { s in
+            TextField("链接", text: makeBinding(get: { Placeholder.display(url.absoluteString) }, set: { s in
                 if let u = URL(string: s), u.scheme != nil { setAction(.openURL(url: u, browserBundleID: browser)) }
             }))
+            LabeledContent("用哪个应用打开") {
+                AppMenu(bundleID: browser, allowsDefault: true) { setAction(.openURL(url: url, browserBundleID: $0)) }
+            }
+            inputNote(String(localized: "链接里写 {clipboard} 会代入剪贴板里的文字，例如 https://www.google.com/search?q={clipboard}。"))
+        case .openWith(let id, let input, let search):
+            LabeledContent("应用") {
+                AppMenu(bundleID: id, allowsDefault: false) { if let p = $0 { setAction(.openWith(bundleID: p, input: input, searchURL: search)) } }
+            }
+            TextField("其他文字时打开", text: makeBinding(get: { search ?? "" }, set: { v in
+                setAction(.openWith(bundleID: id, input: input, searchURL: v.isEmpty ? nil : v))
+            }), prompt: Text(verbatim: "https://www.google.com/search?q={clipboard}"))
+            inputNote(String(localized: "剪贴板里是链接、拷贝的文件或文件路径时，用这个应用打开。是其他文字时，填了「其他文字时打开」就把文字代入 {clipboard} 再打开，没填则提示无法打开。"))
         case .openFile(let path):
             LabeledContent("路径") {
                 HStack {
@@ -215,6 +226,7 @@ private struct SlotForm: View {
             TextEditor(text: makeBinding(get: { command }, set: { setAction(.shell(command: $0, timeoutSec: timeout, notifyOutput: notify)) }))
                 .font(.system(.body, design: .monospaced)).frame(minHeight: 70)
             Toggle("把输出显示为通知", isOn: makeBinding(get: { notify }, set: { setAction(.shell(command: command, timeoutSec: timeout, notifyOutput: $0)) }))
+            inputNote(String(localized: "用到环境变量 $TOUCHOS_CLIPBOARD 时，它是剪贴板里的文字（拷贝的是文件时为路径，每行一个）。"))
         case .appleScript(let source, let language):
             riskNote
             Picker("语言", selection: makeBinding(get: { language }, set: { setAction(.appleScript(source: source, language: $0)) })) {
@@ -223,11 +235,16 @@ private struct SlotForm: View {
             }
             TextEditor(text: makeBinding(get: { source }, set: { setAction(.appleScript(source: $0, language: language)) }))
                 .font(.system(.body, design: .monospaced)).frame(minHeight: 70)
+            inputNote(String(localized: "脚本里用 system attribute 读取环境变量 TOUCHOS_CLIPBOARD 即可拿到剪贴板里的文字（出现这个名字时才会读剪贴板）。"))
         case .textSnippet(let text):
             TextField("文字", text: makeBinding(get: { text }, set: { setAction(.textSnippet($0)) }), prompt: Text("例如 → 或 2026-"))
         case .none:
             EmptyView()
         }
+    }
+
+    private func inputNote(_ text: String) -> some View {
+        Text(text).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
     }
 
     /// FR-9.4：首次添加会运行命令的动作时提示风险
@@ -249,8 +266,19 @@ private struct SlotForm: View {
         }
     }
 
+    /// 图标与名称跟随动作的应用（D58）：原来就跟着旧应用的继续跟；从没有应用的动作换成打开应用时，
+    /// 用符号的按钮改用应用图标。用户自己换过图标或改过名称的不动
     private func setAction(_ action: Action) {
-        edit { $0.action = action }
+        edit { s in
+            let old = s.action.appBundleID, new = action.appBundleID
+            if old != new {
+                if let old, s.appIcon == old { s.appIcon = new }
+                else if old == nil, s.appIcon == nil, new != nil, !s.symbol.isEmpty { s.appIcon = new }
+                let placeholder = String(localized: "新按钮")
+                if let new, s.title.isEmpty || s.title == placeholder || old.map(AppLabel.name) == s.title { s.title = AppLabel.name(new) }
+            }
+            s.action = action
+        }
     }
 
     private func setKind(_ kind: SlotKind) {
@@ -308,58 +336,11 @@ private struct SlotForm: View {
     /// FR-11.7
     static let testDelay: TimeInterval = 1
 
-    private func pickApp() -> String? {
-        let panel = NSOpenPanel()
-        panel.directoryURL = URL(fileURLWithPath: "/Applications")
-        panel.allowedContentTypes = [.application]
-        guard panel.runModal() == .OK, let url = panel.url else { return nil }
-        return Bundle(url: url)?.bundleIdentifier
-    }
-
     private func pickFile() -> String? {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
         return (url.path as NSString).abbreviatingWithTildeInPath
-    }
-}
-
-/// SF Symbols 名称：直接输入或从常用图标里选
-private struct SymbolField: View {
-    @Binding var symbol: String
-    @State private var picking = false
-
-    static let common = [
-        "star", "heart", "bolt", "flame", "plus.square", "xmark.square", "arrow.clockwise", "arrow.uturn.backward",
-        "arrow.uturn.forward", "magnifyingglass", "chevron.backward", "chevron.forward", "doc.on.doc", "doc.on.clipboard",
-        "scissors", "square.and.arrow.down", "square.and.arrow.up", "trash", "folder", "terminal", "gearshape", "camera.viewfinder",
-        "lock", "moon", "sun.max", "speaker.wave.2", "speaker.slash", "play.fill", "pause.fill", "forward.fill", "backward.fill",
-        "music.note", "mic", "video", "message", "envelope", "calendar", "note.text", "globe", "safari", "link", "bookmark",
-        "rectangle.lefthalf.filled", "rectangle.righthalf.filled", "rectangle.inset.filled", "macwindow", "display.2", "keyboard",
-        "command", "option", "eye.slash", "minus.rectangle", "photo", "paintbrush", "pencil", "wand.and.stars", "sparkles",
-    ]
-
-    var body: some View {
-        LabeledContent("图标") {
-            HStack {
-                Image(systemName: SlotInspector.symbol(symbol))
-                    .frame(width: 22)
-                TextField("SF Symbols 名称", text: $symbol).labelsHidden()
-                Button { picking = true } label: { Image(systemName: "square.grid.3x3") }
-                    .popover(isPresented: $picking) {
-                        LazyVGrid(columns: Array(repeating: GridItem(.fixed(34)), count: 8), spacing: 6) {
-                            ForEach(Self.common, id: \.self) { name in
-                                Button { symbol = name; picking = false } label: {
-                                    Image(systemName: name).frame(width: 30, height: 30)
-                                }
-                                .buttonStyle(.borderless)
-                                .help(name)
-                            }
-                        }
-                        .padding(10)
-                    }
-            }
-        }
     }
 }
 

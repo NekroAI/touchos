@@ -147,7 +147,7 @@ private struct Glyph: View {
     var weight: Font.Weight = .medium
 
     /// 没有图标：名称画在按钮中间，下方不再重复显示名称
-    static func isText(_ slot: Slot) -> Bool { slot.symbol.isEmpty }
+    static func isText(_ slot: Slot) -> Bool { slot.showsTitleAsGlyph }
 
     var body: some View {
         if Self.isText(slot) {
@@ -156,7 +156,7 @@ private struct Glyph: View {
                 .font(.system(size: n <= 1 ? size * 1.15 : n <= 3 ? size * 0.85 : size * 0.6, weight: weight, design: .rounded))
                 .lineLimit(1).minimumScaleFactor(0.5)
         } else {
-            Image(systemName: slot.symbol).font(.system(size: size, weight: weight))
+            SlotSymbol(slot: slot, size: size, weight: weight)
         }
     }
 }
@@ -414,14 +414,14 @@ private struct OrbFace: View {
                     VStack(spacing: 6) {
                         SliderReadout(reading: slider, vertical: true, accent: .white).opacity(0.75)
                         Spacer(minLength: 4)
-                        Image(systemName: slot.symbol).font(.system(size: 18, weight: .medium))
+                        SlotSymbol(slot: slot, size: 18, weight: .medium)
                         Text(slot.title).font(.system(size: 11, weight: .medium)).lineLimit(1).minimumScaleFactor(0.7)
                     }
                     .foregroundStyle(.white)
                     .padding(.vertical, 20)
                 } else {
                     HStack(spacing: 10) {
-                        Image(systemName: slot.symbol).font(.system(size: 18, weight: .medium))
+                        SlotSymbol(slot: slot, size: 18, weight: .medium)
                         Text(slot.title).font(.system(size: 13, weight: .medium))
                         Spacer(minLength: 4)
                         SliderReadout(reading: slider, vertical: false, accent: .white).opacity(0.75)
@@ -438,7 +438,7 @@ private struct OrbFace: View {
             let art = min(92, max(size.height * 0.36, 40))
             VStack(alignment: .leading, spacing: 14) {
                 RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Color.white.opacity(0.1))
-                    .overlay(Image(systemName: slot.symbol).font(.system(size: art * 0.37)).foregroundStyle(.white.opacity(0.75)))
+                    .overlay(SlotSymbol(slot: slot, size: art * 0.37).foregroundStyle(.white.opacity(0.75)))
                     .frame(width: art, height: art)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(NowPlaying.title).font(.system(size: 15, weight: .semibold)).foregroundStyle(.white.opacity(0.95))
@@ -494,7 +494,7 @@ private struct LensFace: View {
                     .lineLimit(1).minimumScaleFactor(0.7)
                     .opacity(Glyph.isText(slot) ? 0 : 1)
             }
-            .floatingLabel("lens.tile|\(slot.symbol)|\(titleKey(slot))|\(lit)")
+            .floatingLabel("lens.tile|\(slot.iconKey)|\(titleKey(slot))|\(lit)")
         case .round:
             Glyph(slot: slot, size: 26, weight: .regular).foregroundStyle(.white.opacity(lit ? 1 : 0.86))
                 .frame(width: size.width, height: size.height)
@@ -504,7 +504,7 @@ private struct LensFace: View {
                         .fixedSize().offset(y: PanelMetrics.roundTitleOffset - 4)
                         .opacity(Glyph.isText(slot) ? 0 : 1)
                 }
-                .floatingLabel("lens.round|\(slot.symbol)|\(titleKey(slot))|\(lit)")
+                .floatingLabel("lens.round|\(slot.iconKey)|\(titleKey(slot))|\(lit)")
         case .slider:
             let vertical = size.height > size.width
             let track = Capsule().fill(Color.white.opacity(0.14))
@@ -514,7 +514,7 @@ private struct LensFace: View {
                     VStack(spacing: 10) {
                         SliderReadout(reading: slider, vertical: true, accent: accent).opacity(lit ? 0.9 : 0.45)
                         track.frame(width: lit ? 6 : 4).frame(maxHeight: .infinity)
-                        Image(systemName: slot.symbol).font(.system(size: 20))
+                        SlotSymbol(slot: slot, size: 20)
                         Text(slot.title).font(.system(size: 12, weight: .medium)).opacity(lit ? 0.96 : 0.6).lineLimit(1).minimumScaleFactor(0.7)
                     }
                     .foregroundStyle(.white)
@@ -523,7 +523,7 @@ private struct LensFace: View {
                 } else {
                     VStack(alignment: .leading, spacing: 0) {
                         HStack(spacing: 10) {
-                            Image(systemName: slot.symbol).font(.system(size: 20))
+                            SlotSymbol(slot: slot, size: 20)
                             Text(slot.title).font(.system(size: 13, weight: .medium)).opacity(lit ? 0.96 : 0.6)
                             Spacer(minLength: 4)
                             SliderReadout(reading: slider, vertical: false, accent: accent).opacity(lit ? 0.9 : 0.45)
@@ -536,13 +536,13 @@ private struct LensFace: View {
                 }
             }
             .chipBody(.rounded(20))
-            .floatingLabel("lens.slider|\(slot.symbol)|\(slot.title)|\(lit)|\(vertical)|\(slider.key)")
+            .floatingLabel("lens.slider|\(slot.iconKey)|\(slot.title)|\(lit)|\(vertical)|\(slider.key)")
         case .widget:
             let art = min(96, max(size.height * 0.38, 40))
             VStack(alignment: .leading, spacing: 14) {
                 RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.white.opacity(0.08))
                     .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color.white.opacity(0.16), lineWidth: 0.5))
-                    .overlay(Image(systemName: slot.symbol).font(.system(size: art * 0.37)).foregroundStyle(.white.opacity(0.7)))
+                    .overlay(SlotSymbol(slot: slot, size: art * 0.37).foregroundStyle(.white.opacity(0.7)))
                     .frame(width: art, height: art)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(NowPlaying.title).font(.system(size: 15, weight: .semibold)).foregroundStyle(.white.opacity(0.95))
@@ -552,7 +552,7 @@ private struct LensFace: View {
             .padding(20)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .chipBody(.rounded(20))
-            .floatingLabel("lens.widget|\(slot.symbol)|\(NowPlaying.title)|\(NowPlaying.subtitle)")
+            .floatingLabel("lens.widget|\(slot.iconKey)|\(NowPlaying.title)|\(NowPlaying.subtitle)")
         }
     }
 }
@@ -628,7 +628,7 @@ private struct HoloFace: View {
                 VStack(spacing: 10) {
                     readout
                     bar.frame(width: 2).frame(maxHeight: .infinity)
-                    Image(systemName: slot.symbol).font(.system(size: 18, weight: .light)).foregroundStyle(accent.opacity(lit ? 1 : 0.85))
+                    SlotSymbol(slot: slot, size: 18, weight: .light).foregroundStyle(accent.opacity(lit ? 1 : 0.85))
                     label
                 }
                 .frame(maxWidth: .infinity)
@@ -636,7 +636,7 @@ private struct HoloFace: View {
             } else {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 10) {
-                        Image(systemName: slot.symbol).font(.system(size: 18, weight: .light)).foregroundStyle(accent.opacity(lit ? 1 : 0.85))
+                        SlotSymbol(slot: slot, size: 18, weight: .light).foregroundStyle(accent.opacity(lit ? 1 : 0.85))
                         label
                         Spacer(minLength: 4)
                         readout
@@ -650,7 +650,7 @@ private struct HoloFace: View {
             let art = min(90, max(size.height * 0.36, 40))
             VStack(alignment: .leading, spacing: 14) {
                 Rectangle().strokeBorder(accent.opacity(0.35), lineWidth: 1)
-                    .overlay(Image(systemName: slot.symbol).font(.system(size: art * 0.35, weight: .light)).foregroundStyle(accent.opacity(0.85)))
+                    .overlay(SlotSymbol(slot: slot, size: art * 0.35, weight: .light).foregroundStyle(accent.opacity(0.85)))
                     .frame(width: art, height: art)
                 VStack(alignment: .leading, spacing: 5) {
                     Text(NowPlaying.title.uppercased()).font(.system(size: 12, design: .monospaced)).tracking(1.3).foregroundStyle(Self.ink)
@@ -661,7 +661,7 @@ private struct HoloFace: View {
         default:
             VStack(spacing: 10) {
                 Glyph(slot: slot, size: 26, weight: .light).foregroundStyle(lit ? Self.ink : accent)
-                    .floatingLabel("holo.glyph|\(slot.symbol)|\(slot.title)|\(lit)")
+                    .floatingLabel("holo.glyph|\(slot.iconKey)|\(slot.title)|\(lit)")
                 label.opacity(Glyph.isText(slot) ? 0 : 1)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

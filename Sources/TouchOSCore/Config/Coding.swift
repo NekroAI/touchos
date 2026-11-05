@@ -55,9 +55,10 @@ extension WidgetKind: Codable {}
 extension Modifier: Codable {}
 extension ScriptLanguage: Codable {}
 extension SystemCommand: Codable {}
+extension ActionInput: Codable {}
 
 extension Slot: Codable {
-    private enum Keys: String, CodingKey { case id, cell, rect, sector, title, symbol, action, slider, widget }
+    private enum Keys: String, CodingKey { case id, cell, rect, sector, title, symbol, appIcon, action, slider, widget }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
@@ -73,6 +74,7 @@ extension Slot: Codable {
         }
         self.init(id: try c.decode(SlotID.self, forKey: .id), shape: shape, title: try c.decode(String.self, forKey: .title),
                   symbol: try c.decodeIfPresent(String.self, forKey: .symbol) ?? "circle",
+                  appIcon: try c.decodeIfPresent(String.self, forKey: .appIcon),
                   action: try c.decodeIfPresent(Action.self, forKey: .action) ?? .none,
                   slider: try c.decodeIfPresent(SliderTarget.self, forKey: .slider),
                   widget: try c.decodeIfPresent(WidgetKind.self, forKey: .widget))
@@ -88,6 +90,7 @@ extension Slot: Codable {
         }
         try c.encode(title, forKey: .title)
         try c.encode(symbol, forKey: .symbol)
+        try c.encodeIfPresent(appIcon, forKey: .appIcon)  // 旧版本不认识，照旧显示 symbol
         try c.encode(action, forKey: .action)
         try c.encodeIfPresent(slider, forKey: .slider)
         try c.encodeIfPresent(widget, forKey: .widget)
@@ -148,7 +151,7 @@ extension KeyCombo: Codable {
 extension Action: Codable {
     private enum Keys: String, CodingKey {
         case type, keyCode, modifiers, displayLabel, bundleID, url, browserBundleID, path, command, timeoutSec, notifyOutput
-        case source, language, name, text
+        case source, language, name, text, input, searchURL
     }
 
     /// 编辑器与导入确认（FR-9.4、FR-9.5）用的类型名
@@ -164,6 +167,7 @@ extension Action: Codable {
         case .shortcut: "shortcut"
         case .system: "system"
         case .textSnippet: "textSnippet"
+        case .openWith: "openWith"
         }
     }
 
@@ -197,6 +201,10 @@ extension Action: Codable {
         case "shortcut": self = .shortcut(name: try c.decode(String.self, forKey: .name))
         case "system": self = .system(try c.decode(SystemCommand.self, forKey: .command))
         case "textSnippet": self = .textSnippet(try c.decode(String.self, forKey: .text))
+        case "openWith":
+            self = .openWith(bundleID: try c.decode(String.self, forKey: .bundleID),
+                             input: try c.decodeIfPresent(ActionInput.self, forKey: .input) ?? .clipboard,
+                             searchURL: try c.decodeIfPresent(String.self, forKey: .searchURL))
         case let other:
             throw DecodingError.dataCorruptedError(forKey: .type, in: c, debugDescription: String(localized: "未知动作类型 \(other)"))
         }
@@ -223,6 +231,10 @@ extension Action: Codable {
         case .shortcut(let name): try c.encode(name, forKey: .name)
         case .system(let command): try c.encode(command, forKey: .command)
         case .textSnippet(let text): try c.encode(text, forKey: .text)
+        case .openWith(let bundleID, let input, let searchURL):
+            try c.encode(bundleID, forKey: .bundleID)
+            try c.encode(input, forKey: .input)
+            try c.encodeIfPresent(searchURL, forKey: .searchURL)
         }
     }
 }

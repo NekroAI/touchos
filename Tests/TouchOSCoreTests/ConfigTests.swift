@@ -48,6 +48,8 @@ private func temporaryStore() -> ConfigStore {
             .appleScript(source: "1+1", language: .javaScript),
             .shortcut(name: "整理桌面"),
             .system(.windowLeftHalf),
+            .openWith(bundleID: "org.mozilla.firefox", input: .clipboard, searchURL: "https://www.google.com/search?q={clipboard}"),
+            .openWith(bundleID: "com.google.Chrome", input: .clipboard, searchURL: nil),
         ]
         for a in actions { #expect(try roundTrip(a) == a) }
         #expect(actions.filter(\.runsCode).count == 3)
@@ -63,6 +65,19 @@ private func temporaryStore() -> ConfigStore {
         ]
         for s in slots { #expect(try roundTrip(s) == s) }
         #expect(try roundTrip(PresetPanels.window) == PresetPanels.window)
+    }
+
+    @Test func appIconRoundTripsAndOldFilesHaveNone() throws {
+        let slot = Slot(id: "f", shape: .cell(GridCell(row: 0, col: 0)), title: "Firefox", symbol: "globe", appIcon: "org.mozilla.firefox",
+                        action: .openApp(bundleID: "org.mozilla.firefox"))
+        #expect(try roundTrip(slot) == slot)
+        let old = try JSONDecoder().decode(Slot.self, from: Data(#"{"id":"x","title":"x","symbol":"star","cell":{"row":0,"col":0}}"#.utf8))
+        #expect(old.appIcon == nil)
+        let encoded = String(decoding: try JSONEncoder().encode(old), as: UTF8.self)
+        #expect(!encoded.contains("appIcon"))
+        // 缺 input 时按剪贴板
+        let action = try JSONDecoder().decode(Action.self, from: Data(#"{"type":"openWith","bundleID":"a"}"#.utf8))
+        #expect(action == .openWith(bundleID: "a", input: .clipboard, searchURL: nil))
     }
 
     @Test func srsExampleSlotDecodes() throws {

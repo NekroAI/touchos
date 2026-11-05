@@ -405,3 +405,54 @@
 "按住时又落下一根手指" = "Another finger landed while holding";
 "阈值调节" = "Thresholds";
 "与设置中的同名选项相同，改动立即生效。有意唤起却打不开时调小阈值，误开时调大。" = "Same as the options of the same name in Settings; changes apply immediately. Lower the thresholds if a panel won't open when you mean it to, raise them if panels open by accident.";
+
+/* D58 按钮图标：符号库与应用图标 */
+"应用图标" = "App Icon";
+"浏览符号" = "Browse Symbols";
+"搜索（英文名称或关键词）" = "Search (name or keyword)";
+"分类" = "Category";
+"没有找到" = "No matches";
+"%lld 个符号" = "%lld symbols";
+"全部" = "All";
+"通讯" = "Communication";
+"天气" = "Weather";
+"地图" = "Maps";
+"物品与工具" = "Objects & Tools";
+"设备" = "Devices";
+"相机与照片" = "Camera & Photos";
+"游戏" = "Gaming";
+"连接" = "Connectivity";
+"交通" = "Transportation";
+"汽车" = "Automotive";
+"辅助功能" = "Accessibility";
+"隐私与安全" = "Privacy & Security";
+"人物" = "Human";
+"家居" = "Home";
+"健身" = "Fitness";
+"自然" = "Nature";
+"编辑" = "Editing";
+"文本格式" = "Text Formatting";
+"键盘" = "Keyboard";
+"商务" = "Commerce";
+"时间" = "Time";
+"健康" = "Health";
+"形状" = "Shapes";
+"箭头" = "Arrows";
+"编号" = "Indices";
+"数学" = "Math";
+
+/* D59 用应用打开剪贴板、链接里的 {clipboard} */
+"用应用打开剪贴板" = "Open Clipboard With App";
+"用 %@ 打开剪贴板" = "Open clipboard with %@";
+"打开剪贴板" = "Open clipboard";
+"用哪个应用打开" = "Open With";
+"默认浏览器" = "Default Browser";
+"其他应用…" = "Other App…";
+"其他文字时打开" = "For other text, open";
+"剪贴板是空的" = "The clipboard is empty";
+"剪贴板里没有链接或路径" = "The clipboard has no link or path";
+"代入剪贴板后不是有效的链接" = "The link isn't valid with the clipboard filled in";
+"剪贴板里是链接、拷贝的文件或文件路径时，用这个应用打开。是其他文字时，填了「其他文字时打开」就把文字代入 {clipboard} 再打开，没填则提示无法打开。" = "Opens the link, copied files or file path on the clipboard with this app. For other text, if “For other text, open” is filled in, the text is put in place of {clipboard} and that link is opened; otherwise you're told it can't be opened.";
+"链接里写 {clipboard} 会代入剪贴板里的文字，例如 https://www.google.com/search?q={clipboard}。" = "Write {clipboard} in the link to insert the clipboard text, e.g. https://www.google.com/search?q={clipboard}.";
+"用到环境变量 $TOUCHOS_CLIPBOARD 时，它是剪贴板里的文字（拷贝的是文件时为路径，每行一个）。" = "If the command uses $TOUCHOS_CLIPBOARD, it holds the clipboard text (for copied files, their paths, one per line).";
+"脚本里用 system attribute 读取环境变量 TOUCHOS_CLIPBOARD 即可拿到剪贴板里的文字（出现这个名字时才会读剪贴板）。" = "Use system attribute to read the environment variable TOUCHOS_CLIPBOARD for the clipboard text (the clipboard is only read when the script mentions this name).";
