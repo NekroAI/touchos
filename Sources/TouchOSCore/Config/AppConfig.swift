@@ -135,12 +135,13 @@ public struct AppConfig: Codable, Equatable, Sendable {
         /// 按住多久打开面板、选择确认时间（毫秒，D53）
         public var tapHoldDelayMs = Tuning().tapHoldDelayMs
         public var commitGuardMs = Tuning().commitGuardMs
-        /// 唤起所需的最小接触面积（D56）
+        /// 唤起所需的最小接触面积与压力（D56、D57）
         public var minHoldSize = Double(Tuning().minHoldSize)
+        public var minHoldPressure = Double(Tuning().minHoldPressure)
 
         public init() {}
 
-        private enum Keys: String, CodingKey { case panelScale, mappingScale, hitGapMM, tapHoldDelayMs, commitGuardMs, minHoldSize }
+        private enum Keys: String, CodingKey { case panelScale, mappingScale, hitGapMM, tapHoldDelayMs, commitGuardMs, minHoldSize, minHoldPressure }
 
         /// 缺省的字段取默认值：旧版本写出的文件没有后来新增的字段
         public init(from decoder: Decoder) throws {
@@ -152,6 +153,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
             tapHoldDelayMs = try c.decodeIfPresent(Double.self, forKey: .tapHoldDelayMs) ?? d.tapHoldDelayMs
             commitGuardMs = try c.decodeIfPresent(Double.self, forKey: .commitGuardMs) ?? d.commitGuardMs
             minHoldSize = try c.decodeIfPresent(Double.self, forKey: .minHoldSize) ?? d.minHoldSize
+            minHoldPressure = try c.decodeIfPresent(Double.self, forKey: .minHoldPressure) ?? d.minHoldPressure
         }
 
         public func encode(to encoder: Encoder) throws {
@@ -162,6 +164,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
             try c.encode(tapHoldDelayMs, forKey: .tapHoldDelayMs)
             try c.encode(commitGuardMs, forKey: .commitGuardMs)
             try c.encode(minHoldSize, forKey: .minHoldSize)
+            try c.encode(minHoldPressure, forKey: .minHoldPressure)
         }
     }
 
@@ -272,6 +275,8 @@ public struct AppConfig: Codable, Equatable, Sendable {
         t.tapHoldDelayMs = min(max(sizes.tapHoldDelayMs, Tuning.tapHoldDelayRange.lowerBound), Tuning.tapHoldDelayRange.upperBound)
         t.commitGuardMs = min(max(sizes.commitGuardMs, Tuning.commitGuardRange.lowerBound), Tuning.commitGuardRange.upperBound)
         t.minHoldSize = Float(min(max(sizes.minHoldSize, Tuning.minHoldSizeRange.lowerBound), Tuning.minHoldSizeRange.upperBound))
+        t.minHoldPressure = Float(min(max(sizes.minHoldPressure, Tuning.minHoldPressureRange.lowerBound),
+                                      Tuning.minHoldPressureRange.upperBound))
     }
 
     // MARK: 编码

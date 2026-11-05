@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format is based on 
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-11-05
+
+### Added
+- Touch Tuner, always available from the menu bar. It shows each touch's contact area and pressure live against the thresholds, why the last attempt to open a panel did or didn't work, and lets you adjust the thresholds on the spot. Debug Mode now only adds troubleshooting tools to it.
+- Pressure Required to Open, under Feel on the Triggers page and in Touch Tuner. Off by default.
+
+### Changed
+- The first tap of a tap and hold must also reach the contact area (and pressure) required to open; a light first tap no longer counts.
+- Press Required to Open is renamed Contact Area Required to Open.
+
 ## [0.1.9] - 2026-11-05
 
 ### Added

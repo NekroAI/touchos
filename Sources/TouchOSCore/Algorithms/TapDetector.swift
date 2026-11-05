@@ -14,6 +14,8 @@ public struct TapDetector: Equatable, Sendable {
         public let origins: [CGPoint]
         /// 轻点全程最大的接触面积（D54 手掌判定）
         public let maxSize: Float
+        /// 轻点全程最大的压力（D57 唤起所需压力）
+        public let maxPressure: Float
         public let startedAt: TimeInterval
         public let endedAt: TimeInterval
     }
@@ -23,6 +25,7 @@ public struct TapDetector: Equatable, Sendable {
         let startedAt: TimeInterval
         var origins: [Int: CGPoint]
         var maxSize: Float
+        var maxPressure: Float
         /// 已不可能构成轻点（超时、移动过大、开始时板上已有手指），等全部抬起后丢弃
         var valid: Bool
     }
@@ -44,11 +47,13 @@ public struct TapDetector: Equatable, Sendable {
             let fresh = touching.allSatisfy { $0.phase == .began }
             group = Group(device: frame.device, startedAt: frame.timestamp,
                           origins: Dictionary(touching.map { ($0.id, $0.position) }, uniquingKeysWith: { a, _ in a }),
-                          maxSize: touching.map(\.size).max() ?? 0, valid: fresh)
+                          maxSize: touching.map(\.size).max() ?? 0, maxPressure: touching.map(\.pressure).max() ?? 0,
+                          valid: fresh)
             return nil
         }
         for c in touching {
             g.maxSize = max(g.maxSize, c.size)
+            g.maxPressure = max(g.maxPressure, c.pressure)
             guard let origin = g.origins[c.id] else {
                 if c.phase == .began { g.origins[c.id] = c.position } else { g.valid = false }
                 continue
@@ -67,7 +72,7 @@ public struct TapDetector: Equatable, Sendable {
         let n = CGFloat(g.origins.count)
         let sum = g.origins.values.reduce(CGPoint.zero) { CGPoint(x: $0.x + $1.x, y: $0.y + $1.y) }
         return Tap(device: g.device, fingers: g.origins.count, centroid: CGPoint(x: sum.x / n, y: sum.y / n),
-                   origins: Array(g.origins.values), maxSize: g.maxSize,
+                   origins: Array(g.origins.values), maxSize: g.maxSize, maxPressure: g.maxPressure,
                    startedAt: g.startedAt, endedAt: frame.timestamp)
     }
 }

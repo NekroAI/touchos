@@ -2,74 +2,8 @@ import AppKit
 import SwiftUI
 import TouchOSCore
 
-/// 调试叠层（SRS FR-14.4）：每台设备的实时触点与帧率。只在内存中显示，永不写盘（FR-4.7）。
-/// 另显示最近 10 条状态转移、确认失败与会话结束原因，以及延迟实测（NFR-1、NFR-2、AC-1），统计从打开叠层时开始。
-@MainActor
-@Observable
-final class DebugOverlayModel {
-    struct DeviceState {
-        var device: TrackpadDevice
-        var contacts: [Contact] = []
-        var live: FrameRateMeter.Summary?
-        var lastTouch: FrameRateMeter.Summary?
-    }
-
-    var devices: [DeviceState] = []
-    var status = ""
-    /// 会话状态、最近一次确认失败或会话结束原因
-    var session: [String] = []
-
-    /// 只保留最近 10 条（FR-14.4）
-    static let sessionLines = 10
-    /// NFR-1 指示点延迟：0.5 ms 一个桶，统计到 100 ms
-    static let pointerBucketWidth: TimeInterval = 0.0005
-    static let pointerBuckets = 200
-
-    var pointerLatency = LatencyHistogram(bucketWidth: pointerBucketWidth, buckets: pointerBuckets)
-    var tapTiming: LatencyHistogram?
-    var lastPanelShown: (armToActive: TimeInterval, activeToShown: TimeInterval)?
-    /// 力度触控板最近一次压力事件：阶段（0 无、1 点按、2 深按）与力度
-    var pressure: (stage: Int, value: Float)?
-    /// 指针诊断（D47）：激活态丢弃的指针事件数与校正情况，统计从打开叠层时开始
-    var droppedMoves: UInt64 = 0
-    var clockResyncs: UInt64 = 0
-    var cursor: CursorLock.Diagnostics?
-
-    func record(_ sample: LatencySample) {
-        switch sample {
-        case .pointer(let t): pointerLatency.record(t)
-        case .panelShown(let a, let b): lastPanelShown = (a, b)
-        }
-    }
-
-    func resetLatency() {
-        pointerLatency = LatencyHistogram(bucketWidth: Self.pointerBucketWidth, buckets: Self.pointerBuckets)
-        tapTiming = nil
-        lastPanelShown = nil
-    }
-
-    func log(_ line: String) {
-        session.append(line)
-        if session.count > Self.sessionLines { session.removeFirst(session.count - Self.sessionLines) }
-    }
-
-    func setDevices(_ list: [TrackpadDevice]) {
-        devices = list.map { d in devices.first { $0.device.id == d.id } ?? DeviceState(device: d) }
-    }
-
-    func receive(_ frame: TouchFrame, live: FrameRateMeter.Summary?) {
-        guard let i = devices.firstIndex(where: { $0.device.id == frame.device }) else { return }
-        let touching = frame.contacts.filter { $0.phase != .ended && $0.phase != .cancelled }
-        devices[i].contacts = touching
-        if let live { devices[i].live = live }
-        if touching.isEmpty, let last = devices[i].live {
-            devices[i].lastTouch = last
-            devices[i].live = nil
-        }
-    }
-}
-
-/// 调试模式（D52）：通用设置最底下的开关，所有调试功能的唯一入口；开启时显示调试叠层。不随 iCloud 同步
+/// 调试模式（D52，修订见 D57）：通用设置最底下的开关。开启时诊断日志开始记录、预演脚本可用，
+/// 手感调试附带排查用的工具；手感调试本身由菜单栏打开，与这个开关无关。不随 iCloud 同步
 enum DebugMode {
     static let defaultsKey = "showDebugOverlayMenu"
     static let didChange = Notification.Name("ai.nekro.touchos.debugModeChanged")
@@ -83,71 +17,14 @@ enum DebugMode {
     }
 }
 
-@MainActor
-final class DebugOverlayController {
-    /// 叠层可见时刷新拦截耗时统计的间隔
-    static let timingRefreshInterval: TimeInterval = 1
+/// 调试模式下手感调试的按钮：日志清除、标记、复制与 AC-17（D51、D52）
+enum DebugActions {
     /// AC-17：点按钮后留给用户唤起面板的时间
     static let stallDelay: TimeInterval = 5
 
-    let model = DebugOverlayModel()
-    private let pipeline: InputPipeline
-    private let tap: EventTapController
-    private let cursor: CursorLock
-    private var panel: NSPanel?
-    private var timer: Timer?
-
-    var isVisible: Bool { panel?.isVisible ?? false }
-
-    init(pipeline: InputPipeline, tap: EventTapController, cursor: CursorLock) {
-        self.pipeline = pipeline
-        self.tap = tap
-        self.cursor = cursor
-    }
-
-    func show() {
-        guard !isVisible else { return }
-        let panel = self.panel ?? makePanel()
-        self.panel = panel
-        let model = self.model
-        pipeline.setDebugSink { frame, live in
-            DispatchQueue.main.async { model.receive(frame, live: live) }
-        }
-        model.resetLatency()
-        tap.resetTiming()
-        cursor.resetDiagnostics()
-        let tap = self.tap, cursor = self.cursor, pipeline = self.pipeline
-        timer = Timer.scheduledTimer(withTimeInterval: Self.timingRefreshInterval, repeats: true) { _ in
-            MainActor.assumeIsolated {
-                model.tapTiming = tap.timingSnapshot()
-                model.droppedMoves = tap.droppedActiveMoves
-                model.clockResyncs = pipeline.clockResyncs
-                model.cursor = cursor.diagnostics
-            }
-        }
-        panel.orderFrontRegardless()
-    }
-
-    func hide() {
-        pipeline.setDebugSink(nil)
-        timer?.invalidate()
-        timer = nil
-        panel?.orderOut(nil)
-    }
-
-    private func makePanel() -> NSPanel {
-        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 380, height: 800),
-                            styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: false)
-        panel.level = .statusBar
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = true
-        // 不激活的面板：点按钮不改变前台应用，否则排查时条件就变了（D52）。透明区域的点击会穿透到下面的窗口
-        panel.becomesKeyOnlyIfNeeded = true
-        panel.isMovableByWindowBackground = true
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-        let tap = self.tap, cursor = self.cursor, model = self.model
-        panel.contentView = DebugHostingView(rootView: DebugOverlayView(model: model, actions: [
+    @MainActor
+    static func make(tap: EventTapController, cursor: CursorLock, model: TouchTunerModel) -> [(title: String, run: () -> Void)] {
+        [
             ("清除日志", { DiagnosticLog.shared.clear() }),
             ("标记：在动", { DiagnosticLog.shared.record("★ 用户标记：光标在动") }),
             ("标记：不动", { DiagnosticLog.shared.record("★ 用户标记：光标不动") }),
@@ -156,116 +33,48 @@ final class DebugOverlayController {
                 model.log("诊断日志已复制")
             }),
             ("阻塞拦截", {
-                tap.scheduleDebugStall(after: Self.stallDelay)
-                model.log("已预约：\(Int(Self.stallDelay)) 秒后阻塞拦截（AC-17）")
+                tap.scheduleDebugStall(after: stallDelay)
+                model.log("已预约：\(Int(stallDelay)) 秒后阻塞拦截（AC-17）")
             }),
-        ]))
-        if let screen = NSScreen.main {
-            let v = screen.visibleFrame
-            panel.setFrameTopLeftPoint(NSPoint(x: v.maxX - 400, y: v.maxY - 20))
-        }
-        return panel
+        ]
     }
 }
 
-/// 叠层不是主窗口，按钮要第一下点击就响应；拖动空白处移动叠层
-private final class DebugHostingView<Content: View>: NSHostingView<Content> {
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override var mouseDownCanMoveWindow: Bool { true }
-}
-
-private struct DebugOverlayView: View {
-    let model: DebugOverlayModel
+/// 调试模式附带的部分：只给开发与排查用，不翻译（D45）
+struct DebugSections: View {
+    let model: TouchTunerModel
     let actions: [(title: String, run: () -> Void)]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("TouchOS 调试叠层").font(.headline)
-            HStack(spacing: 4) {
-                ForEach(Array(actions.enumerated()), id: \.offset) { _, action in
-                    Button(action.title, action: action.run).controlSize(.small)
+        VStack(alignment: .leading, spacing: 8) {
+            Text("调试模式").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            // 五个按钮一行放不下，分两行
+            Grid(alignment: .leading, horizontalSpacing: 4, verticalSpacing: 4) {
+                GridRow {
+                    ForEach(Array(actions.prefix(3).enumerated()), id: \.offset) { _, a in Button(a.title, action: a.run) }
+                }
+                GridRow {
+                    ForEach(Array(actions.dropFirst(3).enumerated()), id: \.offset) { _, a in Button(a.title, action: a.run) }
                 }
             }
-            if !model.status.isEmpty {
-                Text(model.status).foregroundStyle(.orange)
+            .controlSize(.small)
+            Group {
+                LatencySection(model: model)
+                CursorSection(model: model)
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(Array(model.session.enumerated()), id: \.offset) { _, line in Text(line).lineLimit(1) }
+                }
+                .frame(height: CGFloat(TouchTunerModel.sessionLines) * 14, alignment: .top)
             }
-            if model.devices.isEmpty {
-                Text("没有启用的触控板").foregroundStyle(.secondary)
-            }
-            ForEach(model.devices, id: \.device.id) { state in
-                DeviceSection(state: state)
-            }
-            Text(model.pressure.map { String(format: "按压阶段 %d · 力度 %.2f", $0.stage, $0.value) } ?? "按压阶段 —")
-            LatencySection(model: model)
-            CursorSection(model: model)
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(Array(model.session.enumerated()), id: \.offset) { _, line in Text(line) }
-            }
-            .frame(height: CGFloat(DebugOverlayModel.sessionLines) * 15, alignment: .top)
+            .font(.system(size: 10.5, design: .monospaced))
+            .lineLimit(1)  // 数值变长时不换行，面板高度不变
         }
-        .font(.system(size: 11, design: .monospaced))
-        .padding(12)
-        .frame(width: 380, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .frame(maxHeight: .infinity, alignment: .top)
     }
 }
 
-private struct DeviceSection: View {
-    /// 每个触点两行：基本字段、接触椭圆
-    static let contactRows = 3
-    static let linesPerContact = 2
-    static let lineHeight: CGFloat = 15
-
-    let state: DebugOverlayModel.DeviceState
-
-    var body: some View {
-        let size = state.device.surfaceSizeMM
-        VStack(alignment: .leading, spacing: 4) {
-            Text("\(state.device.displayName) · \(Int(size.width))×\(Int(size.height)) mm · \(String(state.device.id.raw))")
-            Canvas { ctx, canvas in
-                // 中心十字线：核对手指在物理中心时读数是否为 (0.5, 0.5)
-                var cross = Path()
-                cross.move(to: CGPoint(x: canvas.width / 2, y: 0))
-                cross.addLine(to: CGPoint(x: canvas.width / 2, y: canvas.height))
-                cross.move(to: CGPoint(x: 0, y: canvas.height / 2))
-                cross.addLine(to: CGPoint(x: canvas.width, y: canvas.height / 2))
-                ctx.stroke(cross, with: .color(.secondary.opacity(0.5)), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                for c in state.contacts {
-                    // 触控板坐标原点在左下，画布原点在左上
-                    let p = CGPoint(x: c.position.x * canvas.width, y: (1 - c.position.y) * canvas.height)
-                    ctx.fill(Path(ellipseIn: CGRect(x: p.x - 7, y: p.y - 7, width: 14, height: 14)), with: .color(.accentColor))
-                    ctx.draw(Text("\(c.id)").font(.caption2).foregroundStyle(.white), at: p)
-                }
-            }
-            .aspectRatio(size.width / size.height, contentMode: .fit)
-            .background(RoundedRectangle(cornerRadius: 6).strokeBorder(.secondary))
-            // 文字区固定行数，触摸时不挤压上方的触控板区域
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(state.contacts.prefix(Self.contactRows), id: \.id) { c in
-                    // 只显示在屏幕上，不记录（FR-4.7）
-                    Text(String(format: "#%d %@ x %.3f y %.3f（离中心 %+.1f / %+.1f mm）size %.2f", c.id, String(describing: c.phase),
-                                c.position.x, c.position.y, (c.position.x - 0.5) * size.width, (c.position.y - 0.5) * size.height, c.size))
-                    Text(String(format: "   angle %.2f axes %.2f/%.2f density %.2f", c.ellipse.angle, c.ellipse.majorAxis,
-                                c.ellipse.minorAxis, c.ellipse.density))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(height: CGFloat(Self.contactRows * Self.linesPerContact) * Self.lineHeight, alignment: .top)
-            Text("持续触摸 \(state.live.map(rate) ?? "—")")
-            Text("上一段 \(state.lastTouch.map(rate) ?? "—")").foregroundStyle(.secondary)
-        }
-    }
-
-    private func rate(_ s: FrameRateMeter.Summary) -> String {
-        String(format: "%.1f Hz · p95 %.1f ms · max %.1f ms · %d 帧", s.meanHz, s.p95Interval * 1000, s.maxInterval * 1000, s.frames)
-    }
-}
-
-/// 延迟实测（NFR-1、NFR-2、AC-1）
 /// 指针诊断（D47）：面板打开时滑动手指，看事件有没有到拦截、光标有没有被校正
 private struct CursorSection: View {
-    let model: DebugOverlayModel
+    let model: TouchTunerModel
 
     /// 应用链接的 SDK 版本（系统按它决定部分行为）。符号来自 dyld 的未公开接口，取不到时显示"—"
     private static let linkedSDK: String = {
@@ -277,18 +86,21 @@ private struct CursorSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("SDK \(Self.linkedSDK) · 丢弃指针事件 \(model.droppedMoves)")
-            Text("时钟重对齐 \(model.clockResyncs)")
+            Text("SDK \(Self.linkedSDK) · 丢弃指针事件 \(model.droppedMoves) · 时钟重对齐 \(model.clockResyncs)")
+            // 第一次刷新前也占住这一行，面板高度不变
             if let c = model.cursor {
-                Text("校验 \(c.checks) · 校正 \(c.corrections)")
-                Text(String(format: "最大偏离 事件 %.1f · 屏幕 %.1f pt", c.maxEventDeviation, c.maxScreenDeviation))
+                Text(String(format: "校验 %llu · 校正 %llu · 最大偏离 事件 %.1f / 屏幕 %.1f pt", c.checks, c.corrections,
+                            c.maxEventDeviation, c.maxScreenDeviation))
+            } else {
+                Text("校验 — · 校正 — · 最大偏离 —")
             }
         }
     }
 }
 
+/// 延迟实测（NFR-1、NFR-2、AC-1）
 private struct LatencySection: View {
-    let model: DebugOverlayModel
+    let model: TouchTunerModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {

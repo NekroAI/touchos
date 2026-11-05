@@ -7,13 +7,15 @@ import Foundation
 /// 被挡下的一次唤起（D54）：刚按过键（全板 / 外圈），或接触面积过大
 public enum TriggerFilter: String, Equatable, Sendable {
     case typing, typingEdge, palm
+    /// 轻点后按住的第一下接触面积或压力不到唤起阈值（D57）
+    case light, lightPressure
 }
 
 /// 轻点后按住的确认期失败原因（D38）：第二下没有停留满 `P.tapHoldDelayMs` 就抬起、移动、按压或又落下一指
 public enum ArmFailure: String, Equatable, Sendable {
     case moved, pressed, secondTouch, lifted, palm, typing
-    /// 第二下接触面积始终不到 `P.minHoldSize`：轻轻碰到，不是有意按住（D56）
-    case light
+    /// 第二下接触面积或压力在确认期内始终不到 `P.minHoldSize` / `P.minHoldPressure`：轻轻碰到，不是有意按住（D56、D57）
+    case light, lightPressure
 }
 
 /// 激活态结束原因（调试叠层与日志用）
@@ -204,8 +206,9 @@ public struct ArmedContext: Equatable, Sendable {
     public let startedAt: TimeInterval
     /// 第二下的最新位置，进入激活时作为指点指的起点
     public var latest: CGPoint
-    /// 第二下在确认期内的最大接触面积（D56）
+    /// 第二下在确认期内的最大接触面积与压力（D56、D57）
     public var peakSize: Float
+    public var peakPressure: Float
 }
 
 /// 面板开着时的一次多指接触（D22、D23）：判定为轻点、切换面板、捏合总览、水平移动或系统手势
@@ -325,8 +328,11 @@ public struct SessionStateMachine: Sendable {
     public private(set) var lastKeyAt: TimeInterval?
     /// 最近一次轻点的最大接触面积：诊断日志用它核对手掌阈值（D54）
     public private(set) var lastTapSize: Float = 0
-    /// 最近一次第二下在确认期内的最大接触面积：诊断日志用它核对按住阈值（D56）
+    /// 最近一次轻点的最大压力（D57）
+    public private(set) var lastTapPressure: Float = 0
+    /// 最近一次第二下在确认期内的最大接触面积与压力：诊断日志与手感调试用它核对唤起阈值（D56、D57）
     public private(set) var lastHoldSize: Float = 0
+    public private(set) var lastHoldPressure: Float = 0
 
     public init(tuning: Tuning, environment: SessionEnvironment = SessionEnvironment()) {
         self.tuning = tuning
@@ -390,6 +396,7 @@ public struct SessionStateMachine: Sendable {
         else { return [] }
         pendingTapHold = nil
         lastTapSize = tap.maxSize
+        lastTapPressure = tap.maxPressure
         if tap.maxSize >= tuning.effectivePalmSize { return [.triggerFiltered(.palm)] }
         if let filter = typingFilter(tap.origins, on: device, at: tap.endedAt) { return [.triggerFiltered(filter)] }
         switch tap.fingers {
@@ -399,6 +406,10 @@ public struct SessionStateMachine: Sendable {
         case 1:
             // 触摸期间有物理按压：这是一次单击，不是轻点
             if let pressed = lastPressAt, pressed >= tap.startedAt && pressed < tap.endedAt { return [] }
+            // 第一下也要按实：过轻的不算轻点后按住的开始（D57）
+            if tuning.tapHold || !tuning.zoneTapHold.isEmpty, let light = lightness(size: tap.maxSize, pressure: tap.maxPressure) {
+                return [.triggerFiltered(light)]
+            }
             // 第一下落在开启的方位分区里：按住后打开该分区的面板，否则是普通的轻点后按住（D38）
             let zone = tuning.zoneTapHold.first {
                 closedContains(triggerZone($0, width: tuning.zoneW, height: tuning.zoneH), tap.centroid)
@@ -412,6 +423,13 @@ public struct SessionStateMachine: Sendable {
         default:
             return []
         }
+    }
+
+    /// 接触面积或压力不到唤起阈值（D56、D57）：面积优先报告；nil 表示两项都达到
+    private func lightness(size: Float, pressure: Float) -> TriggerFilter? {
+        if size < tuning.minHoldSize { return .light }
+        if pressure < tuning.minHoldPressure { return .lightPressure }
+        return nil
     }
 
     /// 打字时防误触（D54）：内置触控板在按键后的一段时间内不接受唤起。外圈挡得更久，边角平时仍可唤起
@@ -448,7 +466,8 @@ public struct SessionStateMachine: Sendable {
             return nil
         }
         let ctx = ArmedContext(device: frame.device, trigger: first.trigger, contactID: c.id, origin: c.position,
-                               entry: first.position, startedAt: frame.timestamp, latest: c.position, peakSize: c.size)
+                               entry: first.position, startedAt: frame.timestamp, latest: c.position, peakSize: c.size,
+                               peakPressure: c.pressure)
         guard tuning.tapHoldDelayMs > 0 else { return enterActive(ctx, now: frame.timestamp, armed: false) }
         state = .armed(ctx)
         return [setPolicy(TapPolicy(mode: .armed, momentumUntil: policy.momentumUntil)), .cursor(.arm), .armed(frame.device)]
@@ -471,6 +490,7 @@ public struct SessionStateMachine: Sendable {
             var ctx = ctx
             let failure = armFailure(&ctx, frame)
             lastHoldSize = ctx.peakSize
+            lastHoldPressure = ctx.peakPressure
             if let failure { return abandon(failure) }
             if frame.timestamp - ctx.startedAt >= tuning.tapHoldDelayMs / 1000 { return enterActive(ctx, now: frame.timestamp) }
             state = .armed(ctx)
@@ -496,6 +516,7 @@ public struct SessionStateMachine: Sendable {
         if frame.contacts.contains(where: { $0.id != ctx.contactID && $0.isTouching }) { return .secondTouch }
         if c.size >= tuning.effectivePalmSize { return .palm }
         ctx.peakSize = max(ctx.peakSize, c.size)
+        ctx.peakPressure = max(ctx.peakPressure, c.pressure)
         let mm = environment.devices[ctx.device]?.surfaceSizeMM ?? .zero
         let dx = (c.position.x - ctx.origin.x) * mm.width
         let dy = (c.position.y - ctx.origin.y) * mm.height
@@ -519,8 +540,12 @@ public struct SessionStateMachine: Sendable {
     /// 确认期满，进入激活（5.4）：第二下成为指点指。`armed` 为 false 表示没有经过确认期，光标在此刻冻结
     private mutating func enterActive(_ ctx: ArmedContext, now: TimeInterval, armed: Bool = true) -> [SessionEffect] {
         lastHoldSize = ctx.peakSize
-        // 按得太轻：接触面积在整个确认期都没达到下限（D56）
-        if ctx.peakSize < tuning.minHoldSize { return armed ? abandon(.light) : [.armFailed(.light)] }
+        lastHoldPressure = ctx.peakPressure
+        // 按得太轻：接触面积或压力在整个确认期都没达到下限（D56、D57）
+        if let light = lightness(size: ctx.peakSize, pressure: ctx.peakPressure) {
+            let failure: ArmFailure = light == .light ? .light : .lightPressure
+            return armed ? abandon(failure) : [.armFailed(failure)]
+        }
         let index = environment.panelIndex(for: ctx.trigger) ?? 0
         var zone: TriggerZone?
         if case .zoneTapHold(let z) = ctx.trigger { zone = z }

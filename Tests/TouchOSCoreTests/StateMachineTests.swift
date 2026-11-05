@@ -514,7 +514,7 @@ private func shown(_ h: Harness) -> Bool {
     }
 }
 
-/// 唤起所需按压（D56）：第二下的接触面积在确认期内至少达到 `P.minHoldSize`
+/// 唤起所需按压（D56、D57）：两下的接触面积与压力都至少达到 `P.minHoldSize` / `P.minHoldPressure`
 @Suite struct MinHoldSizeTests {
     private var tuning: Tuning {
         var t = Tuning.test
@@ -527,14 +527,6 @@ private func shown(_ h: Harness) -> Bool {
         #expect(h.failures == [.light] && !shown(h))
         #expect(h.machine.state == .idle && h.policies.last?.mode == .idle)
         #expect(h.machine.lastHoldSize == 0.1)
-    }
-
-    @Test func firmSecondTouchOpensEvenAfterLightFirstTap() {
-        let g = Gesture(device: .builtIn).touch(id: 1, at: Spot.gap, t: 0, size: 0.1).lift(id: 1, t: 0.05)
-            .touch(id: 2, at: Spot.gap, t: 0.1, size: 0.4).hold(id: 2, until: 0.4)
-        let h = run(g, tuning: tuning, until: 0.4)
-        #expect(h.isActive && h.failures.isEmpty)
-        #expect(h.machine.lastHoldSize == 0.4)
     }
 
     @Test func zeroTurnsTheCheckOff() {
@@ -555,11 +547,69 @@ private func shown(_ h: Harness) -> Bool {
     @Test func settingIsClampedIntoTuningAndDefaultsWhenMissing() throws {
         var config = AppConfig.default
         config.sizes.minHoldSize = 5
+        config.sizes.minHoldPressure = -3
         var t = Tuning()
         config.apply(to: &t)
         #expect(t.minHoldSize == Float(Tuning.minHoldSizeRange.upperBound))
+        #expect(t.minHoldPressure == Float(Tuning.minHoldPressureRange.lowerBound))
         let decoded = try JSONDecoder().decode(AppConfig.Sizes.self, from: Data("{}".utf8))
-        #expect(decoded.minHoldSize == Double(Tuning().minHoldSize))
+        #expect(decoded.minHoldSize == Double(Tuning().minHoldSize) && decoded.minHoldPressure == 0)
+    }
+
+    // MARK: 第一下（D57）
+
+    private func filtered(_ h: Harness) -> [TriggerFilter] {
+        h.effects.compactMap { if case .triggerFiltered(let f) = $0 { f } else { nil } }
+    }
+
+    private func firstTap(size: Float = Gesture.fingerSize, pressure: Float = 0) -> Gesture {
+        Gesture(device: .builtIn).touch(id: 1, at: Spot.gap, t: 0, size: size, pressure: pressure).lift(id: 1, t: 0.05)
+            .touch(id: 2, at: Spot.gap, t: 0.1, size: 0.4, pressure: 30).hold(id: 2, until: 0.4)
+    }
+
+    @Test func lightFirstTapDoesNotStartTapHold() {
+        let h = run(firstTap(size: 0.1), tuning: tuning, until: 0.4)
+        #expect(!h.isActive && h.failures.isEmpty)
+        #expect(filtered(h) == [.light])
+        #expect(h.machine.lastTapSize == 0.1)
+    }
+
+    @Test func firstTapIsNotCheckedWhenNoTapHoldIsEnabled() {
+        var t = tuning
+        t.tapHold = false
+        let h = run(firstTap(size: 0.1), tuning: t, until: 0.4)
+        #expect(filtered(h).isEmpty)
+    }
+
+    // MARK: 压力（D57）
+
+    @Test func pressureIsOffByDefault() {
+        #expect(Tuning().minHoldPressure == 0)
+        let h = run(secondDown(size: 0.4).hold(id: 2, until: 0.4), tuning: tuning, until: 0.4)
+        #expect(h.isActive)
+    }
+
+    @Test func lowPressureBlocksEitherTap() {
+        var t = tuning
+        t.minHoldPressure = 20
+        let first = run(firstTap(pressure: 5), tuning: t, until: 0.4)
+        #expect(filtered(first) == [.lightPressure] && !first.isActive)
+        let g = Gesture(device: .builtIn).touch(id: 1, at: Spot.gap, t: 0, pressure: 30).lift(id: 1, t: 0.05)
+            .touch(id: 2, at: Spot.gap, t: 0.1, pressure: 5).hold(id: 2, until: 0.4)
+        let second = run(g, tuning: t, until: 0.4)
+        #expect(second.failures == [.lightPressure] && !second.isActive)
+        #expect(second.machine.lastTapPressure == 30 && second.machine.lastHoldPressure == 5)
+    }
+
+    @Test func bothDimensionsMustPass() {
+        var t = tuning
+        t.minHoldPressure = 20
+        let g = Gesture(device: .builtIn).touch(id: 1, at: Spot.gap, t: 0, pressure: 30).lift(id: 1, t: 0.05)
+            .touch(id: 2, at: Spot.gap, t: 0.1, size: 0.1, pressure: 30).hold(id: 2, until: 0.4)
+        #expect(run(g, tuning: t, until: 0.4).failures == [.light])
+        let ok = Gesture(device: .builtIn).touch(id: 1, at: Spot.gap, t: 0, pressure: 30).lift(id: 1, t: 0.05)
+            .touch(id: 2, at: Spot.gap, t: 0.1, pressure: 30).hold(id: 2, until: 0.4)
+        #expect(run(ok, tuning: t, until: 0.4).isActive)
     }
 }
 

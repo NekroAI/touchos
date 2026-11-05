@@ -34,6 +34,8 @@ final class SessionDriver: @unchecked Sendable {
     // 延迟打点（调试叠层）：当前处理的触点帧时间戳、本次确认期开始的时刻
     private var frameTimestamp: TimeInterval?
     private var armStartedAt: TimeInterval?
+    /// 处于轻点后按住的确认期：面板随后打开即为一次成功的判定（D57）
+    private var judgingHold = false
 
     /// 调试信息（状态、确认失败原因、会话结束原因），在 input.queue 上调用
     var onDebug: (@Sendable (String) -> Void)?
@@ -41,6 +43,8 @@ final class SessionDriver: @unchecked Sendable {
     var onOpenEditor: (@MainActor @Sendable (String) -> Void)?
     /// 延迟样本，在主线程、浮层更新之后调用；为 nil 时不打点
     var onLatency: (@MainActor @Sendable (LatencySample) -> Void)?
+    /// 唤起判定结果（手感调试显示，D57），在 input.queue 上调用
+    var onJudgement: (@Sendable (TriggerJudgement) -> Void)?
 
     init(queue: DispatchQueue, tuning: Tuning, tap: EventTapController, cursor: CursorLock,
          executor: ActionExecutor, overlay: OverlayController) {
@@ -114,9 +118,12 @@ final class SessionDriver: @unchecked Sendable {
             cursor.apply(c)
         case .armed:
             if case .armed(let ctx) = machine.state { armStartedAt = ctx.startedAt }
+            judgingHold = true
         case .showPanel(let s):
             log.info("panel shown: \(s.layout.id, privacy: .public)")
             logPanelOpened()
+            if judgingHold { judge(.opened, hold: true) }
+            judgingHold = false
             let sample = panelShownSample()
             DispatchQueue.main.async {
                 self.overlay.show(s)
@@ -149,10 +156,13 @@ final class SessionDriver: @unchecked Sendable {
         case .armFailed(let reason):
             log.info("arm failed: \(reason.rawValue, privacy: .public)")
             onDebug?("确认失败：\(reason.rawValue)")  // l10n-ignore
-            DiagnosticLog.shared.record("确认失败：\(reason.rawValue) · 按住接触面积 \(String(format: "%.2f", machine.lastHoldSize))")  // l10n-ignore
+            DiagnosticLog.shared.record("确认失败：\(reason.rawValue) · 按住接触面积 \(String(format: "%.2f", machine.lastHoldSize)) · 压力 \(Int(machine.lastHoldPressure))")  // l10n-ignore
+            judge(.failed(reason), hold: true)
+            judgingHold = false
         case .triggerFiltered(let reason):
             log.info("trigger filtered: \(reason.rawValue, privacy: .public)")
-            DiagnosticLog.shared.record("唤起被挡下：\(reason.rawValue) · 接触面积 \(String(format: "%.2f", machine.lastTapSize))")  // l10n-ignore
+            DiagnosticLog.shared.record("唤起被挡下：\(reason.rawValue) · 接触面积 \(String(format: "%.2f", machine.lastTapSize)) · 压力 \(Int(machine.lastTapPressure))")  // l10n-ignore
+            judge(.filtered(reason), hold: false)
         case .sessionEnded(let end):
             log.info("session ended: \(String(describing: end), privacy: .public)")
             onDebug?("会话结束：\(end)")  // l10n-ignore
@@ -166,7 +176,12 @@ final class SessionDriver: @unchecked Sendable {
         let device = machine.environment.devices[ctx.device]
         var edge = false
         if let entry = ctx.entryPoint, let device { edge = machine.isInEdgeRing(entry, on: device) }
-        DiagnosticLog.shared.record("面板打开：\(device?.isBuiltIn == true ? "内置板" : "外接板") · 距上次按键 \(age) · \(edge ? "外圈" : "内圈") · 接触面积 \(String(format: "%.2f", machine.lastTapSize)) · 按住接触面积 \(String(format: "%.2f", machine.lastHoldSize))")  // l10n-ignore
+        DiagnosticLog.shared.record("面板打开：\(device?.isBuiltIn == true ? "内置板" : "外接板") · 距上次按键 \(age) · \(edge ? "外圈" : "内圈") · 接触面积 \(String(format: "%.2f", machine.lastTapSize)) · 按住接触面积 \(String(format: "%.2f", machine.lastHoldSize)) · 压力 \(Int(machine.lastTapPressure)) / \(Int(machine.lastHoldPressure))")  // l10n-ignore
+    }
+
+    private func judge(_ outcome: TriggerJudgement.Outcome, hold: Bool) {
+        onJudgement?(TriggerJudgement(outcome: outcome, tap: .init(size: machine.lastTapSize, pressure: machine.lastTapPressure),
+                                      hold: hold ? .init(size: machine.lastHoldSize, pressure: machine.lastHoldPressure) : nil))
     }
 
     /// FR-6.14：两次间隔不少于 40 ms；提交时的确认震动（D16）不受间隔限制
@@ -355,4 +370,23 @@ final class OverlayController {
     func flash(_ id: SlotID) {
         model.press(id, animate: !reduceMotion)
     }
+}
+
+/// 一次唤起判定（D57）：第一下轻点被挡下，或第二下确认期的结果；附带两下的接触面积与压力峰值，供手感调试对照阈值
+struct TriggerJudgement: Sendable {
+    enum Outcome: Sendable {
+        case opened
+        case filtered(TriggerFilter)
+        case failed(ArmFailure)
+    }
+
+    struct Reading: Sendable {
+        let size: Float
+        let pressure: Float
+    }
+
+    let outcome: Outcome
+    let tap: Reading
+    /// 第一下就被挡下时为 nil
+    let hold: Reading?
 }

@@ -22,6 +22,17 @@ final class MenuBarController: NSObject {
         didSet { rebuildMenu() }
     }
 
+    /// 手感调试（D57）：常驻入口，打开时打勾
+    var onToggleTuner: (() -> Void)? {
+        didSet { rebuildMenu() }
+    }
+
+    var tunerVisible = false {
+        didSet { tunerItem?.state = tunerVisible ? .on : .off }
+    }
+
+    private var tunerItem: NSMenuItem?
+
     var enabled = true {
         didSet { enabledItem?.state = enabled ? .on : .off }
     }
@@ -88,6 +99,13 @@ final class MenuBarController: NSObject {
             item.target = self
             menu.addItem(item)
         }
+        if onToggleTuner != nil {
+            let item = NSMenuItem(title: String(localized: "手感调试"), action: #selector(toggleTuner), keyEquivalent: "")
+            item.target = self
+            item.state = tunerVisible ? .on : .off
+            tunerItem = item
+            menu.addItem(item)
+        }
         if let appearanceItem {
             appearanceItem.menu?.removeItem(appearanceItem)
             menu.addItem(appearanceItem)
@@ -107,5 +125,9 @@ final class MenuBarController: NSObject {
 
     @objc private func openSettings() {
         onOpenSettings?()
+    }
+
+    @objc private func toggleTuner() {
+        onToggleTuner?()
     }
 }

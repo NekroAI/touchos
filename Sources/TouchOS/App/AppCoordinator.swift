@@ -25,7 +25,7 @@ final class AppCoordinator {
     private var tap: EventTapController!
     private var watchdog: TapWatchdog!
     private var deviceManager: DeviceManager?
-    private var debugOverlay: DebugOverlayController!
+    private var tuner: TouchTunerController!
     private var simulator: TouchSimulator?
     private var simulatorFactory: (() -> TouchSimulator)?
     private var permissionTimer: Timer?
@@ -79,17 +79,20 @@ final class AppCoordinator {
                 DispatchQueue.main.async { self?.setInputUnavailable(String(localized: "触点数据格式与本机系统不符")) }
             })
 
-        let debug = DebugOverlayController(pipeline: pipeline, tap: tap, cursor: cursor)
-        debugOverlay = debug
+        let tuner = TouchTunerController(pipeline: pipeline, tap: tap, cursor: cursor, configs: configs)
+        self.tuner = tuner
+        menuBar.onToggleTuner = { tuner.toggle() }
+        tuner.onVisibilityChange = { [weak self] visible in self?.menuBar.tunerVisible = visible }
         driver.onDebug = { line in
             DiagnosticLog.shared.record(line)
-            DispatchQueue.main.async { debug.model.log(line) }
+            DispatchQueue.main.async { if tuner.model.debugMode { tuner.model.log(line) } }
         }
-        driver.onLatency = { sample in if debug.isVisible { debug.model.record(sample) } }
+        driver.onJudgement = { j in DispatchQueue.main.async { tuner.model.judgement = j } }
+        driver.onLatency = { sample in if tuner.isVisible && tuner.model.debugMode { tuner.model.record(sample) } }
         tap.onPressureDebug = { stage, pressure in
-            DispatchQueue.main.async { if debug.isVisible { debug.model.pressure = (stage, pressure) } }
+            DispatchQueue.main.async { if tuner.isVisible { tuner.model.pressure = (stage, pressure) } }
         }
-        simulatorFactory = { TouchSimulator(driver: driver, overlay: overlay) }
+        simulatorFactory = { TouchSimulator(driver: driver, overlay: overlay, toggleTuner: { tuner.toggle() }) }
         NotificationCenter.default.addObserver(forName: DebugMode.didChange, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.applyDebugMode() }
         }
@@ -118,18 +121,17 @@ final class AppCoordinator {
         settings.show()
     }
 
-    /// 调试模式（D52）：所有调试功能跟着这一个开关，开启时显示调试叠层
+    /// 调试模式（D52，修订见 D57）：诊断日志、拦截耗时统计、预演脚本，以及手感调试里的排查工具。手感调试本身由菜单栏打开
     private func applyDebugMode() {
         let on = DebugMode.isOn
         DiagnosticLog.shared.setEnabled(on)
         tap.setMeasuring(on)
+        tuner.model.debugMode = on
         if on {
             if simulator == nil { simulator = simulatorFactory?() }
-            debugOverlay.show()
         } else {
             simulator?.stop()
             simulator = nil
-            debugOverlay.hide()
         }
     }
 
@@ -171,7 +173,7 @@ final class AppCoordinator {
             }
             let manager = DeviceManager(bridge: bridge, pipeline: pipeline)
             manager.onChange = { [weak self] devices, removed in
-                self?.debugOverlay.model.setDevices(devices)
+                self?.tuner.model.setDevices(devices)
                 DiagnosticLog.shared.record("触控设备：\(devices.map { "\($0.displayName) \($0.id.raw)" }.joined(separator: ", ")) · 移除 \(removed.count)")  // l10n-ignore
                 let map = Dictionary(uniqueKeysWithValues: devices.map { ($0.id, $0) })
                 self?.driver.updateEnvironment { $0.devices = map }
@@ -224,7 +226,6 @@ final class AppCoordinator {
         log.error("input unavailable: \(reason, privacy: .public)")
         inputUnavailable = reason
         pipeline.setActiveDevices([])
-        debugOverlay.model.status = "输入不可用：\(reason)"  // l10n-ignore
         refreshStatus()
     }
 

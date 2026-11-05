@@ -18,11 +18,15 @@ public struct Tuning: Equatable, Sendable {
     /// 指点指落下后这么久以内抬起、且移动不到 `P.stillThresholdMM`：只关闭不执行，防止误开面板后抬手就触发（D53）。0 表示不保护
     public var commitGuardMs = 200.0
     public static let commitGuardRange = 0.0...500.0
-    /// `P.minHoldSize`：轻点后按住的第二下，接触面积在确认期内至少要达到这么大，否则当作轻轻碰到、不打开面板（D56）。
-    /// 单位为框架原始接触面积（`zTotal`），0 表示不检查。妙控板实测：有意按住在确认期内 0.36–0.84，轻擦 0.08–0.32；
-    /// 默认取保守值，只滤掉明显过轻的接触。内置板未实测
+    /// `P.minHoldSize`：轻点后按住的两下，接触面积都至少要达到这么大，否则当作轻轻碰到、不打开面板（D56、D57）。
+    /// 第一下取轻点全程的最大值，第二下取确认期内的最大值。单位为框架原始接触面积（`zTotal`），0 表示不检查。
+    /// 妙控板实测：有意按住在确认期内 0.36–0.84，轻擦 0.08–0.32；默认取保守值，只滤掉明显过轻的接触。内置板未实测
     public var minHoldSize: Float = 0.25
     public static let minHoldSizeRange = 0.0...0.6
+    /// `P.minHoldPressure`：同上，判定压力字段（`zPressure`，框架原始单位）。妙控板实测正常接触 4–122、轻擦 0，
+    /// 波动大，默认 0 不检查，由用户在手感调试里观察后自行开启（D57）
+    public var minHoldPressure: Float = 0
+    public static let minHoldPressureRange = 0.0...100.0
     /// 打字时防误触（D54，只对内置触控板）：按键后 `P.typingBlockMs` 内整块板不接受唤起，
     /// `P.typingEdgeMs` 内外圈 `P.typingEdgeMM` 不接受唤起
     public var typingGuard = true

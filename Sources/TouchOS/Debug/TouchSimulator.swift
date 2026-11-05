@@ -6,7 +6,8 @@ import TouchOSCore
 /// 调试用的浮层预演（只在调试模式开启时注册）：收到 Darwin 通知后，用一份独立的状态机跑一段合成触点帧，
 /// 只把面板的显示、更新、退场交给浮层，用来在没有手指操作时录屏检查视觉与动效。
 /// 不经过真实会话：不冻结光标、不改拦截策略、不执行任何动作，也不受同时发生的真实触摸干扰。
-/// 用法：`notifyutil -p ai.nekro.touchos.simulate.cancel`（另有 `.taphold`、`.idle`、`.commit`、`.press`、`.outside`、`.toggle`、`.navigate`、`.overview`、`.hold`、`.demo`）。
+/// 用法：`notifyutil -p ai.nekro.touchos.simulate.cancel`（另有 `.taphold`、`.idle`、`.commit`、`.press`、`.outside`、`.toggle`、`.navigate`、`.overview`、`.hold`、`.demo`）；
+/// `.tuner` 打开或关闭手感调试，用于截图检查（D57）。
 @MainActor
 final class TouchSimulator {
     /// 合成帧间隔：与妙控板实测帧率相同（m0-report.md）
@@ -42,9 +43,12 @@ final class TouchSimulator {
         var backdropUntil: TimeInterval?
     }
 
-    init(driver: SessionDriver, overlay: OverlayController) {
+    init(driver: SessionDriver, overlay: OverlayController, toggleTuner: @escaping @MainActor () -> Void) {
         self.driver = driver
         self.overlay = overlay
+        var tunerToken: Int32 = 0
+        notify_register_dispatch(Self.prefix + "tuner", &tunerToken, .main) { _ in MainActor.assumeIsolated { toggleTuner() } }
+        tokens.append(tunerToken)
         for (name, script) in Self.scripts {
             var token: Int32 = 0
             let status = notify_register_dispatch(Self.prefix + name, &token, .main) { [weak self] _ in
